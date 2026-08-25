@@ -1,0 +1,18 @@
+rootProject.name = 'market-kurly-clone'
+
+include 'common'
+
+def serviceModules = [
+    'product-service',
+    'order-service',
+    'auth-service',
+    'payment-service',
+    'wms-service',
+    'oms-service',
+    'scm-service'
+]
+
+serviceModules.each { name ->
+    include name
+    project(":${name}").projectDir = file("services/${name}")
+}
