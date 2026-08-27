@@ -1,0 +1,14 @@
+name: CI - scm-service
+
+on:
+  push:
+    branches: [develop]
+    paths:
+      - 'services/scm-service/**'
+  pull_request:
+    branches: [develop]
+    paths:
+      - 'services/scm-service/**'
+  workflow_dispatch:
+
+jobs: {}

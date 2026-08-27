@@ -1,0 +1,14 @@
+name: CI - payment-service
+
+on:
+  push:
+    branches: [develop]
+    paths:
+      - 'services/payment-service/**'
+  pull_request:
+    branches: [develop]
+    paths:
+      - 'services/payment-service/**'
+  workflow_dispatch:
+
+jobs: {}

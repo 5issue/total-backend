@@ -1,0 +1,104 @@
+name: CI - order-service
+
+on:
+  push:
+    branches: [develop]
+    paths:
+      - 'services/order-service/**'
+  pull_request:
+    branches: [develop]
+    paths:
+      - 'services/order-service/**'
+  workflow_dispatch:
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_DATABASE: order_db
+          MYSQL_USER: order
+          MYSQL_PASSWORD: order
+          MYSQL_ROOT_PASSWORD: root
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "mysqladmin ping -h localhost -u root -proot"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+      redis:
+        image: redis:8
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      rabbitmq:
+        image: rabbitmq:4
+        env:
+          RABBITMQ_DEFAULT_USER: order-service
+          RABBITMQ_DEFAULT_PASS: order1234
+          RABBITMQ_DEFAULT_VHOST: msa
+        ports:
+          - 5672:5672
+        options: >-
+          --health-cmd "rabbitmq-diagnostics -q ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+          --health-start-period 30s
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            services/order-service
+            common
+            build.gradle
+            settings.gradle
+            gradlew
+            gradle
+
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '25'
+          distribution: temurin
+          cache: gradle
+
+      - name: Grant execute permission
+        run: chmod +x gradlew
+
+      - name: Build and test
+        env:
+          SPRING_DATASOURCE_URL: jdbc:mysql://localhost:3306/order_db
+          SPRING_DATASOURCE_USERNAME: order
+          SPRING_DATASOURCE_PASSWORD: order
+          SPRING_DATA_REDIS_HOST: localhost
+          SPRING_DATA_REDIS_PORT: 6379
+          SPRING_RABBITMQ_HOST: localhost
+          SPRING_RABBITMQ_PORT: 5672
+          SPRING_RABBITMQ_USERNAME: order-service
+          SPRING_RABBITMQ_PASSWORD: order1234
+          SPRING_RABBITMQ_VIRTUAL_HOST: msa
+        run: ./gradlew :order-service:clean :order-service:build :order-service:jacocoTestReport --stacktrace
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: order-service
+          path: services/order-service/build/libs/*[!plain].jar
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jacoco-order-report
+          path: services/order-service/build/reports/jacoco/test/html/

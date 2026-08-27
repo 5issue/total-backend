@@ -1,0 +1,14 @@
+name: CI - wms-service
+
+on:
+  push:
+    branches: [develop]
+    paths:
+      - 'services/wms-service/**'
+  pull_request:
+    branches: [develop]
+    paths:
+      - 'services/wms-service/**'
+  workflow_dispatch:
+
+jobs: {}

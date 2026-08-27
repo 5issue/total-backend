@@ -1,0 +1,14 @@
+name: CI - auth-service
+
+on:
+  push:
+    branches: [develop]
+    paths:
+      - 'services/auth-service/**'
+  pull_request:
+    branches: [develop]
+    paths:
+      - 'services/auth-service/**'
+  workflow_dispatch:
+
+jobs: {}
