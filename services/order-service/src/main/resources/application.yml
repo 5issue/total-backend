@@ -12,5 +12,11 @@ spring:
       port: ${REDIS_PORT:6379}
       password: ${REDIS_PASSWORD:}
 
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,prometheus
+
 server:
   port: 8082
