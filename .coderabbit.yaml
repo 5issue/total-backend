@@ -3,7 +3,7 @@ reviews:
   instructions: |
     이 프로젝트는 다음 기술스택을 사용합니다:
     - Spring Boot 4.1.0
-    - Gradle 9.1.0
+    - Gradle 9.0.0
     - Java 25
     - MySQL, PostgreSQL (서비스별로 다른 DB 사용)
 
