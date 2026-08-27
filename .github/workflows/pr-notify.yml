@@ -13,6 +13,10 @@ on:
     types:
       - completed
 
+permissions:
+  pull-requests: read
+  actions: read
+
 jobs:
   notify:
     runs-on: ubuntu-latest
@@ -37,6 +41,26 @@ jobs:
             }
 
             const prNumber = prs[0].number;
+
+            // 해당 PR에 아직 진행 중인 CI가 있는지 확인
+            const checkRuns = await github.rest.checks.listForRef({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: workflowRun.head_sha,
+              filter: 'latest'
+            });
+
+            const pendingCI = checkRuns.data.check_runs.filter(cr =>
+              cr.name !== 'notify' &&
+              cr.name !== 'CodeRabbit' &&
+              (cr.status === 'queued' || cr.status === 'in_progress')
+            );
+
+            if (pendingCI.length > 0) {
+              console.log(`Still ${pendingCI.length} CI(s) running. Skipping notification.`);
+              return;
+            }
+
             const prData = await github.rest.pulls.get({
               owner: context.repo.owner,
               repo: context.repo.repo,
@@ -62,9 +86,9 @@ jobs:
 
             let message;
             if (conclusion === 'success') {
-              message = `✅ **${workflowName} 성공! 리뷰 부탁해요!**\n📌 PR: ${pr.title}\n🔗 ${pr.html_url}\n👤 작성자: ${authorMention}\n👁️ 리뷰어: ${reviewers}`;
+              message = `✅ **${workflowName} 성공! 리뷰 부탁드립니다.**\n📌 PR: ${pr.title}\n🔗 <${pr.html_url}>\n👤 작성자: ${authorMention}\n👁️ 리뷰어: ${reviewers}`;
             } else {
-              message = `❌ **${workflowName} 실패!**\n📌 PR: ${pr.title}\n🔗 ${pr.html_url}\n👤 작성자: ${authorMention}\n⚠️ CI 실패했습니다. 확인해주세요!`;
+            message = `❌ **${workflowName} 실패!**\n📌 PR: ${pr.title}\n🔗 <${pr.html_url}>\n👤 작성자: ${authorMention}\n⚠️ CI 실패했습니다. 확인해주세요.`;
             }
 
             await fetch(process.env.DISCORD_WEBHOOK, {

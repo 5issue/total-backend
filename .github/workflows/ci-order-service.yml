@@ -11,6 +11,9 @@ on:
       - 'services/order-service/**'
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
@@ -59,6 +62,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          persist-credentials: false
           sparse-checkout: |
             services
             common
