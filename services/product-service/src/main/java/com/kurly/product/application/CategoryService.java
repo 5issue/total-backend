@@ -1,10 +1,11 @@
 package com.kurly.product.application;
 
+import com.kurly.product.domain.repository.CategoryRepository;
 import com.kurly.product.infrastructure.entity.Category;
 import com.kurly.product.infrastructure.entity.Category.CategoryType;
-import com.kurly.product.infrastructure.repository.CategoryRepository;
 import com.kurly.product.presentation.dto.CategoryResponse;
 import java.util.Comparator;
+import lombok.RequiredArgsConstructor;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -14,14 +15,11 @@ import java.util.Map;
 import java.util.stream.Collectors;
 
 @Service
+@RequiredArgsConstructor
 @Transactional(readOnly = true)
 public class CategoryService {
 
     private final CategoryRepository categoryRepository;
-
-    public CategoryService(CategoryRepository categoryRepository) {
-        this.categoryRepository = categoryRepository;
-    }
 
     @Cacheable(value = "categoryTree", key = "'tree'")
     public Map<CategoryType, List<CategoryResponse>> getCategoryTree() {
