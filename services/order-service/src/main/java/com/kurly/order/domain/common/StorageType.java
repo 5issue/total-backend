@@ -1,4 +1,4 @@
-package com.kurly.order.domain.order;
+package com.kurly.order.domain.common;
 
 public enum StorageType {
     ROOM,
