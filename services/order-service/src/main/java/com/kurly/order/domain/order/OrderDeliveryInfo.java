@@ -15,11 +15,11 @@ import org.springframework.util.Assert;
 public class OrderDeliveryInfo extends BaseEntity {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    @MapsId
     @OneToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "order_id", nullable = false, unique = true)
+    @JoinColumn(name = "order_id")
     private Order order;
 
     private Long sourceAddressId;
@@ -105,4 +105,3 @@ public class OrderDeliveryInfo extends BaseEntity {
                 .build();
     }
 }
-
