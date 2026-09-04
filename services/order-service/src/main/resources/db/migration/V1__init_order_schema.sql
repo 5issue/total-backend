@@ -1,22 +1,22 @@
 CREATE TABLE orders
 (
     id                          BIGINT AUTO_INCREMENT PRIMARY KEY,
-    order_no                    VARCHAR(30)  NOT NULL,
-    member_id                   BIGINT       NOT NULL,
-    payment_id                  BIGINT       NULL,
-    status                      VARCHAR(30)  NOT NULL DEFAULT 'PENDING_PAYMENT',
-    item_amount                 BIGINT       NOT NULL DEFAULT 0,
-    shipping_fee                BIGINT       NOT NULL DEFAULT 0,
-    payment_amount              BIGINT       NOT NULL DEFAULT 0,
-    paid_at                     DATETIME     NULL,
-    created_at                  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at                  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    oms_order_id                BIGINT       NULL,
-    fulfillment_status          VARCHAR(30)  NULL,
-    delivery_status             VARCHAR(30)  NULL,
-    expected_delivery_at        DATETIME     NULL,
-    inventory_reservation_token VARCHAR(64)  NULL,
-    inventory_reserved_until    DATETIME     NULL,
+    order_no                    VARCHAR(30) NOT NULL,
+    member_id                   BIGINT      NOT NULL,
+    payment_id                  BIGINT      NULL,
+    status                      VARCHAR(30) NOT NULL DEFAULT 'PENDING_PAYMENT',
+    item_amount                 BIGINT      NOT NULL DEFAULT 0,
+    shipping_fee                BIGINT      NOT NULL DEFAULT 0,
+    payment_amount              BIGINT      NOT NULL DEFAULT 0,
+    paid_at                     DATETIME    NULL,
+    created_at                  DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at                  DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    oms_order_id                BIGINT      NULL,
+    fulfillment_status          VARCHAR(30) NULL,
+    delivery_status             VARCHAR(30) NULL,
+    expected_delivery_at        DATETIME    NULL,
+    inventory_reservation_token VARCHAR(64) NULL,
+    inventory_reserved_until    DATETIME    NULL,
     CONSTRAINT uk_orders_order_no UNIQUE (order_no),
     INDEX idx_orders_member_id (member_id),
     INDEX idx_orders_payment_id (payment_id),
@@ -110,18 +110,16 @@ CREATE TABLE refund_attachments
 ) ENGINE = InnoDB
   DEFAULT CHARSET = utf8mb4;
 
-CREATE TABLE order_outbox
+CREATE TABLE IF NOT EXISTS event_publication
 (
-    id             BIGINT AUTO_INCREMENT PRIMARY KEY,
-    aggregate_type VARCHAR(30)  NOT NULL,
-    aggregate_id   BIGINT       NOT NULL,
-    event_type     VARCHAR(100) NOT NULL,
-    payload        JSON         NOT NULL,
-    status         VARCHAR(20)  NOT NULL DEFAULT 'PENDING',
-    retry_count    INT          NOT NULL DEFAULT 0,
-    published_at   DATETIME     NULL,
-    created_at     DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    INDEX idx_order_outbox_publish (status, created_at),
-    INDEX idx_order_outbox_aggregate (aggregate_type, aggregate_id)
+    id               VARCHAR(36)  NOT NULL,
+    listener_id      VARCHAR(512) NOT NULL,
+    event_type       VARCHAR(512) NOT NULL,
+    serialized_event TEXT         NOT NULL,
+    publication_date TIMESTAMP(6) NOT NULL,
+    completion_date  TIMESTAMP(6) NULL DEFAULT NULL,
+    PRIMARY KEY (id),
+    INDEX idx_event_publication_completion_date (completion_date),
+    INDEX idx_event_publication_publication_date (publication_date)
 ) ENGINE = InnoDB
   DEFAULT CHARSET = utf8mb4;

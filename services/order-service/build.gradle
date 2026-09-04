@@ -3,6 +3,9 @@ plugins {
     id 'jacoco'
 }
 
+ext {
+    set('springModulithVersion', "1.3.0")
+}
 
 dependencies {
     implementation project(':common')
@@ -25,6 +28,18 @@ dependencies {
     testImplementation 'org.testcontainers:testcontainers-junit-jupiter'
     testImplementation 'org.testcontainers:testcontainers-mysql'
     testImplementation 'org.testcontainers:testcontainers-rabbitmq'
+
+    // JPA 기반 Outbox(event_publication)
+    implementation 'org.springframework.modulith:spring-modulith-events-api'
+    implementation 'org.springframework.modulith:spring-modulith-events-core'
+    implementation 'org.springframework.modulith:spring-modulith-events-jpa'
+    implementation 'org.springframework.modulith:spring-modulith-events-jackson'
+}
+
+dependencyManagement {
+    imports {
+        mavenBom "org.springframework.modulith:spring-modulith-bom:${springModulithVersion}"
+    }
 }
 
 jacoco {
