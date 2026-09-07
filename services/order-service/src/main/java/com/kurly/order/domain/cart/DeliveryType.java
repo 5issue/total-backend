@@ -1,5 +1,5 @@
 package com.kurly.order.domain.cart;
 
 public enum DeliveryType {
-    DAWN, PARCEL
+    DAWN, PARCEL, SELLER
 }
