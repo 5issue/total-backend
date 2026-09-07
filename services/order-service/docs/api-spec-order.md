@@ -368,7 +368,7 @@
 
 ## 4. 주문 결제 요청 및 주문 확정
 
-> 주문서를 결제 진행 상태(PAYMENT_PENDING)로 전이하여 만료 대상에서 격리하고, 결제 서비스(Payment)의 PG 결제창 진입을 준비.
+> 주문서를 결제 진행 상태(PENDING_PAYMENT)로 전이하여 만료 대상에서 격리하고, 결제 서비스(Payment)의 PG 결제창 진입을 준비.
 
 ### Path
 
@@ -417,7 +417,7 @@
   "data": {
     "orderId": 501,
     "orderNo": "O202608260001",
-    "status": "PAYMENT_PENDING"
+    "status": "PENDING_PAYMENT"
   },
   "error": null,
   "timestamp": "2026-08-26T10:00:00Z"
@@ -442,7 +442,7 @@
   * Subscribe: `payment.order.completed`, `payment.order.failed`, `product.inventory.exhausted`, `payment.order.refunded`
   * Publish: `sales.order.created` (Transactional Outbox 패턴)
 * **도메인 규칙:**
-  * 주문 상태가 `CHECKOUT_CREATED`일 때만 `PAYMENT_PENDING`으로 전이하여 만료 배치 대상에서 격리.
+  * 주문 상태가 `CHECKOUT_CREATED`일 때만 `PENDING_PAYMENT`으로 전이하여 만료 배치 대상에서 격리.
   * 본 API는 상태 전이만 수행하며, 결제창 호출 및 재고 TTL 검증은 결제 서비스가 담당.
   * 최종 주문 확정(`PAID`)은 `payment.order.completed` 메시지 소비 후 비동기 처리하며, Outbox를 통해 OMS로 `sales.order.created` 이벤트 발행.
 
@@ -987,7 +987,7 @@
 * **동기 연동:** 없음
 * **비동기 연동 (RabbitMQ):** 없음
 * **도메인 규칙:**
-  * 단순 가주문서 상태인 `CHECKOUT_CREATED` 및 `PAYMENT_PENDING`은 목록에서 제외하며 결제 완료(`PAID`) 이후 주문만 조회.
+  * 단순 가주문서 상태인 `CHECKOUT_CREATED` 및 `PENDING_PAYMENT`은 목록에서 제외하며 결제 완료(`PAID`) 이후 주문만 조회.
   * `orderedAt` 기준 내림차순(DESC) 정렬.
   * `productName` 검색 시 `order_items.title`에 대한 부분 일치(LIKE) 검색 수행.
 
@@ -1104,7 +1104,7 @@
 * **동기 연동:** 필요 시 `GET /internal/v1/oms/orders/{orderId}/cancel-eligibility`
 * **비동기 연동 (RabbitMQ):** 없음
 * **도메인 규칙:**
-  * `CHECKOUT_CREATED`, `PAYMENT_PENDING` 임시 가주문서는 조회 대상에서 제외 (404 반환).
+  * `CHECKOUT_CREATED`, `PENDING_PAYMENT` 임시 가주문서는 조회 대상에서 제외 (404 반환).
   * `orderStatus == PAID`이고 물류 상태(`fulfillmentStatus`)가 출고 지시(`RELEASE_INSTRUCTED`) 이전 단계일 때만 `selfCancelable: true` 응답.
   * 주문 당시 저장된 수령인 및 배송 요청사항 불변 스냅샷 데이터 유지 반환.
 
@@ -1215,7 +1215,7 @@
   "orderId": 501,
   "userId": 1001,
   "amount": 32000,
-  "status": "PAYMENT_PENDING",
+  "status": "PENDING_PAYMENT",
   "reservationToken": "rsv_xxx"
 }
 ```

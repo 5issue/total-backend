@@ -3,6 +3,11 @@ spring:
     name: order-service
   profiles:
     default: local
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          jwk-set-uri: ${AUTH_JWKS_URI:http://localhost:8080/.well-known/jwks.json}
 
 management:
   endpoints:

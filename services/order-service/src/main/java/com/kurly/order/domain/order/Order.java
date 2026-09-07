@@ -57,6 +57,8 @@ public class Order extends BaseEntity {
 
     private LocalDateTime expectedDeliveryAt;
 
+    private LocalDateTime deliveredAt;
+
     @Column(length = 64)
     private String inventoryReservationToken;
 
@@ -130,7 +132,17 @@ public class Order extends BaseEntity {
     }
 
     public void markExpired() {
-        this.status = OrderStatus.CANCELLED_EXPIRED;
+        this.status = OrderStatus.EXPIRED;
+    }
+
+    public void requestCancel() {
+        Assert.isTrue(this.status == OrderStatus.PAID, "PAID 상태에서만 취소할 수 있습니다.");
+        this.status = OrderStatus.CANCEL_PROCESSING;
+    }
+
+    public void requestReturn() {
+        Assert.isTrue(this.deliveryStatus == DeliveryStatus.DELIVERED, "배송 완료 주문만 반품할 수 있습니다.");
+        this.status = OrderStatus.RETURN_REQUESTED;
     }
 
     public List<OrderItem> getItems() {
