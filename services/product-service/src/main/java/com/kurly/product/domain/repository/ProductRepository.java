@@ -15,5 +15,6 @@ public interface ProductRepository {
     List<Product> findTopDiscountedProducts(int limit);
     List<Product> findTopRepurchaseProducts(int limit);
     List<Product> findProductsByCategoryId(Long categoryId);
+    List<Product> findProductsByKeyword(String keyword);
     Slice<Product> searchProducts(ProductSearchCondition condition, Pageable pageable);
 }

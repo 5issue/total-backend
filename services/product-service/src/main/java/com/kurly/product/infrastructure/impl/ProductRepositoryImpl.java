@@ -56,14 +56,31 @@ public class ProductRepositoryImpl implements ProductRepository {
     }
 
     @Override
+    public List<Product> findProductsByKeyword(String keyword) {
+        return productJpaRepository.findByKeyword(ProductType.GROUP, ProductStatus.SALE, keyword);
+    }
+
+    @Override
     public Slice<Product> searchProducts(ProductSearchCondition condition, Pageable pageable) {
-        List<Long> categoryIds = categoryJpaRepository.findAllSubCategoryIds(condition.categoryId());
-        if (categoryIds.isEmpty()) {
-            return new SliceImpl<>(Collections.emptyList(), pageable, false);
+        if (condition.categoryId() != null) {
+            List<Long> categoryIds = categoryJpaRepository.findAllSubCategoryIds(condition.categoryId());
+            if (categoryIds.isEmpty()) {
+                return new SliceImpl<>(Collections.emptyList(), pageable, false);
+            }
+            return productJpaRepository.searchInCategories(
+                    categoryIds,
+                    ProductType.GROUP,
+                    ProductStatus.SALE,
+                    condition.brand(),
+                    condition.minPrice(),
+                    condition.maxPrice(),
+                    condition.storageType(),
+                    condition.normalizedKeyword(),
+                    pageable
+            );
         }
 
         return productJpaRepository.search(
-                categoryIds,
                 ProductType.GROUP,
                 ProductStatus.SALE,
                 condition.brand(),

@@ -46,18 +46,15 @@ public interface ProductJpaRepository extends JpaRepository<Product, Long> {
     );
 
     /**
-     * 상품 목록 조회.
+     * 카테고리(하위 포함) 내 상품 목록 조회.
      * <p>
-     * 모든 필터 파라미터는 nullable 이며, null 이면 해당 조건을 건너뛴다.
+     * 카테고리 필터가 필요하므로 product_category 를 조인하고(상품이 여러 카테고리에
+     * 매핑될 수 있어 {@code distinct}), 나머지 필터 파라미터는 nullable 이다.
      * 가격은 {@code minPrice <= salePrice < maxPrice} 반개구간으로 비교한다
      * ({@link com.kurly.product.domain.enums.PriceBand} 의 경계 규칙과 동일).
      * product_spec 은 UNIT 상품에만 매핑되므로, storageType 필터는 GROUP 상품(p)의
      * 자식 UNIT 중 해당 보관타입 spec 을 가진 것이 하나라도 있는지를 EXISTS 로 본다.
-     * 정렬은 {@link Pageable} 의 {@code Sort} 로 전달한다.
-     * <p>
-     * 앱 목록(무한 스크롤)용이라 {@link Slice} 로 반환한다. 페이지마다 count 쿼리를
-     * 실행하지 않고 {@code size + 1} 건을 조회해 다음 페이지 존재 여부만 판단한다.
-     * 전체 개수가 필요하면 {@code getFilters} 응답의 totalCount 를 사용한다.
+     * 정렬은 {@link Pageable} 의 {@code Sort} 로, 결과는 무한 스크롤용 {@link Slice} 로 반환한다.
      */
     @Query("""
             select distinct p from Product p
@@ -75,25 +72,55 @@ public interface ProductJpaRepository extends JpaRepository<Product, Long> {
               ))
               and (:keyword is null or lower(p.name) like lower(concat('%', cast(:keyword as string), '%')))
             """)
-    Slice<Product> search(@Param("categoryIds") List<Long> categoryIds,
-                         @Param("type") ProductType type,
-                         @Param("status") ProductStatus status,
-                         @Param("brand") String brand,
-                         @Param("minPrice") Long minPrice,
-                         @Param("maxPrice") Long maxPrice,
-                         @Param("storageType") StorageType storageType,
-                         @Param("keyword") String keyword,
-                         Pageable pageable);
+    Slice<Product> searchInCategories(@Param("categoryIds") List<Long> categoryIds,
+                                      @Param("type") ProductType type,
+                                      @Param("status") ProductStatus status,
+                                      @Param("brand") String brand,
+                                      @Param("minPrice") Long minPrice,
+                                      @Param("maxPrice") Long maxPrice,
+                                      @Param("storageType") StorageType storageType,
+                                      @Param("keyword") String keyword,
+                                      Pageable pageable);
 
-    @Query("select distinct p.brand from Product p where p.brand is not null order by p.brand")
-    List<String> findDistinctBrands();
+    /**
+     * 카테고리 제한 없는(홈 검색용) 상품 목록 조회.
+     * product_category 조인이 없어 {@code distinct} 도 불필요하다. 그 외 조건은
+     * {@link #searchInCategories} 와 동일.
+     */
+    @Query("""
+            select p from Product p
+            where p.type = :type
+              and p.status = :status
+              and (:brand is null or p.brand = :brand)
+              and (:minPrice is null or p.salePrice >= :minPrice)
+              and (:maxPrice is null or p.salePrice < :maxPrice)
+              and (:storageType is null or exists (
+                    select 1 from ProductSpec ps
+                    where ps.product.parentId = p.id
+                      and ps.storageType = :storageType
+              ))
+              and (:keyword is null or lower(p.name) like lower(concat('%', cast(:keyword as string), '%')))
+            """)
+    Slice<Product> search(@Param("type") ProductType type,
+                          @Param("status") ProductStatus status,
+                          @Param("brand") String brand,
+                          @Param("minPrice") Long minPrice,
+                          @Param("maxPrice") Long maxPrice,
+                          @Param("storageType") StorageType storageType,
+                          @Param("keyword") String keyword,
+                          Pageable pageable);
 
-    @Query("select min(p.salePrice) as minPrice, max(p.salePrice) as maxPrice from Product p")
-    PriceRangeView findPriceRange();
+    /**
+     * 키워드로 매칭되는 판매중 GROUP 상품 전체(페이징 없음). 필터 옵션 집계용.
+     */
+    @Query("""
+            select p from Product p
+            where p.type = :type
+              and p.status = :status
+              and lower(p.name) like lower(concat('%', cast(:keyword as string), '%'))
+            """)
+    List<Product> findByKeyword(@Param("type") ProductType type,
+                                @Param("status") ProductStatus status,
+                                @Param("keyword") String keyword);
 
-    interface PriceRangeView {
-        Long getMinPrice();
-
-        Long getMaxPrice();
-    }
 }

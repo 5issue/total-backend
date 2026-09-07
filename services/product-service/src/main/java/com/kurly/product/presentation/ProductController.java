@@ -32,9 +32,9 @@ public class ProductController {
         return ApiResponse.success(productQueryService.getHomeRecommendations());
     }
 
-    @GetMapping //가격, 브렌드, 포장 타입
+    @GetMapping
     public ApiResponse<Slice<ProductSummaryResponse>> getProducts(
-            @RequestParam Long categoryId,
+            @RequestParam(required = false) Long categoryId,
             @RequestParam(required = false) String keyword,
             @RequestParam(defaultValue = "RECOMMENDED") ProductSortType sort,
             @RequestParam(required = false) String brand,
@@ -46,9 +46,11 @@ public class ProductController {
         return ApiResponse.success(productQueryService.getProducts(condition, sort, page, size));
     }
 
-    @GetMapping("/filters/{categoryId}")
-    public ApiResponse<ProductFilterResponse> getFilters(@PathVariable Long categoryId) {
-        return ApiResponse.success(productQueryService.getFilters(categoryId));
+    @GetMapping("/filters")
+    public ApiResponse<ProductFilterResponse> getFilters(
+            @RequestParam(required = false) Long categoryId,
+            @RequestParam(required = false) String keyword) {
+        return ApiResponse.success(productQueryService.getFilters(categoryId, keyword));
     }
 
     @GetMapping("/{productId}")
