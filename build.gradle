@@ -16,6 +16,9 @@ allprojects {
 subprojects {
     apply plugin: 'java'
     apply plugin: 'io.spring.dependency-management'
+    // 커버리지 리포트 생성. 임계값 검증은 각 서비스에서 개별 적용한다
+    // (테스트가 아직 없는 서비스의 빌드를 깨뜨리지 않기 위함).
+    apply plugin: 'jacoco'
 
     java {
         toolchain {
@@ -39,5 +42,14 @@ subprojects {
 
     tasks.named('test') {
         useJUnitPlatform()
+        finalizedBy tasks.named('jacocoTestReport')
+    }
+
+    tasks.named('jacocoTestReport') {
+        dependsOn tasks.named('test')
+        reports {
+            xml.required = true
+            html.required = true
+        }
     }
 }
