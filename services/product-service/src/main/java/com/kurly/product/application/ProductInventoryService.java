@@ -48,13 +48,15 @@ public class ProductInventoryService {
 
     @Transactional
     public void confirm(Long orderId, List<ReserveItem> items) {
-//        ProductInventory inventory = productInventoryRepository.findByProductId(orderId)
-//                .orElseThrow(() -> new EntityNotFoundException("상품 재고를 찾을 수 없습니다. productId=" + orderId));
-//
-//        if (inventory.getAvailableQuantity() < quantity) {
-//            throw new BusinessException(GlobalErrorCode.CONFLICT, "재고가 부족합니다.");
-//        }
-//        inventory.hold(quantity);
+        for (ReserveItem item : items) {
+            ProductInventory inventory = productInventoryRepository.findByProductId(item.productId()
+            ).orElseThrow(() -> new EntityNotFoundException("상품 재고를 찾을 수 없습니다. productId=" + item.productId()));
+
+            if (inventory.getAvailableQuantity() < item.quantity()) {
+                throw new BusinessException(GlobalErrorCode.CONFLICT, "재고가 부족합니다.");
+            }
+            inventory.hold(item.quantity());
+        }
     }
 
 
