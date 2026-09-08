@@ -8,5 +8,11 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-web'
     implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
 
+    // 스키마 형상 관리. ddl-auto:update는 CHECK 제약 등을 갱신하지 않아 운영에 쓸 수 없다.
+    // Spring Boot 4에서 Flyway 자동설정이 spring-boot-autoconfigure에서 분리되어
+    // spring-boot-flyway 모듈을 별도로 의존해야 한다.
+    implementation 'org.springframework.boot:spring-boot-flyway'
+    runtimeOnly 'org.flywaydb:flyway-mysql'
+
     runtimeOnly 'com.mysql:mysql-connector-j'
 }
