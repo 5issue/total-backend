@@ -35,6 +35,11 @@ public class ProductRepositoryImpl implements ProductRepository {
     }
 
     @Override
+    public List<Product> findAllById(List<Long> productIds) {
+        return productJpaRepository.findAllById(productIds);
+    }
+
+    @Override
     public List<Product> findTopLikedProducts(int limit) {
         return productJpaRepository.findByStatusAndTypeOrderByLikeCountDesc(ProductStatus.SALE, ProductType.GROUP, PageRequest.of(0, limit));
     }

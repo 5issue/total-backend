@@ -11,6 +11,8 @@ public interface ProductRepository {
     Optional<Product> findById(Long productId);
     Optional<Product> findByParentId(Long parentId);
 
+    List<Product> findAllById(List<Long> productIds);
+
     List<Product> findTopLikedProducts(int limit);
     List<Product> findTopDiscountedProducts(int limit);
     List<Product> findTopRepurchaseProducts(int limit);
