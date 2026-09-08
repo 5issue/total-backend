@@ -1,0 +1,59 @@
+# 로컬 개발 프로파일. 비밀값은 담지 않는다 — 실제 시크릿은 application-secret.yml(커밋 제외)에 둔다.
+spring:
+  # 커밋되지 않는 로컬 시크릿. 없어도 기동된다.
+  config:
+    import: optional:classpath:application-secret.yml
+  jpa:
+    hibernate:
+      # 스키마는 Flyway가 만든다. 엔티티와 어긋나면 기동 시점에 잡아내도록 validate만 수행한다.
+      # 로컬에서 스키마를 새로 만들 때만 create로 덮어쓴다.
+      ddl-auto: ${JPA_DDL_AUTO:validate}
+  flyway:
+    enabled: ${FLYWAY_ENABLED:true}
+  datasource:
+    url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3307}/${DB_NAME:auth_db}?serverTimezone=UTC&characterEncoding=UTF-8
+    username: ${DB_USERNAME:kurly}
+    password: ${DB_PASSWORD:kurly}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME:guest}
+    password: ${RABBITMQ_PASSWORD:guest}
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+
+jwt:
+  issuer: ${JWT_ISSUER:https://auth.kurly.local}
+  audience: ${JWT_AUDIENCE:kurly-api}
+  # 비우면 기동 시 임시 키를 생성한다. 로컬에서만 허용되는 동작이다.
+  private-jwk: ${JWT_PRIVATE_JWK:}
+
+auth:
+  refresh-cookie:
+    # 로컬은 http로 테스트하므로 Secure를 내린다. 운영은 항상 true.
+    secure: ${AUTH_REFRESH_COOKIE_SECURE:false}
+
+kurly:
+  security:
+    issuer: ${JWT_ISSUER:https://auth.kurly.local}
+    audience: ${JWT_AUDIENCE:kurly-api}
+
+user-service:
+  base-url: ${USER_SERVICE_BASE_URL:http://localhost:8088}
+
+oauth:
+  # 인가 코드 가로채기를 막기 위한 화이트리스트(BE-16). 콘솔 등록값과 정확히 일치해야 한다.
+  allowed-redirect-uris:
+    - ${OAUTH_REDIRECT_URI_KAKAO:http://localhost:8081/api/v1/auth/oauth/kakao/callback}
+    - ${OAUTH_REDIRECT_URI_NAVER:http://localhost:8081/api/v1/auth/oauth/naver/callback}
+  providers:
+    kakao:
+      client-id: ${KAKAO_CLIENT_ID:}
+      client-secret: ${KAKAO_CLIENT_SECRET:}
+    naver:
+      client-id: ${NAVER_CLIENT_ID:}
+      client-secret: ${NAVER_CLIENT_SECRET:}
