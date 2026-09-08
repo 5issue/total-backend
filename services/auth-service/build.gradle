@@ -18,4 +18,8 @@ dependencies {
     runtimeOnly 'org.flywaydb:flyway-mysql'
 
     runtimeOnly 'com.mysql:mysql-connector-j'
+
+    // Spring Boot 4에서 MockMvc 자동설정(@AutoConfigureMockMvc)이 별도 모듈로 분리되어
+    // spring-boot-starter-test에 포함되지 않는다.
+    testImplementation 'org.springframework.boot:spring-boot-starter-webmvc-test'
 }
