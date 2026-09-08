@@ -11,6 +11,10 @@ dependencies {
     // Spring Boot BOM이 관리하지 않는 의존성이라 버전을 직접 지정한다.
     implementation 'com.nimbusds:nimbus-jose-jwt:10.9.1'
 
+    // 관리자 비밀번호 해시(BCrypt)만 사용한다. starter-security를 넣으면 기본 필터체인이
+    // 모든 요청을 차단해 별도 설정이 필요하므로 crypto 모듈만 의존한다.
+    implementation 'org.springframework.security:spring-security-crypto'
+
     // 스키마 형상 관리. ddl-auto:update는 CHECK 제약 등을 갱신하지 않아 운영에 쓸 수 없다.
     // Spring Boot 4에서 Flyway 자동설정이 spring-boot-autoconfigure에서 분리되어
     // spring-boot-flyway 모듈을 별도로 의존해야 한다.

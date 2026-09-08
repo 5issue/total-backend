@@ -1,0 +1,8 @@
+spring:
+  main:
+    # 계정 생성만 수행하고 종료한다. 웹 서버를 띄우지 않아 포트 충돌 없이 운영 환경에서 실행할 수 있다.
+    web-application-type: none
+  jpa:
+    hibernate:
+      # 운영 DB를 대상으로 실행되므로 스키마를 건드리지 않는다.
+      ddl-auto: none
