@@ -15,7 +15,7 @@ public record CartResponseDto(Address selectedAddress, List<Group> groups, Amoun
             Product product = products.get(cartItem.getProductId());
             if (product == null) return;
             GroupKey key = new GroupKey(product.deliveryType(), product.storageType(), product.sellerId(),
-                    product.sellerName(), product.deliveryFee());
+                    product.sellerName(), product.deliveryFee() == null ? 0L : product.deliveryFee());
             grouped.computeIfAbsent(key, ignored -> new ArrayList<>()).add(new Item(cartItem.getId(), product.productId(),
                     product.skuId(), product.title(), product.thumbnailUrl(), product.unitPrice(), cartItem.getQuantity(),
                     product.maxQuantity(), product.available()));
