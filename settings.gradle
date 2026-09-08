@@ -9,7 +9,8 @@ def serviceModules = [
     'payment-service',
     'wms-service',
     'oms-service',
-    'scm-service'
+    'scm-service',
+    'user-service'
 ]
 
 serviceModules.each { name ->
