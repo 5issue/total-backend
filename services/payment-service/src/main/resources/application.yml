@@ -1,6 +1,15 @@
 spring:
   application:
     name: payment-service
+  datasource:
+    url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3309}/${DB_NAME:payment_db}?serverTimezone=UTC&characterEncoding=UTF-8
+    username: ${DB_USERNAME:kurly}
+    password: ${DB_PASSWORD:kurly}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  jpa:
+    hibernate:
+      ddl-auto: ${JPA_DDL_AUTO:update}
+    open-in-view: false
   rabbitmq:
     host: ${RABBITMQ_HOST:localhost}
     port: ${RABBITMQ_PORT:5672}
@@ -13,4 +22,4 @@ spring:
       password: ${REDIS_PASSWORD:}
 
 server:
-  port: 8084
+  port: 8083

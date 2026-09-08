@@ -36,8 +36,96 @@ services:
       start_period: 10s
     restart: unless-stopped
 
+  # 서비스별 DB
+  auth-mysql:
+    image: mysql:8.4
+    container_name: kurly-auth-mysql
+    ports:
+      - "3307:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
+      MYSQL_DATABASE: auth_db
+      MYSQL_USER: ${DB_USERNAME:-kurly}
+      MYSQL_PASSWORD: ${DB_PASSWORD:-kurly}
+    volumes:
+      - auth_mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+  payment-mysql:
+    image: mysql:8.4
+    container_name: kurly-payment-mysql
+    ports:
+      - "3309:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
+      MYSQL_DATABASE: payment_db
+      MYSQL_USER: ${DB_USERNAME:-kurly}
+      MYSQL_PASSWORD: ${DB_PASSWORD:-kurly}
+    volumes:
+      - payment_mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+  user-mysql:
+    image: mysql:8.4
+    container_name: kurly-user-mysql
+    ports:
+      - "3314:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
+      MYSQL_DATABASE: user_db
+      MYSQL_USER: ${DB_USERNAME:-kurly}
+      MYSQL_PASSWORD: ${DB_PASSWORD:-kurly}
+    volumes:
+      - user_mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+  scm-postgres:
+    image: postgres:16-alpine
+    container_name: kurly-scm-postgres
+    ports:
+      - "5439:5432"
+    environment:
+      POSTGRES_DB: scm_db
+      POSTGRES_USER: ${DB_USERNAME:-kurly}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-kurly}
+    volumes:
+      - scm_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME:-kurly} -d scm_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    restart: unless-stopped
+
 volumes:
   rabbitmq_data:
     name: kurly-rabbitmq-data
   redis_data:
     name: kurly-redis-data
+  auth_mysql_data:
+    name: kurly-auth-mysql-data
+  payment_mysql_data:
+    name: kurly-payment-mysql-data
+  user_mysql_data:
+    name: kurly-user-mysql-data
+  scm_postgres_data:
+    name: kurly-scm-postgres-data
