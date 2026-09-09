@@ -19,3 +19,5 @@ services:
   http:
     connect-timeout: ${SERVICE_CONNECT_TIMEOUT:2s}
     read-timeout: ${SERVICE_READ_TIMEOUT:5s}
+  storage:
+    refund-attachment-bucket: ${REFUND_ATTACHMENT_BUCKET:refund-attachments}

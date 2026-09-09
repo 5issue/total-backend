@@ -343,13 +343,12 @@
 | 400 | DELIVERY_ADDRESS_NOT_SET | "배송지를 먼저 설정해 주세요." | 장바구니에 선택/기본 배송지가 설정되지 않은 상태로 진입 |
 | 401 | UNAUTHORIZED | "로그인이 필요합니다." | 인증 토큰 누락 또는 유효하지 않은 토큰 |
 | 409 | STOCK_EXHAUSTED | "선택한 상품의 재고가 부족합니다." | 상품 서비스 15분 논리 재고 선점 실패 (잔여 재고 부족) |
-| 409 | DUPLICATE_CHECKOUT_REQUEST | "이미 처리 중이거나 완료된 주문 요청입니다." | 사용자별 장바구니 행 잠금 및 활성 주문 상태로 중복 처리된 요청 |
 | 502 | PRODUCT_SERVICE_UNAVAILABLE | "재고 확인 서비스와의 통신에 실패했습니다." | 상품 서비스(재고 선점 API) 연동 실패 |
 | 500 | INTERNAL_SERVER_ERROR | "서버 오류가 발생했습니다." | 서버 내부 오류 |
 
 ### Integration & Business Policies
 
-* **관련 테이블:** `orders`, `order_items`, `order_delivery_info`, `idempotency_keys`
+* **관련 테이블:** `orders`, `order_items`, `order_delivery_info`
 * **동기 연동:**
   * `POST /internal/v1/oms/delivery-promises`
   * `POST /internal/v1/products/inventory/hold`
@@ -530,7 +529,7 @@
 | 409 | INVALID_ORDER_STATUS_FOR_CANCEL | "결제가 완료된 주문만 취소를 신청할 수 있습니다." | PAID 상태가 아닌 주문에 취소 요청 |
 | 409 | CANCEL_RESTRICTED | "이미 출고 처리가 시작되어 취소할 수 없습니다. 배송 완료 후 반품을 신청해 주세요." | OMS 출고 지시(RELEASE_INSTRUCTED) 완료 또는 배송 진행 중 |
 | 409 | ALREADY_CANCELLED | "이미 취소 접수되었거나 처리가 완료된 주문입니다." | 이미 취소 접수(REQUESTED), 처리 중 또는 완료된 주문 |
-| 409 | DUPLICATE_CANCEL_REQUEST | "이미 처리 중인 취소 요청입니다." | 주문 상태 또는 기존 클레임으로 중복 처리된 요청 |
+| 409 | ORD_CONFLICT_ALREADY_CLAIMED | "이미 접수된 취소 또는 반품 신청이 있습니다." | 해당 주문에 기존 클레임이 존재함 |
 | 502 | OMS_SERVICE_UNAVAILABLE | "출고 상태를 확인하는 중 오류가 발생했습니다." | OMS 동기 호출 실패 |
 | 500 | INTERNAL_SERVER_ERROR | "서버 오류가 발생했습니다." | 서버 내부 오류 |
 
@@ -539,8 +538,10 @@
 * **관련 테이블:** `orders`, `order_claims`, `order_outbox`
 * **동기 연동:** `GET /internal/v1/oms/orders/{orderId}/cancel-eligibility` (OMS 출고 지시 여부 동기 검증)
 * **비동기 연동 (RabbitMQ):**
-  * Publish: `order.cancel.requested` (취소 접수 후 OMS 재고 해제 및 취소 처리 위임)
+  * 커밋 후 처리: 결제 서비스 취소 성공 후 `order.canceled.inventory-restore` 발행
   * Subscribe: `payment.order.refunded` (결제 환불 완료 수신 시 주문 상태 REFUNDED 갱신)
+  * 전달 보장: `event_publication` 기반 at-least-once. 재시도 시 최초 생성한 `eventId`를 유지한다.
+  * 소비자 계약: 결제 취소는 `paymentId`, 재고 복구는 `eventId`를 기준으로 중복 반영을 차단한다.
 * **도메인 규칙:**
   * 전체 취소만 지원 (부분 취소 불가).
   * 결제 완료(`PAID`) 상태 및 OMS 출고 지시(`RELEASE_INSTRUCTED`) 이전 상태만 접수 가능.
@@ -582,8 +583,16 @@
 
 ```json
 {
-  "reasonCode": "RTN01",
-  "reasonDetail": "수령 시 상품이 파손되어 있었습니다."
+  "reasonCode": "RTN03",
+  "reasonDetail": "수령 시 상품이 파손되어 있었습니다.",
+  "attachments": [
+    {
+      "objectKey": "returns/101/550e8400-e29b-41d4-a716-446655440000.webp",
+      "originalFileName": "damaged-product.webp",
+      "contentType": "image/webp",
+      "fileSize": 245120
+    }
+  ]
 }
 ```
 
@@ -591,6 +600,11 @@
 | --- | --- | --- | --- |
 | reasonCode | String | Y | 반품 사유 코드 (RTN01~RTN08) |
 | reasonDetail | String | N | 상세 사유 (최대 500자) |
+| attachments | Array | 조건부 필수 | 업로드 완료된 사진 정보, 최대 5개. attachmentRequired 사유는 1개 이상 필수 |
+| attachments[].objectKey | String | Y | 업로드 API가 발급한 `returns/{memberId}/` 경로의 객체 키 |
+| attachments[].originalFileName | String | N | 원본 파일명 (최대 255자) |
+| attachments[].contentType | String | Y | `image/jpeg`, `image/png`, `image/webp` 중 하나 |
+| attachments[].fileSize | Integer | Y | 업로드된 파일 크기(byte), 양수 |
 
 *반품 사유 코드 정책:*
 
@@ -630,11 +644,13 @@
 | --- | --- | --- | --- |
 | 400 | INVALID_RETURN_REASON_CODE | "올바르지 않은 반품 사유 코드입니다." | 정의되지 않은 반품 사유 코드 전달 |
 | 400 | RETURN_REASON_DETAIL_TOO_LONG | "상세 사유는 최대 500자까지 입력 가능합니다." | reasonDetail이 500자를 초과한 경우 |
+| 400 | ORD_MISSING_RETURN_EVIDENCE | "사진 증빙이 필요한 반품 사유입니다." | 증빙 필수 사유에 attachments가 없음 |
+| 400 | ORD_INVALID_RETURN_EVIDENCE | "유효하지 않은 반품 사진입니다." | 사용자 반품 경로가 아닌 objectKey 전달 |
 | 401 | UNAUTHORIZED | "로그인이 필요합니다." | 인증 토큰 누락 또는 유효하지 않은 토큰 |
 | 403 | ORDER_ACCESS_DENIED | "해당 주문에 대한 반품 권한이 없습니다." | 요청 사용자와 주문 소유자(member_id) 불일치 |
 | 404 | ORDER_NOT_FOUND | "주문 정보를 찾을 수 없습니다." | 대상 orderId가 DB에 존재하지 않음 |
 | 409 | RETURN_ALREADY_REQUESTED | "이미 접수되었거나 처리 중인 반품 신청이 있습니다." | 이미 반품 접수(REQUESTED) 또는 처리 중인 주문 |
-| 409 | DUPLICATE_RETURN_REQUEST | "이미 처리 중인 반품 요청입니다." | 주문 상태 또는 기존 클레임으로 중복 처리된 요청 |
+| 409 | ORD_CONFLICT_ALREADY_CLAIMED | "이미 접수된 취소 또는 반품 신청이 있습니다." | 해당 주문에 기존 클레임이 존재함 |
 | 422 | INVALID_ORDER_STATUS_FOR_RETURN | "배송이 완료된 주문만 반품을 신청할 수 있습니다." | DELIVERED 상태가 아닌 주문 |
 | 422 | RETURN_PERIOD_EXPIRED | "반품 신청 가능 기간이 지났습니다." | 배송 완료 후 7일 초과 |
 | 422 | FRESH_FOOD_RETURN_RESTRICTED | "신선식품(냉장/냉동)은 단순 변심으로 인한 반품이 불가능합니다." | 냉장/냉동 상품 포함 주문에 단순 변심(RTN01) 신청 |
@@ -642,7 +658,7 @@
 
 ### Integration & Business Policies
 
-* **관련 테이블:** `orders`, `order_items`, `order_claims`, `order_outbox`
+* **관련 테이블:** `orders`, `order_items`, `order_claims`, `refund_attachments`, `event_publication`
 * **동기 연동:** 없음
 * **비동기 연동 (RabbitMQ):**
   * Publish: `order.return.requested` (반품 접수 이벤트 발행)

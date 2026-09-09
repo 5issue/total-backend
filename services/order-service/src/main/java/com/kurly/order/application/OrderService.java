@@ -10,6 +10,7 @@ import com.kurly.order.domain.order.*;
 import com.kurly.order.presentation.dto.*;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
@@ -32,6 +33,9 @@ public class OrderService {
     private final OrderClaimRepository orderClaimRepository;
     private final ApplicationEventPublisher eventPublisher;
     private final OrderExternalService externalService;
+
+    @Value("${services.storage.refund-attachment-bucket:refund-attachments}")
+    private String refundAttachmentBucket;
 
     @Transactional
     public CheckoutResponseDto checkout(Long memberId, CheckoutRequestDto request) {
@@ -189,10 +193,19 @@ public class OrderService {
     }
 
     @Transactional
-    public OrderClaimResponseDto requestReturn(Long memberId, Long orderId, ClaimRequestDto request) {
+    public OrderClaimResponseDto requestReturn(Long memberId, Long orderId, ReturnRequestDto request) {
         ReturnReason reason = ReturnReason.find(request.reasonCode())
                 .orElseThrow(() -> new BusinessException(OrderErrorCode.ORD_INVALID_REASON_CODE));
-        validateReasonDetail(request, false);
+        validateReasonDetail(request.reasonDetail(), false);
+        var attachments = request.attachmentsOrEmpty();
+        if (reason.evidenceRequired() && attachments.isEmpty()) {
+            throw new BusinessException(OrderErrorCode.ORD_MISSING_RETURN_EVIDENCE);
+        }
+        String objectKeyPrefix = "returns/%d/".formatted(memberId);
+        if (attachments.stream().anyMatch(attachment -> !attachment.objectKey().startsWith(objectKeyPrefix)
+                || attachment.objectKey().contains(".."))) {
+            throw new BusinessException(OrderErrorCode.ORD_INVALID_RETURN_EVIDENCE);
+        }
         Order order = getOwnedOrderForUpdate(memberId, orderId);
         ensureNoClaim(orderId);
         if (order.getDeliveryStatus() != DeliveryStatus.DELIVERED) {
@@ -212,8 +225,12 @@ public class OrderService {
             throw new BusinessException(OrderErrorCode.ORD_EXPIRED_RETURN_PERIOD);
         }
         order.requestReturn();
-        OrderClaim claim = orderClaimRepository.save(OrderClaim.create(order, ClaimType.RETURN,
-                RequesterType.USER, request.reasonCode(), request.reasonDetail(), order.getPaymentAmount()));
+        OrderClaim claim = OrderClaim.create(order, ClaimType.RETURN,
+                RequesterType.USER, request.reasonCode(), request.reasonDetail(), order.getPaymentAmount());
+        attachments.forEach(attachment -> claim.addAttachment(RefundAttachment.create(
+                refundAttachmentBucket, attachment.objectKey(), attachment.originalFileName(),
+                attachment.contentType(), attachment.fileSize())));
+        orderClaimRepository.save(claim);
         eventPublisher.publishEvent(OrderEvent.of("order.return-requested", order));
         return OrderClaimResponseDto.from(claim);
     }
@@ -256,10 +273,14 @@ public class OrderService {
     }
 
     private void validateReasonDetail(ClaimRequestDto request, boolean detailRequired) {
-        if (request.reasonDetail() != null && request.reasonDetail().length() > 500) {
+        validateReasonDetail(request.reasonDetail(), detailRequired);
+    }
+
+    private void validateReasonDetail(String reasonDetail, boolean detailRequired) {
+        if (reasonDetail != null && reasonDetail.length() > 500) {
             throw new BusinessException(OrderErrorCode.ORD_INVALID_REASON_DETAIL);
         }
-        if (detailRequired && (request.reasonDetail() == null || request.reasonDetail().isBlank())) {
+        if (detailRequired && (reasonDetail == null || reasonDetail.isBlank())) {
             throw new BusinessException(OrderErrorCode.ORD_INVALID_REASON_DETAIL);
         }
     }

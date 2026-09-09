@@ -93,7 +93,7 @@ public class OrderController {
     public ApiResponse<OrderClaimResponseDto> createReturn(
             @AuthenticationPrincipal Jwt jwt,
             @PathVariable @Positive Long orderId,
-            @Valid @RequestBody ClaimRequestDto request
+            @Valid @RequestBody ReturnRequestDto request
     ) {
         return ApiResponse.success("전체 주문 반품이 접수되었습니다.",
                 orderService.requestReturn(memberId(jwt), orderId, request));
