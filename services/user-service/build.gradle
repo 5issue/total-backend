@@ -8,5 +8,46 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-web'
     implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
 
+    // 스키마 형상 관리. ddl-auto:update는 CHECK 제약 등을 갱신하지 않아 운영에 쓸 수 없다.
+    // Spring Boot 4에서 Flyway 자동설정이 spring-boot-autoconfigure에서 분리되어
+    // spring-boot-flyway 모듈을 별도로 의존해야 한다.
+    implementation 'org.springframework.boot:spring-boot-flyway'
+    runtimeOnly 'org.flywaydb:flyway-mysql'
+
     runtimeOnly 'com.mysql:mysql-connector-j'
+
+    // Spring Boot 4에서 MockMvc 자동설정(@AutoConfigureMockMvc)이 별도 모듈로 분리되어
+    // spring-boot-starter-test에 포함되지 않는다.
+    testImplementation 'org.springframework.boot:spring-boot-starter-webmvc-test'
 }
+
+// 팀 컨벤션: Jacoco 라인 80% / 브랜치 80% 이상
+jacocoTestCoverageVerification {
+    violationRules {
+        rule {
+            limit {
+                counter = 'LINE'
+                value = 'COVEREDRATIO'
+                minimum = 0.80
+            }
+            limit {
+                counter = 'BRANCH'
+                value = 'COVEREDRATIO'
+                minimum = 0.80
+            }
+        }
+    }
+    // 측정 대상에서 제외: 값 객체(record)·설정·상수처럼 로직이 없는 것과 실행 진입점.
+    afterEvaluate {
+        classDirectories.setFrom(files(classDirectories.files.collect {
+            fileTree(dir: it, exclude: [
+                    '**/UserServiceApplication.class',
+                    '**/infrastructure/config/**',
+                    '**/presentation/dto/**',
+                    '**/domain/enums/**',
+                    '**/exception/UserErrorCode.class',
+            ])
+        }))
+    }
+}
+check.dependsOn jacocoTestCoverageVerification
