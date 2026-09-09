@@ -28,18 +28,19 @@ public class FallbackJwkSource implements JWKSource<SecurityContext> {
         this.fallback = new JWKSet(fallbackKey.toPublicJWK());
     }
 
+    /**
+     * <b>폴백은 조회 자체가 실패했을 때만 쓴다.</b> 원격이 정상 응답했는데 해당 {@code kid}가 없다는
+     * 것은 그 키가 폐기됐다는 뜻이므로, 이때 폴백하면 유출된 개인키로 서명한 토큰이 계속 통과한다.
+     * 빈 결과는 빈 결과 그대로 돌려준다.
+     */
     @Override
     public List<JWK> get(JWKSelector selector, SecurityContext context) {
         try {
-            List<JWK> matched = primary.get(selector, context);
-            if (!matched.isEmpty()) {
-                return matched;
-            }
-            log.debug("원격 JWKS에서 키를 찾지 못해 폴백 공개키를 사용한다.");
+            return primary.get(selector, context);
         } catch (Exception e) {
             log.warn("원격 JWKS 조회 실패. 폴백 공개키를 사용한다.", e);
+            JWKMatcher matcher = selector.getMatcher();
+            return fallback.getKeys().stream().filter(matcher::matches).toList();
         }
-        JWKMatcher matcher = selector.getMatcher();
-        return fallback.getKeys().stream().filter(matcher::matches).toList();
     }
 }
