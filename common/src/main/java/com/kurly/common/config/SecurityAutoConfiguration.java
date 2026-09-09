@@ -46,8 +46,20 @@ public class SecurityAutoConfiguration {
      * auth-service처럼 서명키를 직접 보유한 서비스는 자체 {@code JWKSource} 빈을 등록하면
      * 이 빈이 만들어지지 않는다.
      */
-    /** 평문 JWKS를 허용할 로컬 호스트. 이 외에는 https만 받는다. */
-    private static final List<String> PLAINTEXT_ALLOWED_HOSTS = List.of("localhost", "127.0.0.1", "[::1]");
+    /** 평문 JWKS를 허용할 로컬 호스트. */
+    private static final List<String> LOOPBACK_HOSTS = List.of("localhost", "127.0.0.1", "[::1]");
+
+    /**
+     * 쿠버네티스 클러스터 내부 DNS 접미사. 이 이름은 클러스터 밖에서 해석되지도 라우팅되지도 않는다.
+     *
+     * <p>운영은 ALB에서 TLS를 종료하고 내부 구간은 재암호화하지 않는 것이 확정 사항이므로
+     * (인증인가_설계서 0장·3.2), 서비스 간 JWKS 조회는 평문일 수밖에 없다. 여기서 https를
+     * 강제하면 전 서비스가 기동하지 못한다. 차단하려는 대상은 인터넷 구간의 평문 JWKS다.
+     *
+     * <p>네임스페이스는 여기서 가리지 않는다. common은 모든 서비스가 쓰는 모듈이라 특정
+     * 네임스페이스를 알아서는 안 되고, 실제 주소는 각 서비스의 {@code jwks-uri} 설정에 있다.
+     */
+    private static final String IN_CLUSTER_DNS_SUFFIX = ".svc.cluster.local";
 
     @Bean
     @ConditionalOnMissingBean(JWKSource.class)
@@ -80,11 +92,13 @@ public class SecurityAutoConfiguration {
         if ("https".equalsIgnoreCase(jwksUri.getScheme())) {
             return;
         }
-        if (PLAINTEXT_ALLOWED_HOSTS.contains(jwksUri.getHost())) {
+        String host = jwksUri.getHost();
+        if (host != null && (LOOPBACK_HOSTS.contains(host) || host.endsWith(IN_CLUSTER_DNS_SUFFIX))) {
             return;
         }
         throw new IllegalStateException(
-                "kurly.security.jwks-uri는 https여야 합니다(로컬 호스트 제외): " + jwksUri);
+                "kurly.security.jwks-uri는 https여야 합니다. 평문은 로컬 호스트와 클러스터 내부 주소(%s)만 허용합니다: %s"
+                        .formatted(IN_CLUSTER_DNS_SUFFIX, jwksUri));
     }
 
     private JWKSource<SecurityContext> applyFallback(JWKSource<SecurityContext> remote,

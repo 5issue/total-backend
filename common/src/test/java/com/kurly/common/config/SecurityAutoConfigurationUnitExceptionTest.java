@@ -46,6 +46,34 @@ class SecurityAutoConfigurationUnitExceptionTest {
         }
 
         @Test
+        void 클러스터_내부_주소는_평문을_허용한다() {
+            // 운영은 ALB에서 TLS를 종료하고 내부 구간은 재암호화하지 않는 것이 확정 사항이다.
+            // 여기서 https를 강제하면 전 서비스가 기동하지 못한다.
+            assertThatCode(() -> configuration.jwkSource(withJwksUri(
+                    "http://auth-service.kurly.svc.cluster.local/.well-known/jwks.json")))
+                    .doesNotThrowAnyException();
+        }
+
+        @Test
+        void 클러스터_내부처럼_보이는_외부_호스트는_거부한다() {
+            // svc.cluster.local을 도메인 일부로 흉내 낸 외부 주소는 접미사가 다르다.
+            assertThatThrownBy(() -> configuration.jwkSource(
+                    withJwksUri("http://svc.cluster.local.attacker.example/.well-known/jwks.json")))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("https여야 합니다");
+        }
+
+        @Test
+        void 짧은_클러스터_이름은_FQDN을_쓰도록_거부한다() {
+            // auth-service.kurly 형태도 클러스터 안에서는 해석되지만, 검색 도메인에 의존해
+            // 환경에 따라 다른 대상을 가리킬 수 있다. FQDN만 허용한다.
+            assertThatThrownBy(() -> configuration.jwkSource(
+                    withJwksUri("http://auth-service.kurly/.well-known/jwks.json")))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("클러스터 내부 주소");
+        }
+
+        @Test
         void jwks_uri가_비면_기동을_막는다() {
             assertThatThrownBy(() -> configuration.jwkSource(withJwksUri("  ")))
                     .isInstanceOf(IllegalStateException.class)
