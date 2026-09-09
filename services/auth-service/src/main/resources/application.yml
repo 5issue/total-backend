@@ -25,6 +25,10 @@ auth:
     # API 명세 기준. 재발급 엔드포인트에만 쿠키가 실린다.
     path: ${AUTH_REFRESH_COOKIE_PATH:/api/v1/auth/refresh}
     same-site: ${AUTH_REFRESH_COOKIE_SAME_SITE:Strict}
+    # 기본은 안전한 쪽이다. http로 테스트해야 하는 local에서만 내린다.
+    # 여기에 값이 없으면 boolean 기본값 false에 의존하게 되어, 새 프로파일에서
+    # secure를 잊었을 때 조용히 평문 전송이 허용된다.
+    secure: true
 
 kurly:
   security:

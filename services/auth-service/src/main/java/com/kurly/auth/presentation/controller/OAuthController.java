@@ -17,6 +17,7 @@ import com.kurly.common.security.PublicApi;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.CacheControl;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseCookie;
@@ -94,7 +95,9 @@ public class OAuthController {
                 result.tokens().accessToken().ttl().toSeconds(),
                 new SocialLoginResponse.UserSummary(result.userId()));
 
-        return builder.body(ApiResponse.success("소셜 로그인이 완료되었습니다.", body));
+        return builder
+                .cacheControl(CacheControl.noStore())
+                .body(ApiResponse.success("소셜 로그인이 완료되었습니다.", body));
     }
 
     private AuthProvider parseProvider(String provider) {
