@@ -1,5 +1,6 @@
 package com.kurly.auth.presentation.controller;
 
+import com.jayway.jsonpath.JsonPath;
 import com.kurly.auth.domain.entity.AuthUser;
 import com.kurly.auth.domain.entity.UserRefreshToken;
 import com.kurly.auth.domain.enums.AuthProvider;
@@ -97,6 +98,14 @@ class AuthControllerIntegrationTest {
                 .build());
     }
 
+    /**
+     * 응답 계약을 그대로 검증한다. 정규식으로 본문 전체에서 accessToken을 찾으면
+     * $.data 밖에 있는 값도 통과시켜, 계약이 깨져도 테스트가 초록으로 남는다.
+     */
+    private static String accessTokenOf(MvcResult result) throws Exception {
+        return JsonPath.read(result.getResponse().getContentAsString(), "$.data.accessToken");
+    }
+
     @Nested
     @DisplayName("관리자 로그인")
     class AdminLoginTest {
@@ -138,8 +147,7 @@ class AuthControllerIntegrationTest {
                     .andExpect(status().isOk())
                     .andReturn();
 
-            String body = result.getResponse().getContentAsString();
-            String accessToken = body.replaceAll(".*\"accessToken\"\\s*:\\s*\"([^\"]+)\".*", "$1");
+            String accessToken = accessTokenOf(result);
             assertThat(jwtTokenProvider.parse(accessToken, TokenType.ACCESS).role()).isEqualTo(Role.ADMIN);
         }
 
@@ -219,8 +227,7 @@ class AuthControllerIntegrationTest {
                                     {"loginId":"admin1","password":"Str0ng!Password"}"""))
                     .andExpect(status().isOk())
                     .andReturn();
-            String body = login.getResponse().getContentAsString();
-            return body.replaceAll(".*\"accessToken\"\\s*:\\s*\"([^\"]+)\".*", "$1");
+            return accessTokenOf(login);
         }
 
         @Test
@@ -251,8 +258,7 @@ class AuthControllerIntegrationTest {
                     .andExpect(status().isOk())
                     .andReturn();
             Cookie refreshCookie = login.getResponse().getCookie("refresh_token");
-            String accessToken = login.getResponse().getContentAsString()
-                    .replaceAll(".*\"accessToken\"\\s*:\\s*\"([^\"]+)\".*", "$1");
+            String accessToken = accessTokenOf(login);
 
             // 로그아웃 전에는 재발급이 된다는 것을 먼저 확인하지 않는다(회전되어 쿠키가 바뀌므로).
             mockMvc.perform(post(LOGOUT_PATH).header("Authorization", "Bearer " + accessToken))
@@ -289,8 +295,12 @@ class AuthControllerIntegrationTest {
                             .contentType(MediaType.APPLICATION_JSON)
                             .content("""
                                     {"loginId":"admin1","password":"Str0ng!Password"}"""))
+                    // 상태를 단정하지 않으면 로그인이 실패해도 쿠키만 있으면 뒤 검증이 통과한다.
+                    .andExpect(status().isOk())
                     .andReturn();
-            String refreshToken = login.getResponse().getCookie("refresh_token").getValue();
+            Cookie refreshCookie = login.getResponse().getCookie("refresh_token");
+            assertThat(refreshCookie).isNotNull();
+            String refreshToken = refreshCookie.getValue();
 
             mockMvc.perform(post(LOGOUT_PATH).header("Authorization", "Bearer " + refreshToken))
                     .andExpect(status().isUnauthorized());
