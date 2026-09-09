@@ -68,5 +68,21 @@ class JwtVerificationPropertiesUnitTest {
             assertThatCode(() -> of(true, "https://auth.kurly.local", "kurly-api"))
                     .doesNotThrowAnyException();
         }
+
+        @Test
+        void jwks_uri의_미주입도_원인을_그대로_알린다() {
+            // 검사하지 않으면 https 검사에 먼저 걸려 "http라서 거부"로 잘못 보고된다.
+            assertThatThrownBy(() -> new JwtVerificationProperties(
+                    true, "https://auth.kurly.local", "kurly-api", "${JWT_JWKS_URI}", null, null, null))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("kurly.security.jwks-uri의 환경변수가 주입되지 않았습니다");
+        }
+
+        @Test
+        void jwks_uri는_선택이라_없어도_된다() {
+            // auth-service는 서명키를 직접 보유해 자체 JWKSource를 등록한다.
+            assertThatCode(() -> of(true, "https://auth.kurly.local", "kurly-api"))
+                    .doesNotThrowAnyException();
+        }
     }
 }
