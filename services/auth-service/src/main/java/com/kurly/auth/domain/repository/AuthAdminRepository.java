@@ -19,7 +19,7 @@ public interface AuthAdminRepository {
      */
     void increaseRetryCount(Long adminId);
 
-    /** 임계치 도달 시 잠금 해제 시각을 설정한다. */
+    /** 임계치 도달 시 잠금 해제 시각을 설정하고 실패 횟수를 초기화한다. */
     void lockUntil(Long adminId, LocalDateTime lockedUntil);
 
     /** 로그인 성공 시 실패 횟수와 잠금을 해제한다. */
