@@ -19,6 +19,7 @@ import java.util.Date;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import org.springframework.mock.env.MockEnvironment;
 
 class JwtTokenProviderUnitExceptionTest {
 
@@ -44,7 +45,7 @@ class JwtTokenProviderUnitExceptionTest {
     }
 
     private static JwtTokenProvider provider(JwtProperties properties) {
-        return new JwtTokenProvider(new LocalEcJwtKeyProvider(properties), properties);
+        return new JwtTokenProvider(new LocalEcJwtKeyProvider(properties, new MockEnvironment().withProperty("spring.profiles.active", "local")), properties);
     }
 
     @Nested

@@ -11,6 +11,7 @@ import java.time.Duration;
 import java.time.Instant;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import org.springframework.mock.env.MockEnvironment;
 
 class JwtTokenProviderUnitTest {
 
@@ -20,7 +21,7 @@ class JwtTokenProviderUnitTest {
     private final JwtProperties properties = new JwtProperties(
             ISSUER, AUDIENCE, Duration.ofMinutes(30), Duration.ofDays(14), null);
     private final JwtTokenProvider tokenProvider =
-            new JwtTokenProvider(new LocalEcJwtKeyProvider(properties), properties);
+            new JwtTokenProvider(new LocalEcJwtKeyProvider(properties, new MockEnvironment().withProperty("spring.profiles.active", "local")), properties);
 
     @Nested
     @DisplayName("토큰 발급")
