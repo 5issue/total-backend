@@ -25,6 +25,11 @@ import org.springframework.boot.test.context.SpringBootTest;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.List;
+import java.util.concurrent.Callable;
+import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -112,6 +117,69 @@ class AuthTokenServiceIntegrationTest {
                     .filter(token -> token.getToken().equals(hash))
                     .findFirst()
                     .orElseThrow();
+        }
+    }
+
+    @Nested
+    @DisplayName("동시 갱신")
+    class ConcurrentRefreshTest {
+
+        /**
+         * 조회-후-폐기 방식이면 두 요청이 모두 "폐기되지 않음"을 보고 각자 토큰을 발급받아
+         * 재사용 감지가 무력화된다. 폐기를 조건부 갱신으로 처리해 한 쪽만 통과해야 한다.
+         */
+        @Test
+        void 같은_토큰으로_동시에_갱신하면_한_번만_성공한다() throws Exception {
+            AuthUser user = createUser();
+            String refreshToken = issueStoredRefreshToken(user);
+
+            CyclicBarrier barrier = new CyclicBarrier(2);
+            ExecutorService pool = Executors.newFixedThreadPool(2);
+            try {
+                List<Future<Boolean>> results = pool.invokeAll(List.of(
+                        refreshTask(barrier, refreshToken),
+                        refreshTask(barrier, refreshToken)));
+
+                long succeeded = results.stream().filter(AuthTokenServiceIntegrationTest::get).count();
+                assertThat(succeeded).isEqualTo(1);
+            } finally {
+                pool.shutdownNow();
+            }
+
+            // 제시된 토큰은 어느 쪽이 이기든 반드시 폐기되어야 한다.
+            // 진 쪽이 수행하는 세션 전체 폐기는 이긴 쪽의 새 토큰 저장과 순서가 보장되지 않으므로
+            // 여기서 단정하지 않는다(대응 문서 A-2의 남은 과제).
+            List<UserRefreshToken> stored =
+                    userRefreshTokenJpaRepository.findAllByAuthUserId(user.getId());
+            assertThat(findByRawToken(stored, refreshToken).isRevoked()).isTrue();
+        }
+
+        private Callable<Boolean> refreshTask(CyclicBarrier barrier, String refreshToken) {
+            return () -> {
+                barrier.await();
+                try {
+                    authTokenService.refresh(refreshToken);
+                    return true;
+                } catch (RuntimeException e) {
+                    return false;
+                }
+            };
+        }
+    }
+
+    private UserRefreshToken findByRawToken(List<UserRefreshToken> tokens, String rawToken) {
+        String hash = refreshTokenHasher.hash(rawToken);
+        return tokens.stream()
+                .filter(token -> token.getToken().equals(hash))
+                .findFirst()
+                .orElseThrow();
+    }
+
+    private static boolean get(Future<Boolean> future) {
+        try {
+            return future.get();
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
         }
     }
 
