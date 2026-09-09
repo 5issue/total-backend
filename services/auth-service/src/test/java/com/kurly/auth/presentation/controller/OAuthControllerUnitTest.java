@@ -32,6 +32,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -150,6 +151,17 @@ class OAuthControllerUnitTest {
                             .param("code", "c").param("state", "state-v")
                             .cookie(transactionCookies()))
                     .andExpect(status().isCreated());
+        }
+
+        @Test
+        void 토큰이_실린_응답은_캐시되지_않는다() throws Exception {
+            given(socialAuthService.handleCallback(any(), any(), any(), any()))
+                    .willReturn(new SocialLoginResult(tokenPair(), 1L, false));
+
+            mockMvc.perform(get("/api/v1/auth/oauth/kakao/callback")
+                            .param("code", "c").param("state", "state-v")
+                            .cookie(transactionCookies()))
+                    .andExpect(header().string(HttpHeaders.CACHE_CONTROL, "no-store"));
         }
 
         @Test
