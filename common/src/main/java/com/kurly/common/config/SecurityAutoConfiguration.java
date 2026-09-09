@@ -46,6 +46,9 @@ public class SecurityAutoConfiguration {
      * auth-service처럼 서명키를 직접 보유한 서비스는 자체 {@code JWKSource} 빈을 등록하면
      * 이 빈이 만들어지지 않는다.
      */
+    /** 평문 JWKS를 허용할 로컬 호스트. 이 외에는 https만 받는다. */
+    private static final List<String> PLAINTEXT_ALLOWED_HOSTS = List.of("localhost", "127.0.0.1", "[::1]");
+
     @Bean
     @ConditionalOnMissingBean(JWKSource.class)
     public JWKSource<SecurityContext> jwkSource(JwtVerificationProperties properties) throws Exception {
@@ -53,14 +56,35 @@ public class SecurityAutoConfiguration {
             throw new IllegalStateException(
                     "kurly.security.jwks-uri가 필요합니다. 자체 JWKSource 빈을 등록한 경우는 예외입니다.");
         }
+        URI jwksUri = URI.create(properties.jwksUri());
+        requireSecureTransport(jwksUri);
+
         JWKSource<SecurityContext> remote = JWKSourceBuilder
-                .<SecurityContext>create(URI.create(properties.jwksUri()).toURL())
+                .<SecurityContext>create(jwksUri.toURL())
                 .retrying(true)          // 일시적 네트워크 오류 재시도
                 .rateLimited(true)       // 미지의 kid 폭주로 인한 재조회 증폭 차단
                 .refreshAheadCache(true) // 만료 전 미리 갱신
                 .outageTolerant(true)    // JWKS 장애 시 만료된 캐시라도 사용
                 .build();
         return applyFallback(remote, properties);
+    }
+
+    /**
+     * JWKS는 평문으로 받아서는 안 된다. 중간자가 응답을 바꿔치기하면 자신이 가진 개인키로 서명한
+     * 토큰이 검증을 통과해 인증 체계 전체가 무너진다.
+     *
+     * <p>프로파일이 아니라 호스트로 판별한다. 로컬은 localhost를 쓰므로 별도 분기가 필요 없고,
+     * 운영 설정이 실수로 http가 되면 프로파일과 무관하게 막힌다.
+     */
+    private void requireSecureTransport(URI jwksUri) {
+        if ("https".equalsIgnoreCase(jwksUri.getScheme())) {
+            return;
+        }
+        if (PLAINTEXT_ALLOWED_HOSTS.contains(jwksUri.getHost())) {
+            return;
+        }
+        throw new IllegalStateException(
+                "kurly.security.jwks-uri는 https여야 합니다(로컬 호스트 제외): " + jwksUri);
     }
 
     private JWKSource<SecurityContext> applyFallback(JWKSource<SecurityContext> remote,
