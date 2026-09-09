@@ -38,12 +38,13 @@ class OrderServiceUnitTest {
         void 주문서를_5분_결제대기_상태로_전환한다() {
             Order order = Order.createCheckout("O202609080001", 1L, "reservation", LocalDateTime.now().plusMinutes(15),
                     0L, List.of(OrderItem.create(10L, 20L, 30L, "샐러드", null, StorageType.CHILLED, 2, 16000L)));
-            when(orderRepository.findById(1L)).thenReturn(Optional.of(order));
+            when(orderRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(order));
 
             var response = orderService.placeOrder(1L, 1L);
 
             assertThat(response.status().name()).isEqualTo("PENDING_PAYMENT");
             assertThat(response.expiresAt()).isAfter(LocalDateTime.now().plusMinutes(4));
+            assertThat(response.expiresAt()).isBefore(LocalDateTime.now().plusMinutes(6));
         }
     }
 }

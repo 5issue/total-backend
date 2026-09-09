@@ -17,8 +17,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
-import java.util.List;
-import java.util.Set;
+import java.util.Arrays;
 import java.util.UUID;
 
 
@@ -28,9 +27,6 @@ import java.util.UUID;
 public class OrderService {
 
     private static final Duration PAYMENT_TIMEOUT = Duration.ofMinutes(5);
-    private static final Set<String> CANCEL_REASONS = Set.of("CNL01", "CNL02", "CNL03", "CNL04", "CNL05", "CNL99");
-    private static final Set<String> RETURN_REASONS = Set.of("RTN01", "RTN02", "RTN03", "RTN04", "RTN05", "RTN06", "RTN07", "RTN08");
-
     private final OrderRepository orderRepository;
     private final CartRepository cartRepository;
     private final OrderClaimRepository orderClaimRepository;
@@ -39,7 +35,7 @@ public class OrderService {
 
     @Transactional
     public CheckoutResponseDto checkout(Long memberId, CheckoutRequestDto request) {
-        Cart cart = cartRepository.findByMemberId(memberId)
+        Cart cart = cartRepository.findByMemberIdForUpdate(memberId)
                 .orElseThrow(() -> new BusinessException(OrderErrorCode.ORD_INVALID_CART_ITEMS));
         if (cart.getAddressId() == null) {
             throw new BusinessException(OrderErrorCode.ORD_NOT_FOUND_ADDRESS);
@@ -117,15 +113,11 @@ public class OrderService {
         if (!hasColdItem && !now.isAfter(order.getDeliveredAt().plusDays(7))) {
             reasons.add(new ReturnPreviewResponseDto.ReasonOption("RTN01", "단순 변심", false));
         }
-        reasons.addAll(List.of(
-                new ReturnPreviewResponseDto.ReasonOption("RTN02", "상품 불량", true),
-                new ReturnPreviewResponseDto.ReasonOption("RTN03", "상품 파손", true),
-                new ReturnPreviewResponseDto.ReasonOption("RTN04", "냉해·해동", true),
-                new ReturnPreviewResponseDto.ReasonOption("RTN05", "오배송", true),
-                new ReturnPreviewResponseDto.ReasonOption("RTN06", "상품 누락", true),
-                new ReturnPreviewResponseDto.ReasonOption("RTN07", "상품 품절", false),
-                new ReturnPreviewResponseDto.ReasonOption("RTN08", "상품정보 상이", true)
-        ));
+        reasons.addAll(Arrays.stream(ReturnReason.values())
+                .filter(reason -> reason != ReturnReason.RTN01)
+                .map(reason -> new ReturnPreviewResponseDto.ReasonOption(
+                        reason.name(), reason.description(), reason.evidenceRequired()))
+                .toList());
         StorageType policy = hasColdItem ? order.getItems().stream()
                                            .map(item -> item.getStorageType()).filter(type -> type != StorageType.ROOM).findFirst().orElse(StorageType.CHILLED)
                 : StorageType.ROOM;
@@ -137,7 +129,7 @@ public class OrderService {
 
     @Transactional
     public PlaceOrderResponseDto placeOrder(Long memberId, Long orderId) {
-        Order order = getOwnedOrder(memberId, orderId);
+        Order order = getOwnedOrderForUpdate(memberId, orderId);
         if (order.getStatus() == OrderStatus.PAID) {
             throw new BusinessException(OrderErrorCode.ORD_CONFLICT_ALREADY_PAID);
         }
@@ -178,8 +170,10 @@ public class OrderService {
 
     @Transactional
     public OrderClaimResponseDto cancel(Long memberId, Long orderId, ClaimRequestDto request) {
-        validateReason(request, CANCEL_REASONS, "CNL99");
-        Order order = getOwnedOrder(memberId, orderId);
+        CancelReason reason = CancelReason.find(request.reasonCode())
+                .orElseThrow(() -> new BusinessException(OrderErrorCode.ORD_INVALID_REASON_CODE));
+        validateReasonDetail(request, reason.detailRequired());
+        Order order = getOwnedOrderForUpdate(memberId, orderId);
         ensureNoClaim(orderId);
         if (order.getStatus() != OrderStatus.PAID) {
             throw new BusinessException(OrderErrorCode.ORD_INVALID_STATUS, "결제 완료 주문만 취소할 수 있습니다.");
@@ -187,30 +181,31 @@ public class OrderService {
         if (!externalService.isCancellationEligible(orderId)) {
             throw new BusinessException(OrderErrorCode.ORD_INVALID_STATUS, "이미 출고 처리가 시작되어 취소할 수 없습니다.");
         }
-        externalService.cancelPayment(order.getPaymentId());
         order.requestCancel();
         OrderClaim claim = orderClaimRepository.save(OrderClaim.create(order, ClaimType.CANCEL,
                 RequesterType.USER, request.reasonCode(), request.reasonDetail(), order.getPaymentAmount()));
-        eventPublisher.publishEvent(OrderEvent.of("order.canceled.inventory-restore", order));
+        eventPublisher.publishEvent(PaymentCancellationEvent.of(order));
         return OrderClaimResponseDto.from(claim);
     }
 
     @Transactional
     public OrderClaimResponseDto requestReturn(Long memberId, Long orderId, ClaimRequestDto request) {
-        validateReason(request, RETURN_REASONS, null);
-        Order order = getOwnedOrder(memberId, orderId);
+        ReturnReason reason = ReturnReason.find(request.reasonCode())
+                .orElseThrow(() -> new BusinessException(OrderErrorCode.ORD_INVALID_REASON_CODE));
+        validateReasonDetail(request, false);
+        Order order = getOwnedOrderForUpdate(memberId, orderId);
         ensureNoClaim(orderId);
         if (order.getDeliveryStatus() != DeliveryStatus.DELIVERED) {
             throw new BusinessException(OrderErrorCode.ORD_INVALID_DELIVERY_STATUS);
         }
         boolean hasColdItem = hasColdItem(order);
-        if ("RTN01".equals(request.reasonCode()) && hasColdItem) {
+        if (reason == ReturnReason.RTN01 && hasColdItem) {
             throw new BusinessException(OrderErrorCode.ORD_RESTRICTED_FRESH_RETURN);
         }
         if (order.getDeliveredAt() == null) {
             throw new BusinessException(OrderErrorCode.ORD_INVALID_DELIVERY_STATUS);
         }
-        LocalDateTime deadline = "RTN01".equals(request.reasonCode())
+        LocalDateTime deadline = reason == ReturnReason.RTN01
                 ? order.getDeliveredAt().plusDays(7)
                 : hasColdItem ? order.getDeliveredAt().plusHours(48) : order.getDeliveredAt().plusMonths(3);
         if (LocalDateTime.now().isAfter(deadline)) {
@@ -245,21 +240,26 @@ public class OrderService {
         return order;
     }
 
+    private Order getOwnedOrderForUpdate(Long memberId, Long orderId) {
+        Order order = orderRepository.findByIdForUpdate(orderId)
+                .orElseThrow(() -> new BusinessException(OrderErrorCode.ORD_NOT_FOUND_ORDER));
+        if (!order.getMemberId().equals(memberId)) {
+            throw new BusinessException(OrderErrorCode.ORD_FORBIDDEN_OWNERSHIP);
+        }
+        return order;
+    }
+
     private void ensureNoClaim(Long orderId) {
         if (orderClaimRepository.existsByOrderId(orderId)) {
             throw new BusinessException(OrderErrorCode.ORD_CONFLICT_ALREADY_CLAIMED);
         }
     }
 
-    private void validateReason(ClaimRequestDto request, Set<String> allowed, String detailRequiredCode) {
-        if (!allowed.contains(request.reasonCode())) {
-            throw new BusinessException(OrderErrorCode.ORD_INVALID_REASON_CODE);
-        }
+    private void validateReasonDetail(ClaimRequestDto request, boolean detailRequired) {
         if (request.reasonDetail() != null && request.reasonDetail().length() > 500) {
             throw new BusinessException(OrderErrorCode.ORD_INVALID_REASON_DETAIL);
         }
-        if (request.reasonCode().equals(detailRequiredCode) &&
-                (request.reasonDetail() == null || request.reasonDetail().isBlank())) {
+        if (detailRequired && (request.reasonDetail() == null || request.reasonDetail().isBlank())) {
             throw new BusinessException(OrderErrorCode.ORD_INVALID_REASON_DETAIL);
         }
     }

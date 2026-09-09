@@ -12,6 +12,7 @@ public enum OrderErrorCode implements ErrorCode {
     ORD_INVALID_REASON_CODE(HttpStatus.BAD_REQUEST, "올바르지 않은 사유 코드입니다."),
     ORD_INVALID_REASON_DETAIL(HttpStatus.BAD_REQUEST, "상세 사유가 올바르지 않습니다."),
     ORD_INVALID_CART_ITEMS(HttpStatus.BAD_REQUEST, "주문할 장바구니 항목이 올바르지 않습니다."),
+    ORD_INCOMPLETE_PRODUCT_RESPONSE(HttpStatus.BAD_GATEWAY, "상품 정보를 완전하게 조회하지 못했습니다."),
     ORD_INVALID_REQUEST_TYPE(HttpStatus.BAD_REQUEST, "올바르지 않은 요청 유형입니다."),
     ORD_INVALID_REQUEST_STATUS(HttpStatus.BAD_REQUEST, "올바르지 않은 진행 상태값입니다."),
     ORD_INVALID_PAGE(HttpStatus.BAD_REQUEST, "페이지 번호 및 크기가 올바르지 않습니다."),

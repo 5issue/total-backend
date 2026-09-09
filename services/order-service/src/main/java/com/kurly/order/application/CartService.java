@@ -23,7 +23,7 @@ public class CartService {
 
     @Transactional
     public CartResponseDto getByMemberId(Long memberId) {
-        Cart cart = cartRepository.findByMemberId(memberId).orElseGet(() -> cartRepository.save(Cart.create(memberId)));
+        Cart cart = getOrCreateForUpdate(memberId);
         CartResponseDto.Address address = externalService.getAddress(memberId, cart.getAddressId());
         if (cart.getAddressId() == null) {
             cart.updateDeliveryAddress(address.addressId(), null, null);
@@ -31,12 +31,15 @@ public class CartService {
         Map<Long, CartResponseDto.Product> products = externalService.getProducts(
                         cart.getItems().stream().map(item -> item.getProductId()).toList()).stream()
                 .collect(Collectors.toMap(CartResponseDto.Product::productId, Function.identity()));
+        if (products.size() != cart.getItems().size()) {
+            throw new BusinessException(OrderErrorCode.ORD_INCOMPLETE_PRODUCT_RESPONSE);
+        }
         return CartResponseDto.from(cart, address, products);
     }
 
     @Transactional
     public DeliveryAddressResponseDto updateDeliveryAddress(Long memberId, Long addressId) {
-        Cart cart = cartRepository.findByMemberId(memberId).orElseGet(() -> cartRepository.save(Cart.create(memberId)));
+        Cart cart = getOrCreateForUpdate(memberId);
         CartResponseDto.Address address = externalService.getAddress(memberId, addressId);
         DeliveryAddressResponseDto.Promise promise = externalService.getDeliveryPromise(address);
         if (!promise.deliverable()) {
@@ -45,5 +48,11 @@ public class CartService {
         cart.updateDeliveryAddress(addressId, promise.regionId(), promise.deliveryType());
         return new DeliveryAddressResponseDto(address, promise.deliverable(), promise.deliveryType(),
                 promise.cutoffAt(), promise.expectedDeliveryAt());
+    }
+
+    private Cart getOrCreateForUpdate(Long memberId) {
+        cartRepository.createIfAbsent(memberId);
+        return cartRepository.findByMemberIdForUpdate(memberId)
+                .orElseThrow(() -> new IllegalStateException("장바구니 생성 결과를 조회할 수 없습니다."));
     }
 }

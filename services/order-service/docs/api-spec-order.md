@@ -248,7 +248,6 @@
 | 이름 | 필수 | 설명 |
 | --- | --- | --- |
 | Authorization | Y | Bearer {Access Token} |
-| Idempotency-Key | Y | 중복 명령 방지용 고유 키 |
 | Content-Type | Y | application/json |
 
 #### Path Parameters
@@ -344,7 +343,7 @@
 | 400 | DELIVERY_ADDRESS_NOT_SET | "배송지를 먼저 설정해 주세요." | 장바구니에 선택/기본 배송지가 설정되지 않은 상태로 진입 |
 | 401 | UNAUTHORIZED | "로그인이 필요합니다." | 인증 토큰 누락 또는 유효하지 않은 토큰 |
 | 409 | STOCK_EXHAUSTED | "선택한 상품의 재고가 부족합니다." | 상품 서비스 15분 논리 재고 선점 실패 (잔여 재고 부족) |
-| 409 | DUPLICATE_CHECKOUT_REQUEST | "이미 처리 중이거나 완료된 주문 요청입니다." | 동일 Idempotency-Key로 이미 처리 중이거나 완료된 요청 |
+| 409 | DUPLICATE_CHECKOUT_REQUEST | "이미 처리 중이거나 완료된 주문 요청입니다." | 사용자별 장바구니 행 잠금 및 활성 주문 상태로 중복 처리된 요청 |
 | 502 | PRODUCT_SERVICE_UNAVAILABLE | "재고 확인 서비스와의 통신에 실패했습니다." | 상품 서비스(재고 선점 API) 연동 실패 |
 | 500 | INTERNAL_SERVER_ERROR | "서버 오류가 발생했습니다." | 서버 내부 오류 |
 
@@ -383,7 +382,6 @@
 | 이름 | 필수 | 설명 |
 | --- | --- | --- |
 | Authorization | Y | Bearer {Access Token} |
-| Idempotency-Key | Y | 중복 명령 방지용 고유 키 |
 | Content-Type | Y | application/json |
 
 #### Path Parameters
@@ -465,7 +463,6 @@
 | 이름 | 필수 | 설명 |
 | --- | --- | --- |
 | Authorization | Y | Bearer {Access Token} |
-| Idempotency-Key | Y | 중복 명령 방지용 고유 키 |
 | Content-Type | Y | application/json |
 
 #### Path Parameters
@@ -533,7 +530,7 @@
 | 409 | INVALID_ORDER_STATUS_FOR_CANCEL | "결제가 완료된 주문만 취소를 신청할 수 있습니다." | PAID 상태가 아닌 주문에 취소 요청 |
 | 409 | CANCEL_RESTRICTED | "이미 출고 처리가 시작되어 취소할 수 없습니다. 배송 완료 후 반품을 신청해 주세요." | OMS 출고 지시(RELEASE_INSTRUCTED) 완료 또는 배송 진행 중 |
 | 409 | ALREADY_CANCELLED | "이미 취소 접수되었거나 처리가 완료된 주문입니다." | 이미 취소 접수(REQUESTED), 처리 중 또는 완료된 주문 |
-| 409 | DUPLICATE_CANCEL_REQUEST | "이미 처리 중인 취소 요청입니다." | 동일 Idempotency-Key로 이미 처리 중이거나 완료된 요청 |
+| 409 | DUPLICATE_CANCEL_REQUEST | "이미 처리 중인 취소 요청입니다." | 주문 상태 또는 기존 클레임으로 중복 처리된 요청 |
 | 502 | OMS_SERVICE_UNAVAILABLE | "출고 상태를 확인하는 중 오류가 발생했습니다." | OMS 동기 호출 실패 |
 | 500 | INTERNAL_SERVER_ERROR | "서버 오류가 발생했습니다." | 서버 내부 오류 |
 
@@ -569,7 +566,6 @@
 | 이름 | 필수 | 설명 |
 | --- | --- | --- |
 | Authorization | Y | Bearer {Access Token} |
-| Idempotency-Key | Y | 중복 신청 방지용 고유 키 |
 | Content-Type | Y | application/json |
 
 #### Path Parameters
@@ -638,7 +634,7 @@
 | 403 | ORDER_ACCESS_DENIED | "해당 주문에 대한 반품 권한이 없습니다." | 요청 사용자와 주문 소유자(member_id) 불일치 |
 | 404 | ORDER_NOT_FOUND | "주문 정보를 찾을 수 없습니다." | 대상 orderId가 DB에 존재하지 않음 |
 | 409 | RETURN_ALREADY_REQUESTED | "이미 접수되었거나 처리 중인 반품 신청이 있습니다." | 이미 반품 접수(REQUESTED) 또는 처리 중인 주문 |
-| 409 | DUPLICATE_RETURN_REQUEST | "이미 처리 중인 반품 요청입니다." | 동일 Idempotency-Key로 이미 처리 중이거나 완료된 요청 |
+| 409 | DUPLICATE_RETURN_REQUEST | "이미 처리 중인 반품 요청입니다." | 주문 상태 또는 기존 클레임으로 중복 처리된 요청 |
 | 422 | INVALID_ORDER_STATUS_FOR_RETURN | "배송이 완료된 주문만 반품을 신청할 수 있습니다." | DELIVERED 상태가 아닌 주문 |
 | 422 | RETURN_PERIOD_EXPIRED | "반품 신청 가능 기간이 지났습니다." | 배송 완료 후 7일 초과 |
 | 422 | FRESH_FOOD_RETURN_RESTRICTED | "신선식품(냉장/냉동)은 단순 변심으로 인한 반품이 불가능합니다." | 냉장/냉동 상품 포함 주문에 단순 변심(RTN01) 신청 |

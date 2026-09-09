@@ -1,8 +1,12 @@
 package com.kurly.order.application;
 
 import com.kurly.order.domain.cart.Cart;
+import com.kurly.order.domain.cart.CartItem;
 import com.kurly.order.domain.cart.CartRepository;
 import com.kurly.order.domain.cart.DeliveryType;
+import com.kurly.order.domain.common.OrderErrorCode;
+import com.kurly.order.domain.common.StorageType;
+import com.kurly.common.exception.BusinessException;
 import com.kurly.order.presentation.dto.CartResponseDto;
 import com.kurly.order.presentation.dto.DeliveryAddressResponseDto;
 import org.junit.jupiter.api.DisplayName;
@@ -18,8 +22,8 @@ import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.verify;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -37,15 +41,31 @@ class CartServiceUnitTest {
         void 장바구니가_없으면_생성하고_기본_배송지를_적용한다() {
             CartResponseDto.Address address = new CartResponseDto.Address(
                     10L, "집", "홍길동", "01000000000", "12345", "서울시", "101호");
-            when(cartRepository.findByMemberId(1L)).thenReturn(Optional.empty());
-            when(cartRepository.save(any(Cart.class))).thenAnswer(invocation -> invocation.getArgument(0));
+            Cart cart = Cart.create(1L);
+            when(cartRepository.findByMemberIdForUpdate(1L)).thenReturn(Optional.of(cart));
             when(externalService.getAddress(1L, null)).thenReturn(address);
             when(externalService.getProducts(List.of())).thenReturn(List.of());
 
             var response = cartService.getByMemberId(1L);
 
             assertThat(response.selectedAddress()).isEqualTo(address);
-            verify(cartRepository).save(any(Cart.class));
+            verify(cartRepository).createIfAbsent(1L);
+        }
+
+        @Test
+        void 상품_응답이_누락되면_합계를_반환하지_않는다() {
+            Cart cart = Cart.create(1L);
+            cart.addItem(CartItem.create(100L, StorageType.ROOM, 1));
+            CartResponseDto.Address address = new CartResponseDto.Address(
+                    10L, "집", "홍길동", "01000000000", "12345", "서울시", "101호");
+            when(cartRepository.findByMemberIdForUpdate(1L)).thenReturn(Optional.of(cart));
+            when(externalService.getAddress(1L, null)).thenReturn(address);
+            when(externalService.getProducts(List.of(100L))).thenReturn(List.of());
+
+            assertThatThrownBy(() -> cartService.getByMemberId(1L))
+                    .isInstanceOf(BusinessException.class)
+                    .extracting("errorCode")
+                    .isEqualTo(OrderErrorCode.ORD_INCOMPLETE_PRODUCT_RESPONSE);
         }
     }
 
@@ -61,7 +81,7 @@ class CartServiceUnitTest {
             LocalDateTime expectedAt = LocalDateTime.now().plusDays(1);
             DeliveryAddressResponseDto.Promise promise = new DeliveryAddressResponseDto.Promise(
                     true, 20L, DeliveryType.DAWN, LocalDateTime.now().plusHours(2), expectedAt);
-            when(cartRepository.findByMemberId(1L)).thenReturn(Optional.of(cart));
+            when(cartRepository.findByMemberIdForUpdate(1L)).thenReturn(Optional.of(cart));
             when(externalService.getAddress(1L, 10L)).thenReturn(address);
             when(externalService.getDeliveryPromise(address)).thenReturn(promise);
 

@@ -13,7 +13,9 @@ public record CartResponseDto(Address selectedAddress, List<Group> groups, Amoun
         Map<GroupKey, List<Item>> grouped = new LinkedHashMap<>();
         cart.getItems().forEach(cartItem -> {
             Product product = products.get(cartItem.getProductId());
-            if (product == null) return;
+            if (product == null) {
+                throw new IllegalStateException("장바구니 상품 정보가 누락되었습니다.");
+            }
             GroupKey key = new GroupKey(product.deliveryType(), product.storageType(), product.sellerId(),
                     product.sellerName(), product.deliveryFee() == null ? 0L : product.deliveryFee());
             grouped.computeIfAbsent(key, ignored -> new ArrayList<>()).add(new Item(cartItem.getId(), product.productId(),

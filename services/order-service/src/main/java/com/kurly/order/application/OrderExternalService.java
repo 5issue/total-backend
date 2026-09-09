@@ -14,4 +14,5 @@ public interface OrderExternalService {
     boolean isCancellationEligible(Long orderId);
 
     void cancelPayment(Long paymentId);
+
 }

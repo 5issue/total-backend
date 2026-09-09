@@ -13,6 +13,8 @@ public interface OrderRepository {
 
     Optional<Order> findById(Long id);
 
+    Optional<Order> findByIdForUpdate(Long id);
+
     Optional<Order> findByIdAndMemberId(Long id, Long memberId);
 
     Optional<Order> findActiveCheckoutForUpdate(Long memberId);
