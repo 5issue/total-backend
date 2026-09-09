@@ -8,6 +8,7 @@ import com.kurly.product.infrastructure.entity.ProductInventory;
 import com.kurly.product.infrastructure.jpa.ProductInventoryJpaRepository;
 import jakarta.annotation.PostConstruct;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -58,11 +59,14 @@ public class ProductInventoryRepositoryImpl implements ProductInventoryRepositor
 
     @Override
     public void releaseInventory(Long orderId, Long productId, int quantity, Long orderItemId, Long ttlSeconds) {
-        List<String> keys = List.of(getKey(productId), getReleaseIdempotencyKey(orderId, orderItemId));
+        List<String> keys = List.of(getKey(productId), getReleaseIdempotencyKey(orderId, orderItemId), getHoldIdempotencyKey(orderId, orderItemId));
 
         Long result = executeScript(releaseScript, keys, quantity, ttlSeconds);
         if (result != null && result == -1L) {
             log.warn("선점 취소 요청이 들어왔으나 Redis에 해당 상품 재고 키가 존재하지 않습니다 (만료 또는 휘발). orderItemId: {}", orderItemId);
+        }
+        if(result != null && result == -2L) {
+            log.warn("선점 취소 요청이 들어왔으나 Redis에 해당 상품 선점 키가 존재하지 않습니다 (이미 취소되었거나 만료). orderItemId: {}", orderItemId);
         }
     }
 
@@ -72,8 +76,9 @@ public class ProductInventoryRepositoryImpl implements ProductInventoryRepositor
                 .orElseThrow(() -> new EntityNotFoundException("상품 재고를 찾을 수 없습니다. productId=" + productId));
 
         String key = getKey(productId);
-        redisTemplate.opsForHash().put(key, "base_quantity", String.valueOf(inventory.getBaseQuantity()));
-        redisTemplate.opsForHash().put(key, "reserved_quantity", String.valueOf(inventory.getReservedQuantity()));
+        redisTemplate.opsForHash().putAll(key, Map.of(
+                "base_quantity", String.valueOf(inventory.getBaseQuantity()),
+                "reserved_quantity", String.valueOf(inventory.getReservedQuantity())));
     }
 
     private Long executeScript(RedisScript<Long> script, List<String> keys, int quantity, Long ttlSeconds) {

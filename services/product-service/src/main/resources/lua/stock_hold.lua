@@ -16,7 +16,7 @@ local inv = redis.call('HMGET', inventoryKey, 'base_quantity', 'reserved_quantit
 
 -- 재고 정보가 존재하지 않는 경우 예외 코드 반환 (-1)
 if not inv[1] or not inv[2] then
-    return -1
+    return -1 -- 재고 정보 없음
 end
 
 local base = tonumber(inv[1])
@@ -32,4 +32,4 @@ end
 redis.call('HSET', inventoryKey, 'reserved_quantity', reserved + req)
 
 redis.call('SETEX', idempotencyKey, ttl, 1)
-return 1
+return 1 -- 재고 선점 성공
