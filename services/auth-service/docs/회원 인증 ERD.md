@@ -74,6 +74,6 @@ CREATE TABLE `admin_refresh_tokens` ( -- 관리자 토큰 관리
 	`expires_at`	DATETIME	NULL,
 	`is_revoked`	BOOLEAN	NULL,
 	`created_at`	DATETIME	NULL,
-	`auth_admin_id`	BIGINT	NOT NULL
+	`admin_user_id`	BIGINT	NOT NULL
 );
 ```

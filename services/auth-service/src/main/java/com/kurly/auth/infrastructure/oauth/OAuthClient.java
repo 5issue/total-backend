@@ -13,6 +13,7 @@ import org.springframework.util.StringUtils;
 import com.kurly.auth.infrastructure.client.OutboundRestClients;
 import org.springframework.web.client.RestClient;
 
+import java.net.URI;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
@@ -109,7 +110,10 @@ public class OAuthClient {
     private Map<String, Object> requestToken(OAuthProviderProperties.Provider config,
                                              MultiValueMap<String, String> form) {
         if (config.tokenRequestMethod() == OAuthProviderProperties.TokenRequestMethod.GET) {
-            String uri = config.tokenUri() + "?" + toEncodedQuery(form);
+            // toEncodedQuery가 이미 퍼센트 인코딩했다. String 오버로드로 넘기면
+            // UriBuilderFactory가 한 번 더 인코딩해 %2F가 %252F가 되고, 변형된 redirect_uri
+            // 때문에 토큰 교환이 실패한다. URI 객체로 넘겨 재인코딩을 막는다.
+            URI uri = URI.create(config.tokenUri() + "?" + toEncodedQuery(form));
             return restClient.get()
                     .uri(uri)
                     .retrieve()

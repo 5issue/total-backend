@@ -157,6 +157,9 @@ class OAuthClientUnitTest {
             StubHttpServer.Recorded request = stub.lastReceived();
             assertThat(request.method()).isEqualTo("GET");
             assertThat(request.uri()).contains("grant_type=authorization_code");
+            // 이미 인코딩된 쿼리를 String으로 넘기면 UriBuilderFactory가 재인코딩해
+            // %2F가 %252F가 되고, 디코딩하면 원문과 달라진다.
+            assertThat(queryOf(request.uri())).containsEntry("redirect_uri", REDIRECT_URI);
         }
 
         @Test
