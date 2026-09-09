@@ -1,25 +1,19 @@
 spring:
   application:
     name: payment-service
-  datasource:
-    url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3309}/${DB_NAME:payment_db}?serverTimezone=UTC&characterEncoding=UTF-8
-    username: ${DB_USERNAME:kurly}
-    password: ${DB_PASSWORD:kurly}
-    driver-class-name: com.mysql.cj.jdbc.Driver
+  profiles:
+    # 프로파일을 지정하지 않으면 로컬로 동작한다. 운영은 --spring.profiles.active=prod
+    default: local
   jpa:
-    hibernate:
-      ddl-auto: ${JPA_DDL_AUTO:update}
     open-in-view: false
-  rabbitmq:
-    host: ${RABBITMQ_HOST:localhost}
-    port: ${RABBITMQ_PORT:5672}
-    username: ${RABBITMQ_USERNAME:guest}
-    password: ${RABBITMQ_PASSWORD:guest}
-  data:
-    redis:
-      host: ${REDIS_HOST:localhost}
-      port: ${REDIS_PORT:6379}
-      password: ${REDIS_PASSWORD:}
+  flyway:
+    locations: classpath:db/migration
+    baseline-on-migrate: false
 
 server:
   port: 8083
+
+kurly:
+  security:
+    # 공통 인증 처리기. 모든 엔드포인트가 인가 애노테이션을 표기해야 기동된다.
+    enabled: true
