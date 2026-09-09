@@ -30,10 +30,38 @@ public record JwtVerificationProperties(
     private static final Duration DEFAULT_CLOCK_SKEW = Duration.ofSeconds(30);
     private static final String[] DEFAULT_AUDIT_PACKAGES = {"com.kurly"};
 
+    /** 해석되지 않은 플레이스홀더의 흔적. Boot의 Binder는 이를 예외로 만들지 않고 리터럴로 남긴다. */
+    private static final String UNRESOLVED_PLACEHOLDER_PREFIX = "${";
+
     public JwtVerificationProperties {
         clockSkew = clockSkew == null ? DEFAULT_CLOCK_SKEW : clockSkew;
         auditPackages = auditPackages == null || auditPackages.length == 0
                 ? DEFAULT_AUDIT_PACKAGES
                 : auditPackages;
+
+        if (enabled) {
+            // audience가 비면 대상 검증이 사실상 꺼져 다른 audience용 토큰이 통과한다.
+            // issuer가 비면 발급자 제한이 사라진다. 둘 다 조용히 완화되므로 기동을 막는다.
+            requireConfigured(issuer, "kurly.security.issuer");
+            requireConfigured(audience, "kurly.security.audience");
+        }
+    }
+
+    /**
+     * 값이 비었거나 미해석 플레이스홀더면 기동을 중단한다.
+     *
+     * <p>플레이스홀더 검사가 필요한 이유: {@code ${JWT_ISSUER}}처럼 기본값 없이 적어두면
+     * 환경변수 누락 시 기동이 실패할 것 같지만, 실제로는 <b>리터럴 문자열이 그대로 바인딩된다.</b>
+     * 값이 있는 것처럼 보여 검증을 통과하고, 문제는 한참 뒤 런타임에 드러난다.
+     */
+    private static void requireConfigured(String value, String key) {
+        if (value == null || value.isBlank()) {
+            throw new IllegalStateException(
+                    "%s가 필요합니다. kurly.security.enabled=true인 서비스는 반드시 설정해야 합니다.".formatted(key));
+        }
+        if (value.startsWith(UNRESOLVED_PLACEHOLDER_PREFIX)) {
+            throw new IllegalStateException(
+                    "%s의 환경변수가 주입되지 않았습니다: %s".formatted(key, value));
+        }
     }
 }
