@@ -1,0 +1,35 @@
+# 운영 프로파일.
+#
+# 민감값에는 기본값을 두지 않는다. 환경변수가 없으면 플레이스홀더 해석이 실패해 기동이 중단된다.
+# 로컬 기본값이 운영에 흘러드는 것을 막기 위한 의도적인 설계다.
+spring:
+  jpa:
+    hibernate:
+      # 운영에서 스키마를 애플리케이션이 바꾸는 일은 없어야 하므로 환경변수로도 못 바꾸게 고정한다.
+      ddl-auto: validate
+  flyway:
+    enabled: true
+  datasource:
+    url: jdbc:mysql://${DB_HOST}:${DB_PORT}/${DB_NAME}?serverTimezone=UTC&characterEncoding=UTF-8
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  rabbitmq:
+    host: ${RABBITMQ_HOST}
+    port: ${RABBITMQ_PORT}
+    username: ${RABBITMQ_USERNAME}
+    password: ${RABBITMQ_PASSWORD}
+  data:
+    redis:
+      host: ${REDIS_HOST}
+      port: ${REDIS_PORT}
+      password: ${REDIS_PASSWORD}
+
+kurly:
+  security:
+    issuer: ${JWT_ISSUER}
+    audience: ${JWT_AUDIENCE}
+    jwks-uri: ${JWT_JWKS_URI}
+    # auth-service 장애 중 콜드 스타트하면 JWKS 캐시가 비어 검증이 전면 실패한다.
+    # 현재 공개키를 넣어두면 그 연쇄 장애를 막는다.
+    fallback-jwk: ${JWT_FALLBACK_JWK:}
