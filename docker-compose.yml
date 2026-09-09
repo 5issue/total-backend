@@ -1,11 +1,18 @@
+# 로컬 개발용 인프라.
+#
+# 모든 포트를 127.0.0.1에 묶는다. 호스트 IP를 생략하면 Docker가 모든 인터페이스에 게시해,
+# 공유 네트워크(사내망·카페 Wi-Fi)에서 같은 망의 누구나 예측 가능한 계정으로 DB에 붙을 수 있다.
+#
+# 자격증명은 .env로 주입한다. 값을 필수로 강제하지는 않는다 — `docker compose up -d` 한 줄로
+# 로컬 인프라가 뜨는 것이 온보딩 전제이고, 이 컨테이너들은 loopback에만 열려 있다.
 services:
   rabbitmq:
     image: rabbitmq:4-management
     container_name: kurly-rabbitmq
     hostname: rabbitmq
     ports:
-      - "5672:5672"
-      - "15672:15672"
+      - "127.0.0.1:5672:5672"
+      - "127.0.0.1:15672:15672"
     environment:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-guest}
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-guest}
@@ -24,7 +31,7 @@ services:
     container_name: kurly-redis
     hostname: redis
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD:-}"]
     volumes:
       - redis_data:/data
@@ -41,7 +48,7 @@ services:
     image: mysql:8.4
     container_name: kurly-auth-mysql
     ports:
-      - "3307:3306"
+      - "127.0.0.1:3307:3306"
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
       MYSQL_DATABASE: auth_db
@@ -61,7 +68,7 @@ services:
     image: mysql:8.4
     container_name: kurly-payment-mysql
     ports:
-      - "3309:3306"
+      - "127.0.0.1:3309:3306"
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
       MYSQL_DATABASE: payment_db
@@ -81,7 +88,7 @@ services:
     image: mysql:8.4
     container_name: kurly-user-mysql
     ports:
-      - "3314:3306"
+      - "127.0.0.1:3314:3306"
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
       MYSQL_DATABASE: user_db
@@ -101,7 +108,7 @@ services:
     image: postgres:16-alpine
     container_name: kurly-scm-postgres
     ports:
-      - "5439:5432"
+      - "127.0.0.1:5439:5432"
     environment:
       POSTGRES_DB: scm_db
       POSTGRES_USER: ${DB_USERNAME:-kurly}
