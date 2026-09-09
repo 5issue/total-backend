@@ -44,6 +44,12 @@ public record JwtVerificationProperties(
             // issuer가 비면 발급자 제한이 사라진다. 둘 다 조용히 완화되므로 기동을 막는다.
             requireConfigured(issuer, "kurly.security.issuer");
             requireConfigured(audience, "kurly.security.audience");
+            // jwks-uri는 선택이다(자체 JWKSource를 등록한 auth-service는 쓰지 않는다).
+            // 값을 준 경우에만 검사해, 미주입을 "http라서 거부"로 잘못 보고하지 않도록 한다.
+            if (jwksUri != null && jwksUri.startsWith(UNRESOLVED_PLACEHOLDER_PREFIX)) {
+                throw new IllegalStateException(
+                        "kurly.security.jwks-uri의 환경변수가 주입되지 않았습니다: " + jwksUri);
+            }
         }
     }
 
