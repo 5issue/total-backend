@@ -12,6 +12,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingRequestValueException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
@@ -84,6 +85,20 @@ public class GlobalExceptionHandler {
      * <p>500은 서버 결함을 뜻하므로, 오타나 스캐너의 무작위 요청이 장애 지표를 오염시키고
      * 실제 장애를 가린다. 어떤 경로가 실재하는지는 드러내지 않은 채 404로 응답한다.
      */
+    /**
+     * 필수 요청값이 아예 오지 않은 경우. 헤더({@code Idempotency-Key} 등)·쿼리 파라미터·쿠키가 해당된다.
+     *
+     * <p>처리하지 않으면 catch-all로 떨어져 <b>클라이언트가 헤더를 빠뜨렸을 뿐인데 500</b>이 나간다.
+     * 경로 변수 누락({@code MissingPathVariableException})은 매핑이 잘못됐다는 뜻이라 여기서 다루지
+     * 않는다. 그것은 실제로 서버 결함이다.
+     */
+    @ExceptionHandler(MissingRequestValueException.class)
+    public ResponseEntity<ApiResponse<Void>> handleMissingRequestValueException(MissingRequestValueException e) {
+        log.warn("필수 요청값 누락: {}", e.getMessage());
+        return ResponseEntity.status(GlobalErrorCode.INVALID_INPUT_VALUE.getStatus())
+                .body(ApiResponse.error(GlobalErrorCode.INVALID_INPUT_VALUE));
+    }
+
     @ExceptionHandler({NoResourceFoundException.class, NoHandlerFoundException.class})
     public ResponseEntity<ApiResponse<Void>> handleNoHandlerFound(Exception e) {
         // 서블릿 환경에서는 NoResourceFoundException이, 핸들러 매핑만 구성된 환경에서는
