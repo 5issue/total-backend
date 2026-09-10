@@ -31,7 +31,8 @@ public class StubHttpServer implements AutoCloseable {
         server.createContext(path, exchange -> {
             received.put(path, new Recorded(
                     exchange.getRequestMethod(),
-                    exchange.getRequestHeaders().getFirst("Authorization")));
+                    exchange.getRequestHeaders().getFirst("Authorization"),
+                    exchange.getRequestHeaders().getFirst("Idempotency-Key")));
             byte[] payload = body == null ? new byte[0] : body.getBytes(StandardCharsets.UTF_8);
             exchange.getResponseHeaders().add("Content-Type", "application/json");
             exchange.sendResponseHeaders(status, payload.length == 0 ? -1 : payload.length);
@@ -56,6 +57,6 @@ public class StubHttpServer implements AutoCloseable {
         server.stop(0);
     }
 
-    public record Recorded(String method, String authorization) {
+    public record Recorded(String method, String authorization, String idempotencyKey) {
     }
 }

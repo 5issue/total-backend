@@ -2,7 +2,7 @@ package com.kurly.payment.infrastructure.pg;
 
 import com.kurly.payment.application.port.PgClient;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.context.annotation.Profile;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 import java.util.UUID;
@@ -10,16 +10,16 @@ import java.util.UUID;
 /**
  * 로컬 전용 PG 스텁.
  *
- * <p>토스페이먼츠 연동은 샌드박스 키와 연동 정책이 확정된 뒤에 붙인다. 그때까지 결제 흐름을
- * 기동·검증할 수 있도록 두는 대역이다.
+ * <p>샌드박스 키 없이도 결제 흐름을 기동·검증할 수 있도록 두는 대역이다.
+ * 실제 연동은 {@link TossPgClient}가 담당한다.
  *
- * <p><b>local 프로파일에서만 등록된다.</b> 운영에는 이 빈이 없으므로 실제 구현을 붙이기 전에
- * 배포하면 {@code PgClient} 빈을 찾지 못해 기동이 중단된다. 스텁이 실제 결제를 처리하는 사고를
- * 막기 위한 의도적인 fail-closed다.
+ * <p><b>{@code payment.pg.client=stub}일 때만 등록된다.</b> 기본값은 실제 토스 연동이라 설정을
+ * 빠뜨려도 스텁이 끼어들지 않는다. 스텁이 실제 결제를 대신 처리하는 사고를 막기 위해 켜는 쪽을
+ * 명시적으로 만들었다.
  */
 @Slf4j
 @Component
-@Profile("local")
+@ConditionalOnProperty(name = "payment.pg.client", havingValue = "stub")
 public class StubPgClient implements PgClient {
 
     @Override
