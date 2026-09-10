@@ -14,7 +14,7 @@ class SecurityAutoConfigurationUnitExceptionTest {
 
     private static JwtVerificationProperties withJwksUri(String jwksUri) {
         return new JwtVerificationProperties(
-                true, "https://auth.kurly.local", "kurly-api", jwksUri, null, null, null);
+                true, "https://auth.kurly.local", "kurly-api", jwksUri, null, null, null, null);
     }
 
     @Nested
