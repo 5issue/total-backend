@@ -2,6 +2,7 @@ package com.kurly.order.application;
 
 import com.kurly.common.exception.BusinessException;
 import com.kurly.common.exception.GlobalErrorCode;
+import com.kurly.common.security.AuthenticatedPrincipal;
 import com.kurly.order.domain.cart.Cart;
 import com.kurly.order.domain.cart.CartItem;
 import com.kurly.order.domain.cart.CartRepository;
@@ -17,6 +18,8 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.client.HttpClientErrorException;
+import org.springframework.web.client.RestClientResponseException;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
@@ -42,7 +45,8 @@ public class OrderService {
     private String refundAttachmentBucket;
 
     @Transactional
-    public CheckoutResponseDto checkout(Long memberId, CheckoutRequestDto request) {
+    public CheckoutResponseDto checkout(AuthenticatedPrincipal me, CheckoutRequestDto request) {
+        Long memberId = me.userId();
         if (request.cartItemIds() == null || request.cartItemIds().isEmpty()) {
             throw new BusinessException(OrderErrorCode.ORD_INVALID_CART_ITEMS);
         }
@@ -62,7 +66,6 @@ public class OrderService {
             throw new BusinessException(OrderErrorCode.ORD_INVALID_CART_ITEMS);
         }
 
-        // 회원당 단 1건의 활성 가주문서 유지 (동시성 비관적 락)
         orderRepository.findActiveCheckoutForUpdate(memberId).ifPresent(existing -> {
             if (existing.getInventoryReservationToken() != null &&
                     existing.getInventoryReservedUntil() != null &&
@@ -72,17 +75,16 @@ public class OrderService {
             existing.markExpired();
         });
 
-        // 상품 서비스 15분 논리 재고 선점 호출
         CheckoutInventoryResponseDto hold;
         try {
             hold = externalService.holdInventory(selectedItems);
-        } catch (Exception ex) {
-            // 상품 서비스에서 재고 부족(409) 반환 시 매핑
+        } catch (HttpClientErrorException.Conflict e) {
             throw new BusinessException(OrderErrorCode.ORD_INSUFFICIENT_STOCK);
+        } catch (RestClientResponseException e) {
+            throw new BusinessException(OrderErrorCode.ORD_INCOMPLETE_PRODUCT_RESPONSE, "상품 재고 서비스 통신에 실패했습니다.");
         }
 
-        // 응답 페이로드 검증 (선점 실패 또는 재고 부족 확인)
-        if (hold == null || hold.reservationToken() == null || hold.items() == null || hold.items().isEmpty()) {
+        if (hold == null || hold.reservationToken() == null) {
             throw new BusinessException(OrderErrorCode.ORD_INSUFFICIENT_STOCK);
         }
 
@@ -112,13 +114,13 @@ public class OrderService {
         return CheckoutResponseDto.from(order);
     }
 
-    public OrderPageResponseDto getAll(Long memberId, String range, String productName, int page, int size) {
+    public OrderPageResponseDto getAll(AuthenticatedPrincipal me, String range, String productName, int page, int size) {
         int months = switch (range) {
             case "3M" -> 3;
             case "6M" -> 6;
             case "1Y" -> 12;
             case "3Y" -> 36;
-            default -> throw new BusinessException(OrderErrorCode.ORD_INVALID_STATUS, "조회 기간 설정이 올바르지 않습니다.");
+            default -> throw new BusinessException(OrderErrorCode.ORD_INVALID_RANGE);
         };
 
         if (page < 1 || size < 1 || size > 100) {
@@ -129,7 +131,7 @@ public class OrderService {
         }
 
         var orders = orderRepository.findOrders(
-                memberId,
+                me.userId(),
                 LocalDateTime.now().minusMonths(months),
                 productName == null || productName.isBlank() ? null : productName,
                 PageRequest.of(page - 1, size, Sort.by(Sort.Direction.DESC, "createdAt"))
@@ -138,10 +140,9 @@ public class OrderService {
         return OrderPageResponseDto.from(orders, page, size);
     }
 
-    public OrderDetailResponseDto getById(Long memberId, Long orderId) {
-        Order order = getOwnedOrder(memberId, orderId);
+    public OrderDetailResponseDto getById(AuthenticatedPrincipal me, Long orderId) {
+        Order order = getOwnedOrder(me, orderId);
 
-        // 결제 이전 임시 가주문서는 주문 상세 조회 대상에서 격리
         if (order.getStatus() == OrderStatus.CHECKOUT_CREATED || order.getStatus() == OrderStatus.PENDING_PAYMENT) {
             throw new BusinessException(OrderErrorCode.ORD_NOT_FOUND_ORDER);
         }
@@ -149,7 +150,7 @@ public class OrderService {
         return OrderDetailResponseDto.from(order);
     }
 
-    public ClaimHistoryPageResponseDto getClaimHistories(Long memberId, String requestType,
+    public ClaimHistoryPageResponseDto getClaimHistories(AuthenticatedPrincipal me, String requestType,
                                                          String requestStatus, int page, int size) {
         if (page < 1 || size < 1 || size > 100) {
             throw new BusinessException(GlobalErrorCode.INVALID_INPUT_VALUE, "페이지 번호 및 크기가 올바르지 않습니다.");
@@ -159,7 +160,7 @@ public class OrderService {
         ClaimStatus status = parseClaimStatus(requestStatus);
 
         var result = orderClaimRepository.findClaims(
-                memberId,
+                me.userId(),
                 type,
                 status,
                 PageRequest.of(page - 1, size, Sort.by(Sort.Direction.DESC, "requestedAt"))
@@ -168,8 +169,8 @@ public class OrderService {
         return ClaimHistoryPageResponseDto.from(result, page, size);
     }
 
-    public ReturnPreviewResponseDto getReturnPreview(Long memberId, Long orderId) {
-        Order order = getOwnedOrder(memberId, orderId);
+    public ReturnPreviewResponseDto getReturnPreview(AuthenticatedPrincipal me, Long orderId) {
+        Order order = getOwnedOrder(me, orderId);
         ensureNoClaim(orderId);
 
         if (order.getDeliveryStatus() != DeliveryStatus.DELIVERED || order.getDeliveredAt() == null) {
@@ -217,8 +218,8 @@ public class OrderService {
     }
 
     @Transactional
-    public PlaceOrderResponseDto placeOrder(Long memberId, Long orderId) {
-        Order order = getOwnedOrderForUpdate(memberId, orderId);
+    public PlaceOrderResponseDto placeOrder(AuthenticatedPrincipal me, Long orderId) {
+        Order order = getOwnedOrderForUpdate(me, orderId);
 
         if (order.getStatus() == OrderStatus.PAID) {
             throw new BusinessException(OrderErrorCode.ORD_CONFLICT_ALREADY_PAID);
@@ -227,7 +228,6 @@ public class OrderService {
             throw new BusinessException(OrderErrorCode.ORD_INVALID_STATUS);
         }
 
-        // 결제 하드 타임아웃(5분) 설정 및 전이
         order.markPaymentPending(LocalDateTime.now().plus(PAYMENT_TIMEOUT));
         return PlaceOrderResponseDto.from(order);
     }
@@ -251,10 +251,9 @@ public class OrderService {
             throw new BusinessException(OrderErrorCode.ORD_CONFLICT_ALREADY_PAID);
         }
         if (!before.getPaymentAmount().equals(request.paymentAmount())) {
-            throw new BusinessException(OrderErrorCode.ORD_INVALID_STATUS, "주문 금액과 결제 금액이 일치하지 않습니다.");
+            throw new BusinessException(OrderErrorCode.ORD_INVALID_PAYMENT_AMOUNT);
         }
 
-        // 조건부 업데이트(status = 'PAYMENT_PENDING')로 5분 만료 워커와의 경합 처리
         if (orderRepository.completePayment(orderId, request.paymentId(), request.paidAt(), LocalDateTime.now()) == 0) {
             throw new BusinessException(OrderErrorCode.ORD_EXPIRED_PAYMENT_TIMEOUT);
         }
@@ -265,20 +264,19 @@ public class OrderService {
     }
 
     @Transactional
-    public OrderClaimResponseDto cancel(Long memberId, Long orderId, ClaimRequestDto request) {
+    public OrderClaimResponseDto cancel(AuthenticatedPrincipal me, Long orderId, ClaimRequestDto request) {
         CancelReason reason = CancelReason.find(request.reasonCode())
                 .orElseThrow(() -> new BusinessException(OrderErrorCode.ORD_INVALID_REASON_CODE));
 
         validateReasonDetail(request.reasonDetail(), reason.detailRequired());
 
-        Order order = getOwnedOrderForUpdate(memberId, orderId);
+        Order order = getOwnedOrderForUpdate(me, orderId);
         ensureNoClaim(orderId);
 
         if (order.getStatus() != OrderStatus.PAID) {
             throw new BusinessException(OrderErrorCode.ORD_INVALID_STATUS, "결제 완료 주문만 취소할 수 있습니다.");
         }
 
-        // OMS 출고 상태 동기 가드 검증
         if (!externalService.isCancellationEligible(orderId)) {
             throw new BusinessException(OrderErrorCode.ORD_CONFLICT_RELEASE_STARTED);
         }
@@ -298,7 +296,7 @@ public class OrderService {
     }
 
     @Transactional
-    public OrderClaimResponseDto requestReturn(Long memberId, Long orderId, ReturnRequestDto request) {
+    public OrderClaimResponseDto requestReturn(AuthenticatedPrincipal me, Long orderId, ReturnRequestDto request) {
         ReturnReason reason = ReturnReason.find(request.reasonCode())
                 .orElseThrow(() -> new BusinessException(OrderErrorCode.ORD_INVALID_REASON_CODE));
 
@@ -309,13 +307,13 @@ public class OrderService {
             throw new BusinessException(OrderErrorCode.ORD_MISSING_RETURN_EVIDENCE);
         }
 
-        String objectKeyPrefix = "returns/%d/".formatted(memberId);
+        String objectKeyPrefix = "returns/%d/".formatted(me.userId());
         if (attachments.stream().anyMatch(attachment -> !attachment.objectKey().startsWith(objectKeyPrefix)
                 || attachment.objectKey().contains(".."))) {
             throw new BusinessException(OrderErrorCode.ORD_INVALID_RETURN_EVIDENCE);
         }
 
-        Order order = getOwnedOrderForUpdate(memberId, orderId);
+        Order order = getOwnedOrderForUpdate(me, orderId);
         ensureNoClaim(orderId);
 
         if (order.getDeliveryStatus() != DeliveryStatus.DELIVERED || order.getDeliveredAt() == null) {
@@ -372,18 +370,18 @@ public class OrderService {
                 .orElseThrow(() -> new BusinessException(OrderErrorCode.ORD_NOT_FOUND_ORDER));
     }
 
-    private Order getOwnedOrder(Long memberId, Long orderId) {
+    private Order getOwnedOrder(AuthenticatedPrincipal me, Long orderId) {
         Order order = getOrder(orderId);
-        if (!order.getMemberId().equals(memberId)) {
+        if (!me.isAdmin() && !order.getMemberId().equals(me.userId())) {
             throw new BusinessException(GlobalErrorCode.FORBIDDEN);
         }
         return order;
     }
 
-    private Order getOwnedOrderForUpdate(Long memberId, Long orderId) {
+    private Order getOwnedOrderForUpdate(AuthenticatedPrincipal me, Long orderId) {
         Order order = orderRepository.findByIdForUpdate(orderId)
                 .orElseThrow(() -> new BusinessException(OrderErrorCode.ORD_NOT_FOUND_ORDER));
-        if (!order.getMemberId().equals(memberId)) {
+        if (!me.isAdmin() && !order.getMemberId().equals(me.userId())) {
             throw new BusinessException(GlobalErrorCode.FORBIDDEN);
         }
         return order;

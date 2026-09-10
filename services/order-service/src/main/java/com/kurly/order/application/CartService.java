@@ -2,6 +2,7 @@ package com.kurly.order.application;
 
 import com.kurly.common.exception.BusinessException;
 import com.kurly.common.exception.GlobalErrorCode;
+import com.kurly.common.security.AuthenticatedPrincipal;
 import com.kurly.order.domain.cart.Cart;
 import com.kurly.order.domain.cart.CartRepository;
 import com.kurly.order.domain.common.OrderErrorCode;
@@ -25,7 +26,8 @@ public class CartService {
     private final CartExternalService externalService;
 
     @Transactional
-    public CartResponseDto getByMemberId(Long memberId) {
+    public CartResponseDto getByMemberId(AuthenticatedPrincipal me) {
+        Long memberId = me.userId();
         Cart cart = getOrCreateForUpdate(memberId);
         CartResponseDto.Address address = externalService.getAddress(memberId, cart.getAddressId());
 
@@ -48,11 +50,12 @@ public class CartService {
     }
 
     @Transactional
-    public DeliveryAddressResponseDto updateDeliveryAddress(Long memberId, Long addressId) {
+    public DeliveryAddressResponseDto updateDeliveryAddress(AuthenticatedPrincipal me, Long addressId) {
         if (addressId == null) {
             throw new BusinessException(GlobalErrorCode.INVALID_INPUT_VALUE, "배송지 ID가 올바르지 않습니다.");
         }
 
+        Long memberId = me.userId();
         Cart cart = getOrCreateForUpdate(memberId);
         CartResponseDto.Address address = externalService.getAddress(memberId, addressId);
 
