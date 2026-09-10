@@ -21,3 +21,10 @@ services:
     read-timeout: ${SERVICE_READ_TIMEOUT:5s}
   storage:
     refund-attachment-bucket: ${REFUND_ATTACHMENT_BUCKET:refund-attachments}
+
+kurly:
+  security:
+    enabled: true
+    issuer: https://auth.kurly.local
+    audience: kurly-api
+    jwks-uri: http://localhost:8081/.well-known/jwks.json

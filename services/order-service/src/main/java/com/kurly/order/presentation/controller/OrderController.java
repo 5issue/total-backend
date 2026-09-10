@@ -1,109 +1,109 @@
 package com.kurly.order.presentation.controller;
 
 import com.kurly.common.response.ApiResponse;
-import com.kurly.common.exception.UnauthorizedException;
+import com.kurly.common.security.AuthPrincipal;
+import com.kurly.common.security.Authenticated;
+import com.kurly.common.security.AuthenticatedPrincipal;
 import com.kurly.order.application.OrderService;
+import com.kurly.order.presentation.api.OrderApi;
 import com.kurly.order.presentation.dto.*;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Positive;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
-import org.springframework.security.core.annotation.AuthenticationPrincipal;
-import org.springframework.security.oauth2.jwt.Jwt;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
 @RequestMapping("/api/v1/orders")
 @RequiredArgsConstructor
-public class OrderController {
+@Authenticated
+public class OrderController implements OrderApi {
 
     private final OrderService orderService;
 
+    @Override
     @PostMapping("/checkout")
     @ResponseStatus(HttpStatus.CREATED)
     public ApiResponse<CheckoutResponseDto> checkout(
-            @AuthenticationPrincipal Jwt jwt,
+            @AuthPrincipal AuthenticatedPrincipal principal,
             @Valid @RequestBody CheckoutRequestDto request
     ) {
-        return ApiResponse.success("주문서 생성 성공", orderService.checkout(memberId(jwt), request));
+        return ApiResponse.success("주문서 생성 성공", orderService.checkout(principal.userId(), request));
     }
 
+    @Override
     @GetMapping
     public ApiResponse<OrderPageResponseDto> list(
-            @AuthenticationPrincipal Jwt jwt,
+            @AuthPrincipal AuthenticatedPrincipal principal,
             @RequestParam(defaultValue = "3M") String range,
             @RequestParam(required = false) String productName,
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "20") int size
     ) {
         return ApiResponse.success("주문 목록 조회에 성공했습니다.",
-                orderService.getAll(memberId(jwt), range, productName, page, size));
+                orderService.getAll(principal.userId(), range, productName, page, size));
     }
 
+    @Override
     @GetMapping("/{orderId}")
     public ApiResponse<OrderDetailResponseDto> detail(
-            @AuthenticationPrincipal Jwt jwt,
+            @AuthPrincipal AuthenticatedPrincipal principal,
             @PathVariable @Positive Long orderId
     ) {
-        return ApiResponse.success("주문 상세 조회에 성공했습니다.", orderService.getById(memberId(jwt), orderId));
+        return ApiResponse.success("주문 상세 조회에 성공했습니다.", orderService.getById(principal.userId(), orderId));
     }
 
+    @Override
     @GetMapping("/cancellations-returns")
     public ApiResponse<ClaimHistoryPageResponseDto> listClaims(
-            @AuthenticationPrincipal Jwt jwt,
+            @AuthPrincipal AuthenticatedPrincipal principal,
             @RequestParam(required = false) String requestType,
             @RequestParam(required = false) String requestStatus,
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "20") int size
     ) {
         return ApiResponse.success("취소·반품 내역을 조회했습니다.",
-                orderService.getClaimHistories(memberId(jwt), requestType, requestStatus, page, size));
+                orderService.getClaimHistories(principal.userId(), requestType, requestStatus, page, size));
     }
 
+    @Override
     @GetMapping("/{orderId}/returns/preview")
     public ApiResponse<ReturnPreviewResponseDto> returnPreview(
-            @AuthenticationPrincipal Jwt jwt,
+            @AuthPrincipal AuthenticatedPrincipal principal,
             @PathVariable @Positive Long orderId
     ) {
         return ApiResponse.success("반품 접수 정보를 조회했습니다.",
-                orderService.getReturnPreview(memberId(jwt), orderId));
+                orderService.getReturnPreview(principal.userId(), orderId));
     }
 
+    @Override
     @PostMapping("/place-order")
     public ApiResponse<PlaceOrderResponseDto> placeOrder(
-            @AuthenticationPrincipal Jwt jwt,
+            @AuthPrincipal AuthenticatedPrincipal principal,
             @Valid @RequestBody PlaceOrderRequestDto request
     ) {
-        return ApiResponse.success("주문 결제 요청 성공", orderService.placeOrder(memberId(jwt), request.orderId()));
+        return ApiResponse.success("주문 결제 요청 성공", orderService.placeOrder(principal.userId(), request.orderId()));
     }
 
+    @Override
     @PostMapping("/{orderId}/cancel")
     public ApiResponse<OrderClaimResponseDto> cancel(
-            @AuthenticationPrincipal Jwt jwt,
+            @AuthPrincipal AuthenticatedPrincipal principal,
             @PathVariable @Positive Long orderId,
             @Valid @RequestBody ClaimRequestDto request
     ) {
-        return ApiResponse.success("전체 주문 취소가 접수되었습니다.", orderService.cancel(memberId(jwt), orderId, request));
+        return ApiResponse.success("전체 주문 취소가 접수되었습니다.", orderService.cancel(principal.userId(), orderId, request));
     }
 
+    @Override
     @PostMapping("/{orderId}/returns")
     @ResponseStatus(HttpStatus.CREATED)
     public ApiResponse<OrderClaimResponseDto> createReturn(
-            @AuthenticationPrincipal Jwt jwt,
+            @AuthPrincipal AuthenticatedPrincipal principal,
             @PathVariable @Positive Long orderId,
             @Valid @RequestBody ReturnRequestDto request
     ) {
         return ApiResponse.success("전체 주문 반품이 접수되었습니다.",
-                orderService.requestReturn(memberId(jwt), orderId, request));
-    }
-
-    private Long memberId(Jwt jwt) {
-        try {
-            return Long.valueOf(jwt.getSubject());
-        } catch (RuntimeException exception) {
-            throw new UnauthorizedException("인증 토큰의 사용자 식별자가 올바르지 않습니다.");
-        }
+                orderService.requestReturn(principal.userId(), orderId, request));
     }
 }
