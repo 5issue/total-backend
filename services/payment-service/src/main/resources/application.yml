@@ -1,36 +1,25 @@
 spring:
   application:
     name: payment-service
-  profiles:
-    # 프로파일을 지정하지 않으면 로컬로 동작한다. 운영은 --spring.profiles.active=prod
-    default: local
+  datasource:
+    url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3309}/${DB_NAME:payment_db}?serverTimezone=UTC&characterEncoding=UTF-8
+    username: ${DB_USERNAME:kurly}
+    password: ${DB_PASSWORD:kurly}
+    driver-class-name: com.mysql.cj.jdbc.Driver
   jpa:
+    hibernate:
+      ddl-auto: ${JPA_DDL_AUTO:update}
     open-in-view: false
-  jackson:
-    deserialization:
-      # 끄지 않으면 Jackson이 32000.9를 조용히 32000으로 잘라 Long에 넣는다.
-      # 금액에서 이 절사는 곧 승인 금액과 요청 금액의 불일치다. 소수부가 오면 거부해야 한다.
-      accept-float-as-int: false
-  flyway:
-    locations: classpath:db/migration
-    baseline-on-migrate: false
-
-payment:
-  messaging:
-    # 결제 이벤트를 내보낼 익스체인지. 큐와 바인딩은 소비하는 서비스가 선언한다.
-    exchange: payment.topic.exchange
-  refund:
-    # 반품 승인 환불 이벤트 구독(주문-결제 시퀀스 3절). 큐는 소비자인 우리가 선언한다.
-    exchange: order.topic.exchange
-    routing-key: order.refund.requested
-    queue: payment.refund.queue
-    # 처리할 수 없는 메시지가 무한 재배달되며 큐를 막지 않도록 보낼 곳.
-    dead-letter: payment.refund.dlq
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME:guest}
+    password: ${RABBITMQ_PASSWORD:guest}
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
 
 server:
   port: 8083
-
-kurly:
-  security:
-    # 공통 인증 처리기. 모든 엔드포인트가 인가 애노테이션을 표기해야 기동된다.
-    enabled: true
