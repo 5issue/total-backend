@@ -25,6 +25,9 @@ spring:
       port: ${REDIS_PORT}
       password: ${REDIS_PASSWORD}
 
+order-service:
+  base-url: ${ORDER_SERVICE_BASE_URL}
+
 kurly:
   security:
     issuer: ${JWT_ISSUER}
