@@ -40,6 +40,7 @@ class PaymentCheckoutServiceUnitExceptionTest {
     @Mock OrderClient orderClient;
     @Mock PgClient pgClient;
     @Mock PaymentRecordService paymentRecordService;
+    @Mock PaymentCompensationService paymentCompensationService;
     @InjectMocks PaymentCheckoutService paymentCheckoutService;
 
     private void givenOrder(Long owner, long amount, boolean payable) {
@@ -118,15 +119,12 @@ class PaymentCheckoutServiceUnitExceptionTest {
                     .willReturn(new PgClient.Approval(PAYMENT_KEY, "CARD", "https://toss.im/r/1"));
             willThrow(new DataIntegrityViolationException("duplicate success_order_id"))
                     .given(paymentRecordService).recordApproval(eq(10L), any());
-            given(paymentRecordService.beginCancel(eq(10L), anyString(), eq(AMOUNT)))
-                    .willReturn(cancel(20L, approvedPayment(10L), AMOUNT));
-            given(pgClient.cancel(anyString(), eq(AMOUNT), anyString()))
-                    .willReturn(new PgClient.Cancellation("PG-CANCEL-DUP"));
 
             assertThatThrownBy(() -> paymentCheckoutService.checkout(USER_ID, ORDER_ID, PAYMENT_KEY, AMOUNT))
                     .isInstanceOf(DuplicatePaymentRequestException.class);
 
-            verify(paymentRecordService).completeCancel(20L, "PG-CANCEL-DUP");
+            verify(paymentCompensationService)
+                    .compensate(eq(10L), anyString(), eq(AMOUNT), eq("DUPLICATE_PAYMENT"));
         }
 
         @Test
@@ -138,15 +136,12 @@ class PaymentCheckoutServiceUnitExceptionTest {
                     .willReturn(new PgClient.Approval("PG-ISSUED-KEY", "CARD", "https://toss.im/r/1"));
             willThrow(new DataIntegrityViolationException("duplicate"))
                     .given(paymentRecordService).recordApproval(eq(10L), any());
-            given(paymentRecordService.beginCancel(eq(10L), anyString(), eq(AMOUNT)))
-                    .willReturn(cancel(20L, approvedPayment(10L), AMOUNT));
-            given(pgClient.cancel(anyString(), eq(AMOUNT), anyString()))
-                    .willReturn(new PgClient.Cancellation("PG-CANCEL-DUP"));
 
             assertThatThrownBy(() -> paymentCheckoutService.checkout(USER_ID, ORDER_ID, PAYMENT_KEY, AMOUNT))
                     .isInstanceOf(DuplicatePaymentRequestException.class);
 
-            verify(pgClient).cancel(eq("PG-ISSUED-KEY"), eq(AMOUNT), anyString());
+            verify(paymentCompensationService)
+                    .compensate(eq(10L), eq("PG-ISSUED-KEY"), eq(AMOUNT), anyString());
         }
     }
 
@@ -164,19 +159,16 @@ class PaymentCheckoutServiceUnitExceptionTest {
             given(paymentRecordService.recordApproval(eq(10L), any())).willReturn(approvedPayment(10L));
             willThrow(new OrderClient.OrderAlreadyExpiredException(ORDER_ID))
                     .given(orderClient).completePayment(eq(ORDER_ID), anyLong(), anyLong(), any());
-            given(paymentRecordService.beginCancel(eq(10L), anyString(), eq(AMOUNT)))
-                    .willReturn(cancel(20L, approvedPayment(10L), AMOUNT));
-            given(pgClient.cancel(anyString(), eq(AMOUNT), anyString()))
-                    .willReturn(new PgClient.Cancellation("PG-CANCEL-1"));
 
             assertThatThrownBy(() -> paymentCheckoutService.checkout(USER_ID, ORDER_ID, PAYMENT_KEY, AMOUNT))
                     .isInstanceOf(InvalidPaymentStatusException.class);
-            verify(paymentRecordService).completeCancel(20L, "PG-CANCEL-1");
+            verify(paymentCompensationService)
+                    .compensate(eq(10L), anyString(), eq(AMOUNT), eq("ORDER_EXPIRED"));
         }
 
         @Test
-        void 보상_취소마저_실패하면_재시도_큐로_넘긴다() {
-            // 여기서 멈추면 고객 돈이 묶인 채로 잊힌다.
+        void 취소는_승인_응답이_아니라_기록된_키로_건다() {
+            // 기록이 남아 있는 경로다. 엔티티에 확정된 키를 써야 PG가 아는 결제를 취소하게 된다.
             givenOrder(USER_ID, AMOUNT, true);
             given(paymentRecordService.createRequested(ORDER_ID, USER_ID, AMOUNT)).willReturn(payment(10L));
             given(pgClient.approve(PAYMENT_KEY, ORDER_ID, AMOUNT))
@@ -184,14 +176,12 @@ class PaymentCheckoutServiceUnitExceptionTest {
             given(paymentRecordService.recordApproval(eq(10L), any())).willReturn(approvedPayment(10L));
             willThrow(new OrderClient.OrderAlreadyExpiredException(ORDER_ID))
                     .given(orderClient).completePayment(eq(ORDER_ID), anyLong(), anyLong(), any());
-            given(paymentRecordService.beginCancel(eq(10L), anyString(), eq(AMOUNT)))
-                    .willReturn(cancel(20L, approvedPayment(10L), AMOUNT));
-            willThrow(new IllegalStateException("PG timeout"))
-                    .given(pgClient).cancel(anyString(), eq(AMOUNT), anyString());
 
             assertThatThrownBy(() -> paymentCheckoutService.checkout(USER_ID, ORDER_ID, PAYMENT_KEY, AMOUNT))
                     .isInstanceOf(InvalidPaymentStatusException.class);
-            verify(paymentRecordService).failCancel(eq(20L), anyString());
+            // approvedPayment 픽스처가 확정한 키
+            verify(paymentCompensationService)
+                    .compensate(eq(10L), eq("TOSS-KEY"), eq(AMOUNT), anyString());
         }
     }
 }
