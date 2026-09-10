@@ -181,6 +181,11 @@ public class PaymentRecordService {
     public void failCancel(Long cancelId, String error) {
         PaymentCancel cancel = paymentCancelRepository.findById(cancelId)
                 .orElseThrow(PaymentNotFoundException::new);
+        enqueueRetry(cancel, error);
+    }
+
+    /** 취소를 실패로 확정하고 재시도 큐에 적재한다. */
+    private void enqueueRetry(PaymentCancel cancel, String error) {
         cancel.fail(error);
 
         paymentRetryRepository.save(PaymentRetry.builder()
@@ -202,14 +207,17 @@ public class PaymentRecordService {
      * 다른 인스턴스가 같은 결제를 함께 집어 PG에 두 번 묻고 두 번 정정한다.
      */
     @Transactional
-    public List<ReconcileTarget> claimReconcilable(int limit, LocalDateTime staleBefore) {
-        return paymentRepository.claimReconcilableForUpdateSkipLocked(staleBefore, limit).stream()
-                .peek(Payment::claimReconciliation)
+    public List<ReconcileTarget> claimReconcilable(int limit, LocalDateTime staleBefore, Duration lease) {
+        return paymentRepository
+                .claimReconcilableForUpdateSkipLocked(LocalDateTime.now(), staleBefore, limit).stream()
+                .peek(payment -> payment.leaseReconciliation(lease))
                 .map(payment -> new ReconcileTarget(
                         payment.getId(),
                         payment.getOrderId(),
                         payment.getTotalAmount(),
-                        payment.getStatus()))
+                        payment.getStatus(),
+                        payment.getPaymentKey(),
+                        payment.isApprovedButNotHandedOver()))
                 .toList();
     }
 
@@ -217,6 +225,34 @@ public class PaymentRecordService {
     @Transactional
     public void releaseReconciliationClaim(Long paymentId) {
         findPayment(paymentId).releaseReconciliation();
+    }
+
+    /** 대사 결론이 났음을 기록한다. 이후 주기는 이 결제를 다시 집지 않는다. */
+    @Transactional
+    public void completeReconciliation(Long paymentId) {
+        findPayment(paymentId).completeReconciliation();
+    }
+
+    /** 주문 인계 완료를 남긴다. 남기지 않으면 대사가 이 결제를 미인계로 보고 계속 집는다. */
+    @Transactional
+    public void markOrderNotified(Long paymentId) {
+        findPayment(paymentId).markOrderNotified();
+    }
+
+    /**
+     * 결과를 모른 채 남은 취소를 실패로 확정해 재시도 큐에 넣는다.
+     *
+     * <p>{@link #failCancel}을 그대로 쓴다. 재시도 행 적재 규칙이 한 곳에만 있어야 어긋나지 않는다.
+     *
+     * @return 회수한 취소 이력 id
+     */
+    @Transactional
+    public List<Long> recoverStaleRequestedCancels(int limit, LocalDateTime staleBefore) {
+        return paymentCancelRepository
+                .findStaleRequestedForUpdateSkipLocked(staleBefore, limit).stream()
+                .peek(cancel -> enqueueRetry(cancel, "결과 미확인 상태로 방치돼 회수됨"))
+                .map(PaymentCancel::getId)
+                .toList();
     }
 
     /** 매달린 멱등키 선점을 지운다. @see IdempotencyKeyRepository#deleteStaleInProgress */
@@ -252,7 +288,8 @@ public class PaymentRecordService {
      * @param status 선점 시점의 결제 상태. {@code FAILED}였다면 이미 실패로 기록돼 있어
      *               다시 실패로 쓸 필요가 없다
      */
-    public record ReconcileTarget(Long paymentId, Long orderId, Long totalAmount, PaymentStatus status) {
+    public record ReconcileTarget(Long paymentId, Long orderId, Long totalAmount, PaymentStatus status,
+                                  String paymentKey, boolean approvedButNotHandedOver) {
         public boolean alreadyFailed() {
             return status == PaymentStatus.FAILED;
         }

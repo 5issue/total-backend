@@ -51,6 +51,10 @@ public class PaymentWorkerScheduler {
     @Value("${payment.reconcile.stale-after:PT10M}")
     private Duration reconcileStaleAfter;
 
+    /** 결과를 모른 채 남은 취소를 회수하기까지의 유예. PG 호출이 끝날 시간을 넉넉히 준다. */
+    @Value("${payment.reconcile.cancel-stale-after:PT15M}")
+    private Duration cancelStaleAfter;
+
     @Value("${payment.cleanup.batch-size:500}")
     private int cleanupBatchSize;
 
@@ -88,6 +92,13 @@ public class PaymentWorkerScheduler {
             paymentReconciliationService.reconcileStalePayments(reconcileBatchSize, reconcileStaleAfter);
         } catch (RuntimeException e) {
             log.error("PG 대사 주기 실행 실패", e);
+        }
+        try {
+            // 같은 워커에서 돈다. 둘 다 "결과를 모르는 상태"를 회수하는 일이고,
+            // 스레드를 하나 더 쓸 만큼 잦지도 무겁지도 않다.
+            paymentReconciliationService.recoverStaleCancels(reconcileBatchSize, cancelStaleAfter);
+        } catch (RuntimeException e) {
+            log.error("매달린 취소 회수 주기 실행 실패", e);
         }
     }
 

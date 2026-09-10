@@ -36,6 +36,9 @@ class PaymentRecordServiceIntegrationTest {
      */
     private static final LocalDateTime STALE_BEFORE = LocalDateTime.now().minusMinutes(10);
 
+    /** 테스트에서는 임대가 만료되지 않을 만큼만 길면 된다. */
+    private static final java.time.Duration LEASE = java.time.Duration.ofMinutes(5);
+
     private static final long HOUR_AGO = 60;
     private static final long MINUTE_AGO = 1;
 
@@ -66,7 +69,7 @@ class PaymentRecordServiceIntegrationTest {
     }
 
     private List<Long> claimedIds() {
-        return paymentRecordService.claimReconcilable(100, STALE_BEFORE).stream()
+        return paymentRecordService.claimReconcilable(100, STALE_BEFORE, LEASE).stream()
                 .map(PaymentRecordService.ReconcileTarget::paymentId)
                 .toList();
     }
@@ -85,8 +88,10 @@ class PaymentRecordServiceIntegrationTest {
 
         @Test
         void 이미_결론이_난_결제는_집지_않는다() {
-            // SUCCESS·CANCELED를 다시 맞추면 정상 결제를 건드리게 된다.
-            given(903L, PaymentStatus.SUCCESS, HOUR_AGO);
+            // 취소된 결제와, 주문 인계까지 끝난 성공 결제는 더 맞출 것이 없다.
+            // (인계되지 않은 SUCCESS는 대사 대상이다 — NotHandedOverTest 참조)
+            Long settled = given(903L, PaymentStatus.SUCCESS, HOUR_AGO).getId();
+            jdbcTemplate.update("UPDATE payments SET order_notified_at = NOW(6) WHERE id = ?", settled);
             given(904L, PaymentStatus.CANCELED, HOUR_AGO);
 
             assertThat(claimedIds()).isEmpty();
@@ -106,7 +111,7 @@ class PaymentRecordServiceIntegrationTest {
                 given(orderId, PaymentStatus.REQUESTED, HOUR_AGO);
             }
 
-            assertThat(paymentRecordService.claimReconcilable(2, STALE_BEFORE)).hasSize(2);
+            assertThat(paymentRecordService.claimReconcilable(2, STALE_BEFORE, LEASE)).hasSize(2);
         }
     }
 
@@ -115,15 +120,17 @@ class PaymentRecordServiceIntegrationTest {
     class ClaimMarkerTest {
 
         @Test
-        void 선점_표시가_조회와_같은_트랜잭션에_커밋된다() {
+        void 선점_임대가_조회와_같은_트랜잭션에_커밋된다() {
             // 나중에 표시하면 다른 인스턴스가 같은 결제를 함께 집어 PG에 두 번 묻고 두 번 정정한다.
             Long id = given(920L, PaymentStatus.REQUESTED, HOUR_AGO).getId();
 
-            paymentRecordService.claimReconcilable(100, STALE_BEFORE);
+            paymentRecordService.claimReconcilable(100, STALE_BEFORE, LEASE);
 
-            Object reconciledAt = jdbcTemplate.queryForObject(
-                    "SELECT reconciled_at FROM payments WHERE id = ?", Object.class, id);
-            assertThat(reconciledAt).isNotNull();
+            var row = jdbcTemplate.queryForMap(
+                    "SELECT reconcile_claimed_until, reconciled_at FROM payments WHERE id = ?", id);
+            assertThat(row.get("reconcile_claimed_until")).isNotNull();
+            // 선점은 완료가 아니다. 겸하게 두면 워커가 죽었을 때 그 건이 영구히 묻힌다.
+            assertThat(row.get("reconciled_at")).isNull();
         }
 
         @Test
@@ -143,6 +150,87 @@ class PaymentRecordServiceIntegrationTest {
             paymentRecordService.releaseReconciliationClaim(id);
 
             assertThat(claimedIds()).containsExactly(id);
+        }
+    }
+
+    @Nested
+    @DisplayName("선점 임대 만료")
+    class LeaseExpiryTest {
+
+        @Test
+        void 임대가_살아있는_동안은_다시_집히지_않는다() {
+            given(940L, PaymentStatus.REQUESTED, HOUR_AGO);
+
+            assertThat(claimedIds()).hasSize(1);
+            assertThat(claimedIds()).isEmpty();
+        }
+
+        @Test
+        void 임대가_만료되면_다시_집힌다() {
+            // 워커가 선점 직후 죽어도 그 결제가 영구히 묻히면 안 된다.
+            // 완료 표시와 선점을 겸하던 예전 구조에서는 여기서 영영 사라졌다.
+            Long id = given(941L, PaymentStatus.REQUESTED, HOUR_AGO).getId();
+            assertThat(claimedIds()).containsExactly(id);
+
+            jdbcTemplate.update(
+                    "UPDATE payments SET reconcile_claimed_until = NOW(6) - INTERVAL 1 MINUTE WHERE id = ?", id);
+
+            assertThat(claimedIds()).containsExactly(id);
+        }
+
+        @Test
+        void 완료로_표시하면_임대와_무관하게_제외된다() {
+            Long id = given(942L, PaymentStatus.REQUESTED, HOUR_AGO).getId();
+            paymentRecordService.claimReconcilable(100, STALE_BEFORE, LEASE);
+
+            paymentRecordService.completeReconciliation(id);
+            jdbcTemplate.update(
+                    "UPDATE payments SET reconcile_claimed_until = NOW(6) - INTERVAL 1 MINUTE WHERE id = ?", id);
+
+            assertThat(claimedIds()).isEmpty();
+        }
+    }
+
+    @Nested
+    @DisplayName("주문에 인계되지 못한 성공 결제")
+    class NotHandedOverTest {
+
+        private Long approvedButNotNotified(Long orderId) {
+            Payment payment = paymentRecordService.createRequested(orderId, USER_ID, AMOUNT);
+            paymentRecordService.recordApproval(payment.getId(),
+                    new com.kurly.payment.application.port.PgClient.Approval("KEY-" + orderId, "카드", null));
+            jdbcTemplate.update(
+                    "UPDATE payments SET requested_at = NOW(6) - INTERVAL ? MINUTE WHERE id = ?",
+                    HOUR_AGO, payment.getId());
+            return payment.getId();
+        }
+
+        @Test
+        void 인계되지_않은_성공_결제도_대사가_집는다() {
+            // 승인 기록과 주문 인계는 다른 트랜잭션이다. 그 사이에 죽으면
+            // "결제는 성공했는데 주문은 모르는" 상태가 남는다.
+            Long id = approvedButNotNotified(950L);
+
+            assertThat(claimedIds()).containsExactly(id);
+        }
+
+        @Test
+        void 인계_표시가_있으면_집지_않는다() {
+            Long id = approvedButNotNotified(951L);
+            paymentRecordService.markOrderNotified(id);
+
+            assertThat(claimedIds()).isEmpty();
+        }
+
+        @Test
+        void 인계_대상임을_함께_알려준다() {
+            approvedButNotNotified(952L);
+
+            assertThat(paymentRecordService.claimReconcilable(100, STALE_BEFORE, LEASE))
+                    .singleElement()
+                    .extracting(PaymentRecordService.ReconcileTarget::approvedButNotHandedOver,
+                            PaymentRecordService.ReconcileTarget::paymentKey)
+                    .containsExactly(true, "KEY-952");
         }
     }
 

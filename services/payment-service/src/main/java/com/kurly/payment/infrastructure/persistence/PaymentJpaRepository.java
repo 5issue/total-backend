@@ -25,13 +25,16 @@ public interface PaymentJpaRepository extends JpaRepository<Payment, Long>, Paym
     @Override
     @Query(value = """
             SELECT * FROM payments
-             WHERE status IN ('REQUESTED', 'FAILED')
-               AND reconciled_at IS NULL
+             WHERE reconciled_at IS NULL
+               AND (reconcile_claimed_until IS NULL OR reconcile_claimed_until < :now)
                AND requested_at < :staleBefore
+               AND (status IN ('REQUESTED', 'FAILED')
+                    OR (status = 'SUCCESS' AND order_notified_at IS NULL))
              ORDER BY requested_at ASC
              LIMIT :limit
              FOR UPDATE SKIP LOCKED
             """, nativeQuery = true)
-    List<Payment> claimReconcilableForUpdateSkipLocked(@Param("staleBefore") LocalDateTime staleBefore,
+    List<Payment> claimReconcilableForUpdateSkipLocked(@Param("now") LocalDateTime now,
+                                                       @Param("staleBefore") LocalDateTime staleBefore,
                                                        @Param("limit") int limit);
 }

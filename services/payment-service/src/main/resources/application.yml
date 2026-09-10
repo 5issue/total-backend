@@ -41,6 +41,8 @@ payment:
     batch-size: 100
     # 이 시간이 지나도록 결론이 안 난 결제만 대사한다(PG 승인 타임아웃보다 넉넉히 길게).
     stale-after: PT10M
+    # 결과를 모른 채 REQUESTED로 남은 취소를 재시도 큐로 회수하기까지의 유예.
+    cancel-stale-after: PT15M
   idempotency:
     # 매달린 IN_PROGRESS 선점 해제 주기. 결제 대사가 결론을 낸 뒤에 풀리도록 유예를 더 길게 둔다.
     delay-ms: 300000

@@ -27,10 +27,15 @@ public interface PaymentRepository {
     /**
      * 대사가 필요한 결제를 선점하며 가져온다.
      *
-     * <p>대상은 {@code REQUESTED}(승인 결과를 못 받고 멈춘 건)와 {@code FAILED}(타임아웃을 실패로
-     * 기록했지만 PG는 승인했을 수 있는 건) 둘 다이다. 성공·취소는 이미 결론이 난 상태라 제외한다.
+     * <p>대상은 셋이다. {@code REQUESTED}(승인 결과를 못 받고 멈춘 건), {@code FAILED}(타임아웃을
+     * 실패로 기록했지만 PG는 승인했을 수 있는 건), 그리고 <b>주문에 인계되지 못한 {@code SUCCESS}</b>
+     * (승인은 기록됐는데 그 뒤 프로세스가 죽어 주문이 모르는 건)이다.
      *
+     * <p>선점은 만료되는 임대로 건다. 완료 표시와 겸하면 워커가 죽었을 때 그 건이 영구히 묻힌다.
+     *
+     * @param now         임대 만료 판정 기준
      * @param staleBefore 이 시각 이전에 요청된 건만. 진행 중인 정상 결제를 건드리지 않기 위한 유예다
      */
-    java.util.List<Payment> claimReconcilableForUpdateSkipLocked(java.time.LocalDateTime staleBefore, int limit);
+    java.util.List<Payment> claimReconcilableForUpdateSkipLocked(
+            java.time.LocalDateTime now, java.time.LocalDateTime staleBefore, int limit);
 }
