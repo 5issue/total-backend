@@ -116,6 +116,26 @@ services:
       start_period: 15s
     restart: unless-stopped
 
+  swagger-ui:
+    image: swaggerapi/swagger-ui:latest
+    container_name: kurly-swagger-ui
+    ports:
+      - "8080:8080"
+    environment:
+      URLS: "[
+        { url: 'http://localhost:8081/v3/api-docs', name: '1. Auth Service' },
+        { url: 'http://localhost:8082/v3/api-docs', name: '2. Order Service' },
+        { url: 'http://localhost:8083/v3/api-docs', name: '3. Payment Service' },
+        { url: 'http://localhost:8084/v3/api-docs', name: '4. Product Service' },
+        { url: 'http://localhost:8085/v3/api-docs', name: '5. WMS Service' },
+        { url: 'http://localhost:8086/v3/api-docs', name: '6. OMS Service' },
+        { url: 'http://localhost:8087/v3/api-docs', name: '7. SCM Service' }
+      ]"
+      CONFIG_URL_FILTER_TYPE: "combo"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+
 volumes:
   rabbitmq_data:
     name: kurly-rabbitmq-data
