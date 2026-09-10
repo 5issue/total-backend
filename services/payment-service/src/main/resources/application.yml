@@ -14,11 +14,40 @@ spring:
   flyway:
     locations: classpath:db/migration
     baseline-on-migrate: false
+  task:
+    scheduling:
+      # 기본값은 1이다. 워커가 한 스레드를 나눠 쓰면 PG 대사가 외부 호출로 오래 머무는 동안
+      # 아웃박스 발행(5초 주기)이 통째로 밀린다. 워커 수만큼 준다.
+      pool:
+        size: 5
 
 payment:
   messaging:
     # 결제 이벤트를 내보낼 익스체인지. 큐와 바인딩은 소비하는 서비스가 선언한다.
     exchange: payment.topic.exchange
+  outbox:
+    # 이 횟수만큼 발행에 실패하면 FAILED로 멈춘다. 나가지 않는 이벤트가 배치 묶음을 계속
+    # 차지하면 뒤에 쌓인 정상 이벤트가 밀린다. 멈춘 뒤로는 사람이 봐야 한다.
+    max-attempts: 5
+  cleanup:
+    # 완료 기록 정리. 자주 돌 이유가 없어 하루 한 번.
+    delay-ms: 86400000
+    batch-size: 500
+    # 보관 기간. 짧게 잡으면 멱등키가 사라진 뒤 온 재요청이 결제를 새로 실행한다.
+    retention: P7D
+  reconcile:
+    # PG 대사 주기. 우리 기록과 PG가 어긋난 결제를 찾아 맞춘다.
+    delay-ms: 300000
+    batch-size: 100
+    # 이 시간이 지나도록 결론이 안 난 결제만 대사한다(PG 승인 타임아웃보다 넉넉히 길게).
+    stale-after: PT10M
+    # 결과를 모른 채 REQUESTED로 남은 취소를 재시도 큐로 회수하기까지의 유예.
+    cancel-stale-after: PT15M
+  idempotency:
+    # 매달린 IN_PROGRESS 선점 해제 주기. 결제 대사가 결론을 낸 뒤에 풀리도록 유예를 더 길게 둔다.
+    delay-ms: 300000
+    batch-size: 200
+    stale-after: PT30M
   refund:
     # 반품 승인 환불 이벤트 구독(주문-결제 시퀀스 3절). 큐는 소비자인 우리가 선언한다.
     exchange: order.topic.exchange

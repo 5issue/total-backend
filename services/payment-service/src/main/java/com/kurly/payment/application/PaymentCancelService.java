@@ -51,7 +51,7 @@ public class PaymentCancelService {
                 paymentId, reason, payment.getTotalAmount());
         try {
             PgClient.Cancellation cancellation = pgClient.cancel(
-                    payment.getPaymentKey(), payment.getTotalAmount(), reason);
+                    payment.getPaymentKey(), payment.getTotalAmount(), reason, cancel.getId());
             // 갱신된 인스턴스로 바꿔 든다. beginCancel이 돌려준 것은 상태 전이 전의 스냅샷이다.
             return paymentRecordService.completeCancel(cancel.getId(), cancellation.pgCancelKey());
         } catch (RuntimeException e) {

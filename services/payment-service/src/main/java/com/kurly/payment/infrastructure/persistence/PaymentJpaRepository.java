@@ -3,7 +3,11 @@ package com.kurly.payment.infrastructure.persistence;
 import com.kurly.payment.domain.entity.Payment;
 import com.kurly.payment.domain.repository.PaymentRepository;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
+import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Optional;
 
 public interface PaymentJpaRepository extends JpaRepository<Payment, Long>, PaymentRepository {
@@ -16,4 +20,21 @@ public interface PaymentJpaRepository extends JpaRepository<Payment, Long>, Paym
 
     @Override
     Optional<Payment> findById(Long id);
+
+    /** {@code FOR UPDATE SKIP LOCKED}는 JPQL로 표현할 수 없어 네이티브 쿼리를 쓴다. */
+    @Override
+    @Query(value = """
+            SELECT * FROM payments
+             WHERE reconciled_at IS NULL
+               AND (reconcile_claimed_until IS NULL OR reconcile_claimed_until < :now)
+               AND requested_at < :staleBefore
+               AND (status IN ('REQUESTED', 'FAILED')
+                    OR (status = 'SUCCESS' AND order_notified_at IS NULL))
+             ORDER BY requested_at ASC
+             LIMIT :limit
+             FOR UPDATE SKIP LOCKED
+            """, nativeQuery = true)
+    List<Payment> claimReconcilableForUpdateSkipLocked(@Param("now") LocalDateTime now,
+                                                       @Param("staleBefore") LocalDateTime staleBefore,
+                                                       @Param("limit") int limit);
 }

@@ -13,12 +13,19 @@ import static org.assertj.core.api.Assertions.assertThatCode;
 class JwtVerificationPropertiesUnitTest {
 
     private static JwtVerificationProperties of(boolean enabled, String issuer, String audience) {
-        return new JwtVerificationProperties(enabled, issuer, audience, null, null, null, null);
+        return new JwtVerificationProperties(enabled, issuer, audience, null, null, null, null, null);
     }
 
     @Nested
     @DisplayName("기본값")
     class DefaultTest {
+
+        @Test
+        void 폴백_허용_창의_기본값이_있다() {
+            // 기한이 없으면 폴백이 키 폐기를 무기한 우회하는 길이 된다. 설정을 빠뜨려도 기한은 있어야 한다.
+            assertThat(of(true, "https://auth.kurly.local", "kurly-api").fallbackWindow())
+                    .isEqualTo(java.time.Duration.ofMinutes(10));
+        }
 
         @Test
         void clockSkew와_감사_패키지에_기본값이_채워진다() {
@@ -73,7 +80,7 @@ class JwtVerificationPropertiesUnitTest {
         void jwks_uri의_미주입도_원인을_그대로_알린다() {
             // 검사하지 않으면 https 검사에 먼저 걸려 "http라서 거부"로 잘못 보고된다.
             assertThatThrownBy(() -> new JwtVerificationProperties(
-                    true, "https://auth.kurly.local", "kurly-api", "${JWT_JWKS_URI}", null, null, null))
+                    true, "https://auth.kurly.local", "kurly-api", "${JWT_JWKS_URI}", null, null, null, null))
                     .isInstanceOf(IllegalStateException.class)
                     .hasMessageContaining("kurly.security.jwks-uri의 환경변수가 주입되지 않았습니다");
         }

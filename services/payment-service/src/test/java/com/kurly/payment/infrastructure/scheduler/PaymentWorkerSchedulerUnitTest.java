@@ -26,6 +26,7 @@ class PaymentWorkerSchedulerUnitTest {
 
     private void givenBatchSizes() {
         ReflectionTestUtils.setField(scheduler, "outboxBatchSize", 100);
+        ReflectionTestUtils.setField(scheduler, "outboxMaxAttempts", 5);
         ReflectionTestUtils.setField(scheduler, "retryBatchSize", 50);
     }
 
@@ -36,11 +37,11 @@ class PaymentWorkerSchedulerUnitTest {
         @Test
         void 설정한_묶음_크기로_아웃박스를_발행한다() {
             givenBatchSizes();
-            given(outboxPublishService.publishPending(100)).willReturn(3);
+            given(outboxPublishService.publishPending(100, 5)).willReturn(3);
 
             scheduler.publishOutbox();
 
-            verify(outboxPublishService).publishPending(100);
+            verify(outboxPublishService).publishPending(100, 5);
         }
 
         @Test
@@ -62,7 +63,7 @@ class PaymentWorkerSchedulerUnitTest {
         void 아웃박스_발행이_실패해도_예외를_밖으로_내보내지_않는다() {
             // 스케줄러 밖으로 나가면 로그가 프레임워크 형식으로만 남아 원인을 찾기 어렵다.
             givenBatchSizes();
-            willThrow(new IllegalStateException("boom")).given(outboxPublishService).publishPending(anyInt());
+            willThrow(new IllegalStateException("boom")).given(outboxPublishService).publishPending(anyInt(), anyInt());
 
             assertThatCode(() -> scheduler.publishOutbox()).doesNotThrowAnyException();
         }

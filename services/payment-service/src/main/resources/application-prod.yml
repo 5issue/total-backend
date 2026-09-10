@@ -1,7 +1,8 @@
 # 운영 프로파일.
 #
-# 민감값에는 기본값을 두지 않는다. 다만 Boot의 Binder는 해석하지 못한 플레이스홀더를 예외로 만들지 않고
-# 리터럴 문자열로 남기므로, 기동 중단은 각 설정값의 검증 코드가 담당한다(JwtVerificationProperties 등).
+# 민감값에는 기본값을 두지 않는다. Boot의 Binder는 해석하지 못한 플레이스홀더를 예외로 만들지 않고
+# 리터럴 문자열로 남기므로, 기동 중단은 common의 UnresolvedPlaceholderGuard가 담당한다.
+# (환경변수가 하나라도 빠지면 컨텍스트 생성 전에 누락 목록을 모두 모아 보고하고 중단한다.)
 spring:
   jpa:
     hibernate:

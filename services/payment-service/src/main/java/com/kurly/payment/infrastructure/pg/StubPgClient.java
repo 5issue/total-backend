@@ -28,8 +28,15 @@ public class StubPgClient implements PgClient {
         return new Approval(paymentKey, "CARD", "https://stub.local/receipt/" + orderId);
     }
 
+    /** 스텁은 조회 대상이 없다고 답한다. 대사 배치가 "승인되지 않음"으로 판단하게 된다. */
     @Override
-    public Cancellation cancel(String paymentKey, long amount, String reason) {
+    public java.util.Optional<Inquiry> findByOrderId(Long orderId) {
+        log.warn("PG 스텁 조회. 실제 결제 상태가 아닙니다: orderId={}", orderId);
+        return java.util.Optional.empty();
+    }
+
+    @Override
+    public Cancellation cancel(String paymentKey, long amount, String reason, Long cancelId) {
         log.warn("PG 스텁으로 취소를 흉내 냅니다. 실제 취소가 아닙니다: amount={}, reason={}", amount, reason);
         return new Cancellation("STUB-CANCEL-" + UUID.randomUUID());
     }

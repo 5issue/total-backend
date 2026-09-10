@@ -103,7 +103,7 @@ public class SecurityAutoConfiguration {
             return remote;
         }
         try {
-            return new FallbackJwkSource(remote, JWK.parse(properties.fallbackJwk()));
+            return new FallbackJwkSource(remote, JWK.parse(properties.fallbackJwk()), properties.fallbackWindow());
         } catch (ParseException e) {
             throw new IllegalStateException("kurly.security.fallback-jwk를 JWK로 해석하지 못했습니다.", e);
         }

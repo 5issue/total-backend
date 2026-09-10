@@ -57,7 +57,7 @@ class PaymentCancelServiceUnitExceptionTest {
 
             assertThatThrownBy(() -> paymentCancelService.cancel(10L, 999L, "USER_CANCEL"))
                     .isInstanceOf(PaymentNotFoundException.class);
-            verify(pgClient, never()).cancel(anyString(), anyLong(), anyString());
+            verify(pgClient, never()).cancel(anyString(), anyLong(), anyString(), anyLong());
         }
 
         @Test
@@ -101,7 +101,7 @@ class PaymentCancelServiceUnitExceptionTest {
             given(paymentRecordService.beginCancel(eq(10L), anyString(), eq(AMOUNT)))
                     .willReturn(cancel(20L, payment, AMOUNT));
             willThrow(new IllegalStateException("PG timeout"))
-                    .given(pgClient).cancel(anyString(), eq(AMOUNT), anyString());
+                    .given(pgClient).cancel(anyString(), eq(AMOUNT), anyString(), anyLong());
 
             assertThatThrownBy(() -> paymentCancelService.cancel(10L, USER_ID, "USER_CANCEL"))
                     .isInstanceOf(IllegalStateException.class);

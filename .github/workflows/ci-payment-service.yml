@@ -5,10 +5,89 @@ on:
     branches: [develop]
     paths:
       - 'services/payment-service/**'
+      # common이 바뀌면 이 서비스도 깨질 수 있다. 공통 모듈과 빌드 스크립트를 함께 감시한다.
+      - 'common/**'
+      - 'build.gradle'
+      - 'settings.gradle'
+      - 'gradle/**'
+      - 'gradlew'
+      - '.github/workflows/ci-payment-service.yml'
   pull_request:
     branches: [develop]
     paths:
       - 'services/payment-service/**'
+      - 'common/**'
+      - 'build.gradle'
+      - 'settings.gradle'
+      - 'gradle/**'
+      - 'gradlew'
+      - '.github/workflows/ci-payment-service.yml'
   workflow_dispatch:
 
-jobs: {}
+# 같은 브랜치에 새 커밋이 오면 진행 중이던 실행은 취소한다. 어차피 결과를 쓰지 않는다.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_DATABASE: payment_db
+          MYSQL_USER: kurly
+          MYSQL_PASSWORD: kurly
+          MYSQL_ROOT_PASSWORD: root
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "mysqladmin ping -h localhost -u root -proot"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '25'
+          distribution: temurin
+
+      - name: Gradle 설정
+        # 의존성·빌드 캐시를 알아서 복원하고 저장한다.
+        uses: gradle/actions/setup-gradle@v4
+
+      # common을 함께 빌드한다. :payment-service:build는 common의 jar만 필요로 해서
+      # common의 테스트를 돌리지 않는다. 공통 모듈이 깨진 채로 통과하면 안 된다.
+      #
+      # 통합 테스트를 함께 돌린다. 네이티브 쿼리·DB 제약·Flyway 마이그레이션은 목으로 검증할 수
+      # 없어, 실제 MySQL 없이는 깨진 채로 통과한다. 브로커와 Redis는 필요 없다(실측 확인).
+      - name: 빌드·테스트
+        env:
+          PAYMENT_INTEGRATION_TEST: 'true'
+          DB_HOST: 127.0.0.1
+          DB_PORT: '3306'
+          DB_NAME: payment_db
+          DB_USERNAME: kurly
+          DB_PASSWORD: kurly
+        run: ./gradlew :common:build :payment-service:build
+
+      - name: 테스트 리포트 업로드
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-payment-service
+          path: |
+            common/build/reports/tests/
+            services/payment-service/build/reports/tests/
+          retention-days: 7

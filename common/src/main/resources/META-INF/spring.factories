@@ -1,0 +1,4 @@
+# 주입되지 않은 환경변수를 컨텍스트 생성 전에 잡아낸다.
+# 자동설정(AutoConfiguration.imports)과 달리 EnvironmentPostProcessor는 spring.factories로 등록한다.
+org.springframework.boot.EnvironmentPostProcessor=\
+  com.kurly.common.config.UnresolvedPlaceholderGuard

@@ -3,7 +3,11 @@ package com.kurly.payment.infrastructure.persistence;
 import com.kurly.payment.domain.entity.PaymentCancel;
 import com.kurly.payment.domain.repository.PaymentCancelRepository;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
+import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Optional;
 
 public interface PaymentCancelJpaRepository extends JpaRepository<PaymentCancel, Long>, PaymentCancelRepository {
@@ -16,4 +20,17 @@ public interface PaymentCancelJpaRepository extends JpaRepository<PaymentCancel,
 
     @Override
     Optional<PaymentCancel> findById(Long id);
+
+    /** {@code FOR UPDATE SKIP LOCKED}는 JPQL로 표현할 수 없어 네이티브 쿼리를 쓴다. */
+    @Override
+    @Query(value = """
+            SELECT * FROM payment_cancels
+             WHERE status = 'REQUESTED'
+               AND created_at < :staleBefore
+             ORDER BY created_at ASC
+             LIMIT :limit
+             FOR UPDATE SKIP LOCKED
+            """, nativeQuery = true)
+    List<PaymentCancel> findStaleRequestedForUpdateSkipLocked(
+            @Param("staleBefore") LocalDateTime staleBefore, @Param("limit") int limit);
 }

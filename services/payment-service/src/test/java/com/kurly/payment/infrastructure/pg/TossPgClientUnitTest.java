@@ -134,20 +134,138 @@ class TossPgClientUnitTest {
             stub = new StubHttpServer().stub(CANCEL_PATH, 200, """
                     {"lastTransactionKey":"CANCEL-TX-1","status":"CANCELED"}""");
 
-            PgClient.Cancellation cancellation = client().cancel("TOSS-KEY", 32_000L, "USER_CANCEL");
+            PgClient.Cancellation cancellation = client().cancel("TOSS-KEY", 32_000L, "USER_CANCEL", 20L);
 
             assertThat(cancellation.pgCancelKey()).isEqualTo("CANCEL-TX-1");
         }
 
         @Test
-        void 멱등키를_실어_재시도가_이중_취소가_되지_않게_한다() {
-            // 재시도 배치가 같은 취소를 여러 번 부를 수 있다.
+        void 같은_취소_이력에는_항상_같은_멱등키를_보낸다() {
+            // 재시도 배치가 같은 취소를 여러 번 부른다. 호출마다 새 키를 만들면 PG가 재시도를
+            // 같은 요청으로 알아보지 못해, 멱등키를 보내는 의미가 사라진다.
             stub = new StubHttpServer().stub(CANCEL_PATH, 200, """
                     {"lastTransactionKey":"CANCEL-TX-1"}""");
+            TossPgClient client = client();
 
-            client().cancel("TOSS-KEY", 32_000L, "USER_CANCEL");
+            client.cancel("TOSS-KEY", 32_000L, "USER_CANCEL", 20L);
+            String first = stub.received(CANCEL_PATH).idempotencyKey();
+            client.cancel("TOSS-KEY", 32_000L, "RETRY", 20L);
+            String second = stub.received(CANCEL_PATH).idempotencyKey();
 
-            assertThat(stub.received(CANCEL_PATH).idempotencyKey()).isNotBlank();
+            assertThat(first).isNotBlank();
+            assertThat(second).isEqualTo(first);
+        }
+
+        @Test
+        void 다른_취소_이력에는_다른_멱등키를_보낸다() {
+            // 같은 결제를 두 번 취소하는 별개 시도까지 하나로 묶이면 두 번째가 무시된다.
+            stub = new StubHttpServer().stub(CANCEL_PATH, 200, """
+                    {"lastTransactionKey":"CANCEL-TX-1"}""");
+            TossPgClient client = client();
+
+            client.cancel("TOSS-KEY", 32_000L, "USER_CANCEL", 20L);
+            String first = stub.received(CANCEL_PATH).idempotencyKey();
+            client.cancel("TOSS-KEY", 32_000L, "USER_CANCEL", 21L);
+
+            assertThat(stub.received(CANCEL_PATH).idempotencyKey()).isNotEqualTo(first);
+        }
+    }
+
+    @Nested
+    @DisplayName("조회")
+    class InquiryTest {
+
+        private static final String INQUIRY_PATH = "/v1/payments/orders/900";
+
+        @Test
+        void 승인된_결제는_승인으로_읽는다() {
+            stub = new StubHttpServer().stub(INQUIRY_PATH, 200, """
+                    {"paymentKey":"TOSS-KEY","status":"DONE","method":"카드",
+                     "receipt":{"url":"https://toss.im/receipt/900"}}""");
+
+            PgClient.Inquiry inquiry = client().findByOrderId(900L).orElseThrow();
+
+            assertThat(inquiry.approved()).isTrue();
+            assertThat(inquiry.pending()).isFalse();
+            assertThat(inquiry.paymentKey()).isEqualTo("TOSS-KEY");
+            assertThat(inquiry.receiptUrl()).isEqualTo("https://toss.im/receipt/900");
+        }
+
+        @Test
+        void 승인_실패는_승인도_진행_중도_아니다() {
+            stub = new StubHttpServer().stub(INQUIRY_PATH, 200, """
+                    {"paymentKey":"TOSS-KEY","status":"ABORTED"}""");
+
+            PgClient.Inquiry inquiry = client().findByOrderId(900L).orElseThrow();
+
+            assertThat(inquiry.approved()).isFalse();
+            assertThat(inquiry.pending()).isFalse();
+        }
+
+        @Test
+        void 인증만_끝난_상태는_진행_중으로_읽는다() {
+            // 실패로 확정하면 결제될 수 있었던 건을 죽인다. 대사가 다음 주기로 미뤄야 한다.
+            stub = new StubHttpServer().stub(INQUIRY_PATH, 200, """
+                    {"paymentKey":"TOSS-KEY","status":"IN_PROGRESS"}""");
+
+            assertThat(client().findByOrderId(900L).orElseThrow().pending()).isTrue();
+        }
+
+        @Test
+        void 가상계좌_입금_대기도_진행_중이다() {
+            stub = new StubHttpServer().stub(INQUIRY_PATH, 200, """
+                    {"paymentKey":"TOSS-KEY","status":"WAITING_FOR_DEPOSIT"}""");
+
+            assertThat(client().findByOrderId(900L).orElseThrow().pending()).isTrue();
+        }
+
+        @Test
+        void 결제가_없으면_비어_있다() {
+            // 승인 요청이 PG에 닿지도 않은 경우다. 결제가 일어나지 않은 것이 확실하다.
+            stub = new StubHttpServer().stub(INQUIRY_PATH, 404, """
+                    {"code":"NOT_FOUND_PAYMENT","message":"존재하지 않는 결제"}""");
+
+            assertThat(client().findByOrderId(900L)).isEmpty();
+        }
+
+        @Test
+        void 값이_없는_필드는_문자열_null이_아니라_null로_읽는다() {
+            // String.valueOf를 그대로 쓰면 "null"이 저장돼, 비어 있는지 확인하는 코드에 걸리지 않는다.
+            stub = new StubHttpServer().stub(INQUIRY_PATH, 200, """
+                    {"paymentKey":"TOSS-KEY","status":"DONE"}""");
+
+            PgClient.Inquiry inquiry = client().findByOrderId(900L).orElseThrow();
+
+            assertThat(inquiry.method()).isNull();
+            assertThat(inquiry.receiptUrl()).isNull();
+        }
+
+        @Test
+        void 영수증_주소가_없으면_문자열_null을_저장하지_않는다() {
+            // "null"이 영수증 주소로 저장되면 고객에게 깨진 링크가 나간다.
+            stub = new StubHttpServer().stub(INQUIRY_PATH, 200, """
+                    {"paymentKey":"TOSS-KEY","status":"DONE","receipt":{}}""");
+
+            assertThat(client().findByOrderId(900L).orElseThrow().receiptUrl()).isNull();
+        }
+
+        @Test
+        void 상태를_읽을_수_없는_200은_결제_없음으로_다루지_않는다() {
+            // 비어 있음으로 답하면 대사가 "결제 없음"으로 오판해 실패로 못박는다.
+            stub = new StubHttpServer().stub(INQUIRY_PATH, 200, "{}");
+
+            assertThatThrownBy(() -> client().findByOrderId(900L))
+                    .isInstanceOf(BusinessException.class);
+        }
+
+        @Test
+        void 조회_자체가_실패하면_예외로_알린다() {
+            // 비어 있음으로 답하면 대사가 "결제 없음"으로 오판해 실패로 못박는다.
+            stub = new StubHttpServer().stub(INQUIRY_PATH, 500, """
+                    {"code":"INTERNAL","message":"일시적 오류"}""");
+
+            assertThatThrownBy(() -> client().findByOrderId(900L))
+                    .isInstanceOf(BusinessException.class);
         }
     }
 

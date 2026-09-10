@@ -85,6 +85,29 @@ public class Payment {
     @Column(name = "canceled_at")
     private LocalDateTime canceledAt;
 
+    /** PG 대사를 <b>마친</b> 시각. {@code null}이면 아직 결론이 나지 않은 건이다. */
+    @Column(name = "reconciled_at")
+    private LocalDateTime reconciledAt;
+
+    /**
+     * 대사 선점 만료 시각.
+     *
+     * <p>완료 표시와 <b>반드시 분리해야 한다.</b> 하나로 겸하면 선점 직후 프로세스가 죽었을 때
+     * 해제 코드가 실행되지 않아 그 결제가 영원히 대사 대상에서 빠진다. 임대는 시간이 지나면
+     * 저절로 풀리므로 죽은 워커의 선점을 다른 워커가 회수할 수 있다.
+     */
+    @Column(name = "reconcile_claimed_until")
+    private LocalDateTime reconcileClaimedUntil;
+
+    /**
+     * 주문 서비스 인계 완료 시각.
+     *
+     * <p>승인 기록과 주문 인계는 다른 트랜잭션이다. 그 사이에 죽으면 "결제는 성공했는데 주문은
+     * 모르는" 상태가 남는데, 이 값이 없으면 그 상태를 알아볼 방법이 없다.
+     */
+    @Column(name = "order_notified_at")
+    private LocalDateTime orderNotifiedAt;
+
     @Builder
     private Payment(Long orderId, Long userId, Long totalAmount) {
         // 금액 불변식은 DB CHECK로도 막지만, 잘못된 금액의 결제 객체가 아예 만들어지지 않게 한다.
@@ -129,5 +152,37 @@ public class Payment {
 
     public boolean isCancellable() {
         return status.isCancellable();
+    }
+
+    /**
+     * 대사 대상으로 선점한다. 조회 트랜잭션 안에서 임대를 걸어 다른 인스턴스가 집지 않게 한다.
+     * 임대가 만료되면 저절로 풀리므로, 워커가 죽어도 그 건이 영구히 묻히지 않는다.
+     */
+    public void leaseReconciliation(java.time.Duration lease) {
+        this.reconcileClaimedUntil = LocalDateTime.now().plus(lease);
+    }
+
+    /**
+     * 선점을 되돌린다. PG 조회나 후속 처리가 실패해 <b>결론을 내지 못했을 때</b> 부른다.
+     * 임대만 풀고 완료 표시는 남기지 않아 다음 주기가 곧바로 이어받는다.
+     */
+    public void releaseReconciliation() {
+        this.reconcileClaimedUntil = null;
+    }
+
+    /** 대사 결론이 났다. 완료 시각을 남기고 임대를 푼다. */
+    public void completeReconciliation() {
+        this.reconciledAt = LocalDateTime.now();
+        this.reconcileClaimedUntil = null;
+    }
+
+    /** 주문 서비스가 결제 완료를 받아들였다. */
+    public void markOrderNotified() {
+        this.orderNotifiedAt = LocalDateTime.now();
+    }
+
+    /** 승인은 됐는데 주문이 아직 모르는 상태인가. 대사가 회수해야 할 건이다. */
+    public boolean isApprovedButNotHandedOver() {
+        return status == PaymentStatus.SUCCESS && orderNotifiedAt == null;
     }
 }

@@ -14,6 +14,8 @@ import java.time.Duration;
  * @param clockSkew     시각 오차 허용치
  * @param fallbackJwk   JWKS 조회 실패 시 사용할 공개키(JWK JSON). auth-service 장애 중
  *                      콜드 스타트한 서비스가 검증을 전면 실패하지 않도록 하는 안전장치
+ * @param fallbackWindow 폴백을 허용할 최대 시간. 기한이 없으면 폴백이 키 폐기를 무기한 우회하는
+ *                      길이 된다. 짧은 장애를 넘기기에 충분하되, 유출된 키의 수명은 이 값으로 묶인다
  * @param auditPackages 기동 시 인가 애노테이션 누락을 검사할 패키지
  */
 @ConfigurationProperties(prefix = "kurly.security")
@@ -24,10 +26,13 @@ public record JwtVerificationProperties(
         String jwksUri,
         Duration clockSkew,
         String fallbackJwk,
+        Duration fallbackWindow,
         String[] auditPackages
 ) {
 
     private static final Duration DEFAULT_CLOCK_SKEW = Duration.ofSeconds(30);
+    /** 짧은 JWKS 장애를 넘기기에 충분하고, 폐기된 키가 살아 있는 시간을 감당할 수 있는 길이. */
+    private static final Duration DEFAULT_FALLBACK_WINDOW = Duration.ofMinutes(10);
     private static final String[] DEFAULT_AUDIT_PACKAGES = {"com.kurly"};
 
     /** 해석되지 않은 플레이스홀더의 흔적. Boot의 Binder는 이를 예외로 만들지 않고 리터럴로 남긴다. */
@@ -35,6 +40,7 @@ public record JwtVerificationProperties(
 
     public JwtVerificationProperties {
         clockSkew = clockSkew == null ? DEFAULT_CLOCK_SKEW : clockSkew;
+        fallbackWindow = fallbackWindow == null ? DEFAULT_FALLBACK_WINDOW : fallbackWindow;
         auditPackages = auditPackages == null || auditPackages.length == 0
                 ? DEFAULT_AUDIT_PACKAGES
                 : auditPackages;

@@ -26,6 +26,7 @@ public class PaymentCheckoutService {
     private final OrderClient orderClient;
     private final PgClient pgClient;
     private final PaymentRecordService paymentRecordService;
+    private final PaymentCompensationService paymentCompensationService;
 
     /**
      * 결제를 승인한다.
@@ -58,7 +59,8 @@ public class PaymentCheckoutService {
             // 것은 동시 요청이 검증을 함께 통과했다는 뜻이다. 방금 승인된 건은 되돌려야 한다.
             log.error("주문 중복 결제 감지. 방금 승인분을 취소한다: orderId={}, paymentId={}",
                     orderId, payment.getId(), e);
-            compensate(payment.getId(), approval.paymentKey(), amount, "DUPLICATE_PAYMENT");
+            paymentCompensationService.compensate(
+                    payment.getId(), approval.paymentKey(), amount, "DUPLICATE_PAYMENT");
             throw new DuplicatePaymentRequestException();
         }
 
@@ -96,26 +98,9 @@ public class PaymentCheckoutService {
                     orderId, payment.getId(), payment.getTotalAmount(), payment.getApprovedAt());
         } catch (OrderClient.OrderAlreadyExpiredException e) {
             log.warn("주문 만료로 보상 취소 수행: paymentId={}, orderId={}", payment.getId(), orderId);
-            compensate(payment.getId(), payment.getPaymentKey(), payment.getTotalAmount(), "ORDER_EXPIRED");
+            paymentCompensationService.compensate(
+                    payment.getId(), payment.getPaymentKey(), payment.getTotalAmount(), "ORDER_EXPIRED");
             throw new InvalidPaymentStatusException();
-        }
-    }
-
-    /**
-     * 승인은 됐는데 그 결제를 살려둘 수 없을 때 되돌린다.
-     *
-     * <p>{@code paymentKey}를 인자로 받는다. 중복 결제로 기록이 롤백된 경우 엔티티에는 키가 남아
-     * 있지 않고, PG 응답으로 받은 값만이 취소에 쓸 수 있는 유일한 식별자다.
-     */
-    private void compensate(Long paymentId, String paymentKey, long amount, String reason) {
-        var cancel = paymentRecordService.beginCancel(paymentId, reason, amount);
-        try {
-            PgClient.Cancellation cancellation = pgClient.cancel(paymentKey, amount, reason);
-            paymentRecordService.completeCancel(cancel.getId(), cancellation.pgCancelKey());
-        } catch (RuntimeException e) {
-            // 여기서 멈추면 고객 돈이 묶인 채로 남는다. 재시도 큐가 이어받는다.
-            log.error("보상 취소 실패. 재시도 큐로 넘긴다: paymentId={}", paymentId, e);
-            paymentRecordService.failCancel(cancel.getId(), e.getMessage());
         }
     }
 }
