@@ -6,6 +6,11 @@ spring:
     default: local
   jpa:
     open-in-view: false
+  jackson:
+    deserialization:
+      # 끄지 않으면 Jackson이 32000.9를 조용히 32000으로 잘라 Long에 넣는다.
+      # 금액에서 이 절사는 곧 승인 금액과 요청 금액의 불일치다. 소수부가 오면 거부해야 한다.
+      accept-float-as-int: false
   flyway:
     locations: classpath:db/migration
     baseline-on-migrate: false
