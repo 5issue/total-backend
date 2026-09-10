@@ -25,6 +25,14 @@ spring:
       port: ${REDIS_PORT:6379}
       password: ${REDIS_PASSWORD:}
 
+payment:
+  order:
+    # 로컬에는 order-service가 없어 대역을 쓴다. 실제 연동을 확인하려면 http로 바꾼다.
+    client: ${PAYMENT_ORDER_CLIENT:stub}
+
+order-service:
+  base-url: ${ORDER_SERVICE_BASE_URL:http://localhost:8082}
+
 kurly:
   security:
     # auth-service와 값이 한 글자라도 다르면 모든 토큰이 거부된다.
