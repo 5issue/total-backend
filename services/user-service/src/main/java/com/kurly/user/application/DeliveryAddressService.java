@@ -1,7 +1,10 @@
 package com.kurly.user.application;
 
+import com.kurly.common.exception.GlobalErrorCode;
+import com.kurly.common.exception.UnauthorizedException;
 import com.kurly.user.domain.entity.DeliveryAddress;
 import com.kurly.user.domain.repository.DeliveryAddressRepository;
+import com.kurly.user.domain.repository.UserRepository;
 import com.kurly.user.exception.AddressNotFoundException;
 import com.kurly.user.presentation.dto.CreateAddressRequest;
 import lombok.RequiredArgsConstructor;
@@ -22,6 +25,7 @@ import java.util.Optional;
 public class DeliveryAddressService {
 
     private final DeliveryAddressRepository deliveryAddressRepository;
+    private final UserRepository userRepository;
 
     @Transactional(readOnly = true)
     public List<DeliveryAddress> findAll(Long userId) {
@@ -41,11 +45,13 @@ public class DeliveryAddressService {
      */
     @Transactional
     public DeliveryAddress create(Long userId, CreateAddressRequest request) {
+        lockUser(userId);
+
         boolean first = deliveryAddressRepository.countByUserId(userId) == 0;
         boolean makeDefault = first || Boolean.TRUE.equals(request.isDefault());
 
         if (makeDefault) {
-            clearDefault(userId);
+            deliveryAddressRepository.clearDefaultOf(userId);
         }
 
         return deliveryAddressRepository.save(DeliveryAddress.builder()
@@ -69,17 +75,31 @@ public class DeliveryAddressService {
      */
     @Transactional
     public DeliveryAddress setDefault(Long userId, Long addressId) {
+        lockUser(userId);
+
         DeliveryAddress target = deliveryAddressRepository.findByIdAndUserId(addressId, userId)
                 .orElseThrow(AddressNotFoundException::new);
 
-        clearDefault(userId);
+        // 이미 기본이면 아무것도 하지 않는다. 해제 후 다시 지정하면 더티 체킹이 "변경 없음"으로
+        // 판단해 갱신을 생략하고, 벌크 해제만 반영되어 기본 배송지가 사라진다.
+        if (target.isDefaultAddress()) {
+            return target;
+        }
+
+        deliveryAddressRepository.clearDefaultOf(userId);
         target.markDefault();
         return target;
     }
 
-    /** 기존 기본 배송지를 해제한다. 변경은 더티 체킹으로 반영된다. */
-    private void clearDefault(Long userId) {
-        deliveryAddressRepository.findAllByUserIdAndDefaultAddressTrue(userId)
-                .forEach(DeliveryAddress::unmarkDefault);
+    /**
+     * 회원 행을 잠가 같은 회원의 기본 배송지 전환을 직렬화한다.
+     *
+     * <p>잠그지 않으면 두 요청이 각자 기존 기본을 해제한 뒤 서로 다른 배송지를 기본으로 저장해
+     * 기본 배송지가 둘이 된다. DB 유니크 제약이 최종 방어선이지만, 그것만 두면 둘 중 하나가
+     * 제약 위반으로 실패한다. 잠금은 그 실패를 대기로 바꾼다.
+     */
+    private void lockUser(Long userId) {
+        userRepository.findByIdForUpdate(userId)
+                .orElseThrow(() -> new UnauthorizedException(GlobalErrorCode.UNAUTHORIZED.getMessage()));
     }
 }
