@@ -1,6 +1,7 @@
 name: PR Discord Notification
 
 on:
+  # 1. CI 워크플로우 실패 감지
   workflow_run:
     workflows:
       - "CI - auth-service"
@@ -14,16 +15,27 @@ on:
     types:
       - completed
 
+  # 2. CodeRabbit GitHub App 리뷰 제출 감지
+  pull_request_review:
+    types:
+      - submitted
+
 permissions:
   pull-requests: read
   actions: read
 
 jobs:
-  notify:
+  # ----------------------------------------------------
+  # JOB 1: CI 실패 시에만 발송
+  # ----------------------------------------------------
+  notify-ci-failure:
     runs-on: ubuntu-latest
-    if: github.event.workflow_run.event == 'pull_request'
+    if: >-
+      github.event_name == 'workflow_run' &&
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.conclusion != 'success'
     steps:
-      - name: Send Discord Notification
+      - name: Send CI Failure Discord Notification
         uses: actions/github-script@v7
         env:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
@@ -31,43 +43,20 @@ jobs:
         with:
           script: |
             const workflowRun = context.payload.workflow_run;
-            const conclusion = workflowRun.conclusion;
             const workflowName = workflowRun.name;
-
-            // PR 정보 가져오기
             const prs = workflowRun.pull_requests;
+
             if (!prs || prs.length === 0) {
-              console.log('No PR associated with this workflow run');
+              console.log('No PR associated with this workflow run.');
               return;
             }
 
             const prNumber = prs[0].number;
-
-            // 해당 PR에 아직 진행 중인 CI가 있는지 확인
-            const checkRuns = await github.rest.checks.listForRef({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              ref: workflowRun.head_sha,
-              filter: 'latest'
-            });
-
-            const pendingCI = checkRuns.data.check_runs.filter(cr =>
-              cr.name !== 'notify' &&
-              cr.name !== 'CodeRabbit' &&
-              (cr.status === 'queued' || cr.status === 'in_progress')
-            );
-
-            if (pendingCI.length > 0) {
-              console.log(`Still ${pendingCI.length} CI(s) running. Skipping notification.`);
-              return;
-            }
-
-            const prData = await github.rest.pulls.get({
+            const { data: pr } = await github.rest.pulls.get({
               owner: context.repo.owner,
               repo: context.repo.repo,
               pull_number: prNumber
             });
-            const pr = prData.data;
 
             // Discord 유저 매핑
             const mapStr = process.env.DISCORD_USER_MAP || '';
@@ -81,16 +70,57 @@ jobs:
               ? `<@${userMap[pr.user.login]}>`
               : pr.user.login;
 
-            const reviewers = pr.requested_reviewers.map(r =>
-              userMap[r.login] ? `<@${userMap[r.login]}>` : r.login
-            ).join(', ') || '미배정';
+            const message = `❌ **${workflowName} 실패!**\n📌 PR: ${pr.title}\n🔗 <${pr.html_url}>\n👤 작성자: ${authorMention}\n⚠️ CI가 실패했습니다. 로그를 확인해주세요.`;
 
-            let message;
-            if (conclusion === 'success') {
-              message = `✅ **${workflowName} 성공! 리뷰 부탁드립니다.**\n📌 PR: ${pr.title}\n🔗 <${pr.html_url}>\n👤 작성자: ${authorMention}\n👁️ 리뷰어: ${reviewers}`;
-            } else {
-            message = `❌ **${workflowName} 실패!**\n📌 PR: ${pr.title}\n🔗 <${pr.html_url}>\n👤 작성자: ${authorMention}\n⚠️ CI 실패했습니다. 확인해주세요.`;
-            }
+            await fetch(process.env.DISCORD_WEBHOOK, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ content: message })
+            });
+
+  # ----------------------------------------------------
+  # JOB 2: CodeRabbit 리뷰 완료 시 발송
+  # ----------------------------------------------------
+  notify-coderabbit-reviewed:
+    runs-on: ubuntu-latest
+    # CodeRabbit GitHub App 계정명 일치 검증
+    if: >-
+      github.event_name == 'pull_request_review' &&
+      contains(fromJSON('["coderabbitai[bot]", "coderabbitai"]'), github.event.review.user.login)
+    steps:
+      - name: Send CodeRabbit Review Discord Notification
+        uses: actions/github-script@v7
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          DISCORD_USER_MAP: ${{ vars.DISCORD_USER_MAP }}
+        with:
+          script: |
+            // 최신 PR 상세 정보 조회 (지정 리뷰어 목록 동기화)
+            const prNumber = context.payload.pull_request.number;
+            const { data: pr } = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: prNumber
+            });
+
+            // Discord 유저 매핑
+            const mapStr = process.env.DISCORD_USER_MAP || '';
+            const userMap = {};
+            mapStr.split(',').forEach(pair => {
+              const [gh, dc] = pair.split(':');
+              if (gh && dc) userMap[gh.trim()] = dc.trim();
+            });
+
+            const authorMention = userMap[pr.user.login]
+              ? `<@${userMap[pr.user.login]}>`
+              : pr.user.login;
+
+            const requestedReviewers = pr.requested_reviewers || [];
+            const reviewers = requestedReviewers.length > 0
+              ? requestedReviewers.map(r => userMap[r.login] ? `<@${userMap[r.login]}>` : r.login).join(', ')
+              : '미배정';
+
+            const message = `🐰 **CodeRabbit 리뷰 완료! 팀원 리뷰를 진행해주세요.**\n📌 PR: ${pr.title}\n🔗 <${pr.html_url}>\n👤 작성자: ${authorMention}\n👁️ 지정 리뷰어: ${reviewers}`;
 
             await fetch(process.env.DISCORD_WEBHOOK, {
               method: 'POST',
