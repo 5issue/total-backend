@@ -51,6 +51,11 @@ public class HandlerAuthorizationAuditor implements SmartInitializingSingleton {
     /** 프레임워크가 제공하는 핸들러(BasicErrorController, actuator 등)는 검사 대상이 아니다. */
     private boolean isAudited(HandlerMethod handlerMethod) {
         String packageName = handlerMethod.getBeanType().getPackageName();
+
+        if (packageName.startsWith("org.springdoc")) {
+            return false;
+        }
+
         for (String audited : properties.auditPackages()) {
             if (packageName.startsWith(audited)) {
                 return true;

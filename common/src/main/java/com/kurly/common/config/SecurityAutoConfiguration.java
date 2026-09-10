@@ -1,18 +1,13 @@
 package com.kurly.common.config;
 
-import com.kurly.common.security.AuthPrincipalArgumentResolver;
-import com.kurly.common.security.AuthenticationInterceptor;
-import com.kurly.common.security.FallbackJwkSource;
-import com.kurly.common.security.HandlerAuthorizationAuditor;
-import com.kurly.common.security.JwtVerificationProperties;
-import com.kurly.common.security.JwtVerifier;
-import com.kurly.common.security.NimbusJwtVerifier;
+import com.kurly.common.security.*;
 import com.nimbusds.jose.jwk.JWK;
 import com.nimbusds.jose.jwk.source.JWKSource;
 import com.nimbusds.jose.jwk.source.JWKSourceBuilder;
 import com.nimbusds.jose.proc.SecurityContext;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -21,6 +16,7 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Bean;
 import org.springframework.util.StringUtils;
 import org.springframework.web.method.support.HandlerMethodArgumentResolver;
+import org.springframework.web.servlet.config.annotation.CorsRegistry;
 import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerMapping;
@@ -127,21 +123,41 @@ public class SecurityAutoConfiguration {
     }
 
     @Bean
-    public WebMvcConfigurer securityWebMvcConfigurer(JwtVerifier jwtVerifier) {
-        return new SecurityWebMvcConfigurer(jwtVerifier);
+    public WebMvcConfigurer securityWebMvcConfigurer(
+            JwtVerifier jwtVerifier,
+            @Value("${kurly.cors.allowed-origins:http://localhost:8080,http://127.0.0.1:8080}")
+            List<String> allowedOrigins) {
+        return new SecurityWebMvcConfigurer(jwtVerifier, allowedOrigins);
     }
 
     @RequiredArgsConstructor
     static class SecurityWebMvcConfigurer implements WebMvcConfigurer {
 
         private final JwtVerifier jwtVerifier;
+        private final List<String> allowedOrigins;
+
+        @Override
+        public void addCorsMappings(CorsRegistry registry) {
+            registry.addMapping("/**")
+                    .allowedOriginPatterns(allowedOrigins.toArray(String[]::new))
+                    .allowedMethods("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS")
+                    .allowedHeaders("*")
+                    .allowCredentials(true)
+                    .maxAge(3600);
+        }
 
         @Override
         public void addInterceptors(InterceptorRegistry registry) {
             // 경로 패턴으로 공개 여부를 가르지 않는다. 판단은 핸들러 애노테이션이 한다.
             registry.addInterceptor(new AuthenticationInterceptor(jwtVerifier))
                     .addPathPatterns("/**")
-                    .excludePathPatterns("/error");
+                    .excludePathPatterns(
+                            "/error",
+                            "/v3/api-docs",
+                            "/v3/api-docs/**",
+                            "/swagger-ui/**",
+                            "/swagger-ui.html"
+                    );
         }
 
         @Override
