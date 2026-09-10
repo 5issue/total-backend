@@ -26,11 +26,16 @@ class UnresolvedPlaceholderGuardUnitTest {
      * 갖고 있어, 실행 환경에 {@code DB_HOST} 같은 변수가 있으면 미주입을 재현하려던 플레이스홀더가
      * 해석돼 버린다. CI에서 간헐적으로 깨지는 테스트가 되므로 두 소스를 제거한다.
      */
-    private static StandardEnvironment environment(String profile, String sourceName, Map<String, Object> values) {
+    private static StandardEnvironment environment(String sourceName, Map<String, Object> values,
+                                                   String... profiles) {
         StandardEnvironment environment = hermetic();
-        environment.setActiveProfiles(profile);
+        environment.setActiveProfiles(profiles);
         environment.getPropertySources().addFirst(new MapPropertySource(sourceName, new LinkedHashMap<>(values)));
         return environment;
+    }
+
+    private static StandardEnvironment environment(String profile, String sourceName, Map<String, Object> values) {
+        return environment(sourceName, values, profile);
     }
 
     private static StandardEnvironment hermetic() {
@@ -122,6 +127,26 @@ class UnresolvedPlaceholderGuardUnitTest {
             StandardEnvironment environment = hermetic();
             environment.getPropertySources().addFirst(new MapPropertySource(
                     CONFIG_SOURCE, new LinkedHashMap<>(Map.of("spring.rabbitmq.host", "${RABBITMQ_HOST}"))));
+
+            assertThatCode(() -> run(environment)).doesNotThrowAnyException();
+        }
+
+        @Test
+        void 운영_프로파일이_섞여_있으면_검사한다() {
+            // prod,local처럼 섞어 켰을 때 하나라도 면제 대상이면 넘어가게 두면
+            // 운영 설정의 미주입이 그대로 통과한다.
+            StandardEnvironment environment = environment(
+                    CONFIG_SOURCE, Map.of("spring.rabbitmq.host", "${RABBITMQ_HOST}"), "prod", "local");
+
+            assertThatThrownBy(() -> run(environment))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("spring.rabbitmq.host");
+        }
+
+        @Test
+        void 면제_프로파일만_켜져_있으면_건너뛴다() {
+            StandardEnvironment environment = environment(
+                    CONFIG_SOURCE, Map.of("spring.rabbitmq.host", "${RABBITMQ_HOST}"), "local", "test");
 
             assertThatCode(() -> run(environment)).doesNotThrowAnyException();
         }

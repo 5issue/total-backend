@@ -76,6 +76,13 @@ public class UnresolvedPlaceholderGuard implements EnvironmentPostProcessor, Ord
         throw new IllegalStateException(message.toString());
     }
 
+    /**
+     * 검사를 건너뛸 환경인가.
+     *
+     * <p><b>활성 프로파일이 모두 면제 대상일 때만 건너뛴다.</b> 하나라도 면제 대상이면 넘어가게
+     * 두면 {@code prod,local}처럼 섞어 켰을 때 운영 설정의 미주입이 그대로 통과한다. 운영 프로파일이
+     * 하나라도 켜져 있으면 그 설정은 검사받아야 한다.
+     */
     private boolean isExempt(ConfigurableEnvironment environment) {
         String[] active = environment.getActiveProfiles();
         // 프로파일을 지정하지 않으면 default(local)로 동작한다. 그때도 검사하지 않는다.
@@ -83,11 +90,11 @@ public class UnresolvedPlaceholderGuard implements EnvironmentPostProcessor, Ord
             return true;
         }
         for (String profile : active) {
-            if (EXEMPT_PROFILES.contains(profile)) {
-                return true;
+            if (!EXEMPT_PROFILES.contains(profile)) {
+                return false;
             }
         }
-        return false;
+        return true;
     }
 
     private Map<String, String> findUnresolved(ConfigurableEnvironment environment) {
