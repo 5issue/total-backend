@@ -9,6 +9,7 @@ on:
       - "CI - payment-service"
       - "CI - product-service"
       - "CI - scm-service"
+      - "CI - user-service"
       - "CI - wms-service"
     types:
       - completed

@@ -1,8 +1,8 @@
 spring:
   application:
-    name: payment-service
+    name: user-service
   datasource:
-    url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3309}/${DB_NAME:payment_db}?serverTimezone=UTC&characterEncoding=UTF-8
+    url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3314}/${DB_NAME:user_db}?serverTimezone=UTC&characterEncoding=UTF-8
     username: ${DB_USERNAME:kurly}
     password: ${DB_PASSWORD:kurly}
     driver-class-name: com.mysql.cj.jdbc.Driver
@@ -22,4 +22,4 @@ spring:
       password: ${REDIS_PASSWORD:}
 
 server:
-  port: 8083
+  port: 8088
