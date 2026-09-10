@@ -58,7 +58,7 @@ class PaymentCheckoutServiceUnitTest {
             Payment result = paymentCheckoutService.checkout(USER_ID, ORDER_ID, PAYMENT_KEY, AMOUNT);
 
             assertThat(result.getStatus()).isEqualTo(PaymentStatus.SUCCESS);
-            verify(orderClient).completePayment(ORDER_ID);
+            verify(orderClient).completePayment(eq(ORDER_ID), eq(10L), eq(AMOUNT), any());
         }
 
         @Test

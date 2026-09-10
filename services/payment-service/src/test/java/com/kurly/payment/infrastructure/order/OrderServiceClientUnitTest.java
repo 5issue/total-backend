@@ -9,6 +9,8 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockHttpServletRequest;
+
+import java.time.LocalDateTime;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
 
@@ -20,9 +22,10 @@ class OrderServiceClientUnitTest {
     private static final String FETCH_PATH = "/internal/v1/orders/501";
     private static final String COMPLETE_PATH = "/internal/v1/orders/501/complete-pay";
 
-    /** 주문 담당자가 제공한 명세의 응답 형태. */
+    /** 주문 담당자가 제공한 명세의 응답 형태. ApiResponse로 감싸여 온다. */
     private static final String ORDER_BODY = """
-            {"orderId":501,"userId":1001,"amount":32000,"status":"PAYMENT_PENDING","reservationToken":"rsv_xxx"}""";
+            {"status":"SUCCESS","message":"조회되었습니다.","error":null,
+             "data":{"orderId":501,"userId":1001,"amount":32000,"status":"PENDING_PAYMENT"}}""";
 
     private StubHttpServer stub;
 
@@ -61,20 +64,20 @@ class OrderServiceClientUnitTest {
         }
 
         @Test
-        void PAYMENT_PENDING이_아니면_결제할_수_없는_상태로_본다() {
+        void PENDING_PAYMENT가_아니면_결제할_수_없는_상태로_본다() {
             stub = new StubHttpServer().stub(FETCH_PATH, 200, """
-                    {"orderId":501,"userId":1001,"amount":32000,"status":"PAID"}""");
+                    {"status":"SUCCESS","data":{"orderId":501,"userId":1001,"amount":32000,"status":"PAID"}}""");
 
             assertThat(client().fetch(501L).payable()).isFalse();
         }
 
         @Test
-        void ApiResponse로_감싸_와도_읽는다() {
-            // 명세는 감싸지 않은 형태지만 팀 컨벤션은 ApiResponse다. 확정 전까지 양쪽을 받는다.
+        void 감싸지_않은_응답은_형식_오류로_본다() {
+            // 팀 컨벤션대로 ApiResponse만 받는다. 평면 응답이 오면 계약 위반이므로 결제를 진행하지 않는다.
             stub = new StubHttpServer().stub(FETCH_PATH, 200, """
-                    {"status":"SUCCESS","message":"조회","data":%s,"error":null}""".formatted(ORDER_BODY));
+                    {"orderId":501,"userId":1001,"amount":32000,"status":"PENDING_PAYMENT"}""");
 
-            assertThat(client().fetch(501L).totalAmount()).isEqualTo(32_000L);
+            assertThatThrownBy(() -> client().fetch(501L)).isInstanceOf(BusinessException.class);
         }
 
         @Test
@@ -114,7 +117,7 @@ class OrderServiceClientUnitTest {
         @Test
         void 응답_형식이_예상과_다르면_거부한다() {
             stub = new StubHttpServer().stub(FETCH_PATH, 200, """
-                    {"unexpected":true}""");
+                    {"status":"SUCCESS","data":{"unexpected":true}}""");
 
             assertThatThrownBy(() -> client().fetch(501L)).isInstanceOf(BusinessException.class);
         }
@@ -128,7 +131,7 @@ class OrderServiceClientUnitTest {
         void 정상_통보는_예외_없이_끝난다() {
             stub = new StubHttpServer().stub(COMPLETE_PATH, 200, null);
 
-            client().completePayment(501L);
+            client().completePayment(501L, 10L, 32_000L, LocalDateTime.now());
 
             assertThat(stub.received(COMPLETE_PATH).method()).isEqualTo("POST");
         }
@@ -137,7 +140,7 @@ class OrderServiceClientUnitTest {
         void 상태_409는_주문_만료로_해석해_보상_취소를_유발한다() {
             stub = new StubHttpServer().stub(COMPLETE_PATH, 409, "{}");
 
-            assertThatThrownBy(() -> client().completePayment(501L))
+            assertThatThrownBy(() -> client().completePayment(501L, 10L, 32_000L, LocalDateTime.now()))
                     .isInstanceOf(OrderClient.OrderAlreadyExpiredException.class);
         }
 
@@ -145,7 +148,7 @@ class OrderServiceClientUnitTest {
         void 그_밖의_실패는_서버_오류로_올린다() {
             stub = new StubHttpServer().stub(COMPLETE_PATH, 500, "{}");
 
-            assertThatThrownBy(() -> client().completePayment(501L))
+            assertThatThrownBy(() -> client().completePayment(501L, 10L, 32_000L, LocalDateTime.now()))
                     .isInstanceOf(BusinessException.class)
                     .hasMessageContaining("주문 정보 처리 중");
         }

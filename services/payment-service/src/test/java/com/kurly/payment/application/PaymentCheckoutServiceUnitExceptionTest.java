@@ -163,7 +163,7 @@ class PaymentCheckoutServiceUnitExceptionTest {
                     .willReturn(new PgClient.Approval(PAYMENT_KEY, "CARD", "https://toss.im/r/1"));
             given(paymentRecordService.recordApproval(eq(10L), any())).willReturn(approvedPayment(10L));
             willThrow(new OrderClient.OrderAlreadyExpiredException(ORDER_ID))
-                    .given(orderClient).completePayment(ORDER_ID);
+                    .given(orderClient).completePayment(eq(ORDER_ID), anyLong(), anyLong(), any());
             given(paymentRecordService.beginCancel(eq(10L), anyString(), eq(AMOUNT)))
                     .willReturn(cancel(20L, approvedPayment(10L), AMOUNT));
             given(pgClient.cancel(anyString(), eq(AMOUNT), anyString()))
@@ -183,7 +183,7 @@ class PaymentCheckoutServiceUnitExceptionTest {
                     .willReturn(new PgClient.Approval(PAYMENT_KEY, "CARD", "https://toss.im/r/1"));
             given(paymentRecordService.recordApproval(eq(10L), any())).willReturn(approvedPayment(10L));
             willThrow(new OrderClient.OrderAlreadyExpiredException(ORDER_ID))
-                    .given(orderClient).completePayment(ORDER_ID);
+                    .given(orderClient).completePayment(eq(ORDER_ID), anyLong(), anyLong(), any());
             given(paymentRecordService.beginCancel(eq(10L), anyString(), eq(AMOUNT)))
                     .willReturn(cancel(20L, approvedPayment(10L), AMOUNT));
             willThrow(new IllegalStateException("PG timeout"))

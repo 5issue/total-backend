@@ -29,6 +29,9 @@ payment:
   order:
     # 로컬에는 order-service가 없어 대역을 쓴다. 실제 연동을 확인하려면 http로 바꾼다.
     client: ${PAYMENT_ORDER_CLIENT:stub}
+  pg:
+    # 샌드박스 키를 application-secret.yml에 채운 뒤 toss로 바꾸면 실제 토스와 통신한다.
+    client: ${PAYMENT_PG_CLIENT:stub}
 
 order-service:
   base-url: ${ORDER_SERVICE_BASE_URL:http://localhost:8082}

@@ -92,7 +92,8 @@ public class PaymentCheckoutService {
      */
     private void notifyOrderOrCompensate(Payment payment, Long orderId) {
         try {
-            orderClient.completePayment(orderId);
+            orderClient.completePayment(
+                    orderId, payment.getId(), payment.getTotalAmount(), payment.getApprovedAt());
         } catch (OrderClient.OrderAlreadyExpiredException e) {
             log.warn("주문 만료로 보상 취소 수행: paymentId={}, orderId={}", payment.getId(), orderId);
             compensate(payment.getId(), payment.getPaymentKey(), payment.getTotalAmount(), "ORDER_EXPIRED");
