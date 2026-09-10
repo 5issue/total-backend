@@ -18,16 +18,16 @@ public interface OrderApi {
     @ApiErrorCodeExample(status = OrderErrorCode.class, code = "ORD_NOT_FOUND_ADDRESS")
     @ApiErrorCodeExample(status = OrderErrorCode.class, code = "ORD_INSUFFICIENT_STOCK")
     ApiResponse<CheckoutResponseDto> checkout(
-            @Parameter(hidden = true) AuthenticatedPrincipal principal,
+            @Parameter(hidden = true) AuthenticatedPrincipal me,
             CheckoutRequestDto request
     );
 
     @Operation(summary = "내 주문 목록 페이징 조회", description = "기간 및 상품명 조건으로 주문 목록을 조회합니다.")
-    @ApiErrorCodeExample(status = OrderErrorCode.class, code = "ORD_INVALID_STATUS", message = "조회 기간 설정이 올바르지 않습니다.")
+    @ApiErrorCodeExample(status = OrderErrorCode.class, code = "ORD_INVALID_RANGE")
     @ApiErrorCodeExample(status = GlobalErrorCode.class, code = "INVALID_INPUT_VALUE", message = "페이지 번호 및 크기가 올바르지 않습니다.")
     @ApiErrorCodeExample(status = GlobalErrorCode.class, code = "INVALID_INPUT_VALUE", message = "검색어는 최대 100자까지 입력 가능합니다.")
     ApiResponse<OrderPageResponseDto> list(
-            @Parameter(hidden = true) AuthenticatedPrincipal principal,
+            @Parameter(hidden = true) AuthenticatedPrincipal me,
             @Parameter(description = "조회 기간 (3M, 6M, 1Y, 3Y)") String range,
             @Parameter(description = "상품명 검색어") String productName,
             @Parameter(description = "페이지 번호") int page,
@@ -38,7 +38,7 @@ public interface OrderApi {
     @ApiErrorCodeExample(status = GlobalErrorCode.class, code = "FORBIDDEN")
     @ApiErrorCodeExample(status = OrderErrorCode.class, code = "ORD_NOT_FOUND_ORDER")
     ApiResponse<OrderDetailResponseDto> detail(
-            @Parameter(hidden = true) AuthenticatedPrincipal principal,
+            @Parameter(hidden = true) AuthenticatedPrincipal me,
             @Parameter(description = "주문 ID") Long orderId
     );
 
@@ -47,7 +47,7 @@ public interface OrderApi {
     @ApiErrorCodeExample(status = OrderErrorCode.class, code = "ORD_INVALID_REQUEST_TYPE")
     @ApiErrorCodeExample(status = OrderErrorCode.class, code = "ORD_INVALID_REQUEST_STATUS")
     ApiResponse<ClaimHistoryPageResponseDto> listClaims(
-            @Parameter(hidden = true) AuthenticatedPrincipal principal,
+            @Parameter(hidden = true) AuthenticatedPrincipal me,
             @Parameter(description = "요청 유형 (CANCEL, RETURN)") String requestType,
             @Parameter(description = "진행 상태") String requestStatus,
             @Parameter(description = "페이지 번호") int page,
@@ -61,7 +61,7 @@ public interface OrderApi {
     @ApiErrorCodeExample(status = OrderErrorCode.class, code = "ORD_INVALID_DELIVERY_STATUS")
     @ApiErrorCodeExample(status = OrderErrorCode.class, code = "ORD_EXPIRED_RETURN_PERIOD")
     ApiResponse<ReturnPreviewResponseDto> returnPreview(
-            @Parameter(hidden = true) AuthenticatedPrincipal principal,
+            @Parameter(hidden = true) AuthenticatedPrincipal me,
             @Parameter(description = "주문 ID") Long orderId
     );
 
@@ -71,7 +71,7 @@ public interface OrderApi {
     @ApiErrorCodeExample(status = OrderErrorCode.class, code = "ORD_CONFLICT_ALREADY_PAID")
     @ApiErrorCodeExample(status = OrderErrorCode.class, code = "ORD_INVALID_STATUS")
     ApiResponse<PlaceOrderResponseDto> placeOrder(
-            @Parameter(hidden = true) AuthenticatedPrincipal principal,
+            @Parameter(hidden = true) AuthenticatedPrincipal me,
             PlaceOrderRequestDto request
     );
 
@@ -84,7 +84,7 @@ public interface OrderApi {
     @ApiErrorCodeExample(status = OrderErrorCode.class, code = "ORD_INVALID_STATUS", message = "결제 완료 주문만 취소할 수 있습니다.")
     @ApiErrorCodeExample(status = OrderErrorCode.class, code = "ORD_CONFLICT_RELEASE_STARTED")
     ApiResponse<OrderClaimResponseDto> cancel(
-            @Parameter(hidden = true) AuthenticatedPrincipal principal,
+            @Parameter(hidden = true) AuthenticatedPrincipal me,
             @Parameter(description = "주문 ID") Long orderId,
             ClaimRequestDto request
     );
@@ -101,7 +101,7 @@ public interface OrderApi {
     @ApiErrorCodeExample(status = OrderErrorCode.class, code = "ORD_INVALID_FRESH_RETURN")
     @ApiErrorCodeExample(status = OrderErrorCode.class, code = "ORD_EXPIRED_RETURN_PERIOD")
     ApiResponse<OrderClaimResponseDto> createReturn(
-            @Parameter(hidden = true) AuthenticatedPrincipal principal,
+            @Parameter(hidden = true) AuthenticatedPrincipal me,
             @Parameter(description = "주문 ID") Long orderId,
             ReturnRequestDto request
     );
