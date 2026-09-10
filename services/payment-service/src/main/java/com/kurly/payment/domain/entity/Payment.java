@@ -67,6 +67,13 @@ public class Payment {
     @Column(name = "status", nullable = false, length = 20)
     private PaymentStatus status;
 
+    /**
+     * PG 영수증 주소. 승인 응답으로 확정된다.
+     * 조회 때마다 PG에 묻지 않는 이유는 읽기 경로에 외부 의존과 지연을 들이지 않기 위함이다.
+     */
+    @Column(name = "receipt_url", length = 255)
+    private String receiptUrl;
+
     /** 결제 요청 시각. 행 생성 시각과 같으므로 auditing이 채운다. */
     @CreatedDate
     @Column(name = "requested_at", nullable = false, updatable = false)
@@ -90,10 +97,11 @@ public class Payment {
         this.status = PaymentStatus.REQUESTED;
     }
 
-    /** PG 승인 완료. 승인 응답으로 확정된 식별자와 수단을 함께 기록한다. */
-    public void approve(String paymentKey, String method) {
+    /** PG 승인 완료. 승인 응답으로 확정된 식별자·수단·영수증 주소를 함께 기록한다. */
+    public void approve(String paymentKey, String method, String receiptUrl) {
         this.paymentKey = paymentKey;
         this.method = method;
+        this.receiptUrl = receiptUrl;
         this.status = PaymentStatus.SUCCESS;
         this.approvedAt = LocalDateTime.now();
     }
@@ -102,15 +110,9 @@ public class Payment {
         this.status = PaymentStatus.FAILED;
     }
 
-    /** 전액 취소. */
+    /** 취소 완료. 부분 취소를 제공하지 않으므로 항상 전액이다. */
     public void cancel() {
         this.status = PaymentStatus.CANCELED;
-        this.canceledAt = LocalDateTime.now();
-    }
-
-    /** 부분 취소. 남은 금액이 있어 아직 종결되지 않은 상태로 둔다. */
-    public void cancelPartially() {
-        this.status = PaymentStatus.PARTIAL_CANCELED;
         this.canceledAt = LocalDateTime.now();
     }
 

@@ -17,14 +17,11 @@ public enum PaymentStatus {
     /** PG 승인 실패. 같은 주문으로 재시도하면 새 결제 행이 생긴다. */
     FAILED,
 
-    /** 전액 취소. */
-    CANCELED,
+    /** 취소 완료. 부분 취소를 제공하지 않으므로 취소는 항상 전액이다. */
+    CANCELED;
 
-    /** 부분 취소. 남은 금액이 있어 완전히 종결되지 않은 상태다. */
-    PARTIAL_CANCELED;
-
-    /** 취소를 시도할 수 있는 상태인지. 실제 가능 여부는 취소 금액까지 봐야 한다. */
+    /** 취소할 수 있는 상태인지. 승인된 결제만 취소 대상이다. */
     public boolean isCancellable() {
-        return this == SUCCESS || this == PARTIAL_CANCELED;
+        return this == SUCCESS;
     }
 }

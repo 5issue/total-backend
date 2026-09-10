@@ -59,10 +59,15 @@ public class IdempotencyKey {
     @Column(name = "request_path", nullable = false, length = 255)
     private String requestPath;
 
-    /** 같은 키에 다른 본문이 오면 거부하기 위해 보관한다. */
-    @JdbcTypeCode(SqlTypes.JSON)
-    @Column(name = "request_body")
-    private String requestBody;
+    /**
+     * 요청 본문의 SHA-256 지문.
+     *
+     * <p>본문 원문을 저장해 비교하지 않는다. JSON 컬럼은 MySQL이 키 순서와 공백을 정규화해
+     * 되읽은 값이 직렬화 원문과 절대 일치하지 않으므로, 원문 비교는 항상 "다른 본문"으로 판정된다.
+     * 결제 본문에는 PG 인증 토큰이 들어 있어 원문을 남기지 않는 편이 안전하기도 하다.
+     */
+    @Column(name = "request_fingerprint", nullable = false, length = 64)
+    private String requestFingerprint;
 
     @Enumerated(EnumType.STRING)
     @JdbcTypeCode(SqlTypes.VARCHAR)
@@ -86,11 +91,11 @@ public class IdempotencyKey {
     private LocalDateTime updatedAt;
 
     @Builder
-    private IdempotencyKey(Long userId, String idempotencyKey, String requestPath, String requestBody) {
+    private IdempotencyKey(Long userId, String idempotencyKey, String requestPath, String requestFingerprint) {
         this.userId = userId;
         this.idempotencyKey = idempotencyKey;
         this.requestPath = requestPath;
-        this.requestBody = requestBody;
+        this.requestFingerprint = requestFingerprint;
         this.status = IdempotencyStatus.IN_PROGRESS;
     }
 
@@ -105,7 +110,8 @@ public class IdempotencyKey {
     }
 
     /** 같은 키가 다른 엔드포인트나 다른 본문으로 재사용됐는지. 클라이언트 오류이므로 거부한다. */
-    public boolean conflictsWith(String requestPath, String requestBody) {
-        return !this.requestPath.equals(requestPath) || !java.util.Objects.equals(this.requestBody, requestBody);
+    public boolean conflictsWith(String requestPath, String requestFingerprint) {
+        return !this.requestPath.equals(requestPath)
+                || !this.requestFingerprint.equals(requestFingerprint);
     }
 }
