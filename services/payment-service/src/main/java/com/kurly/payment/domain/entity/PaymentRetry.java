@@ -106,6 +106,17 @@ public class PaymentRetry {
         this.nextRetryAt = LocalDateTime.now().plus(BASE_BACKOFF.multipliedBy(1L << (retryCount - 1)));
     }
 
+    /**
+     * 실행권을 선점한다. 예정 시각을 뒤로 밀어 다른 인스턴스가 같은 건을 집어가지 못하게 한다.
+     *
+     * <p>PG 호출은 트랜잭션 밖에서 하므로 조회 시점의 행 잠금이 호출 전에 풀린다. 잠금만으로는
+     * 중복 실행을 막지 못해, 커밋되는 임대 시각으로 대신한다. 시도 횟수는 올리지 않는다 —
+     * 아직 실패한 것이 아니다.
+     */
+    public void lease(Duration lease) {
+        this.nextRetryAt = LocalDateTime.now().plus(lease);
+    }
+
     public void succeed() {
         this.status = RetryStatus.SUCCESS;
         this.nextRetryAt = null;
