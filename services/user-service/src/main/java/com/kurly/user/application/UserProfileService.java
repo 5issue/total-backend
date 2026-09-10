@@ -48,8 +48,14 @@ public class UserProfileService {
      *
      * <p>조회 후 생성 사이에 동시 요청이 끼어들 수 있으므로, 유니크 제약 위반을 잡아
      * 재조회하는 경로를 둔다. 애플리케이션 조회만으로는 동시성을 막지 못한다.
+     *
+     * <p><b>트랜잭션을 걸지 않는다.</b> 걸면 제약 위반이 그 트랜잭션을 망가뜨린 뒤에 재조회를
+     * 수행하게 되어, 세션이 이미 깨진 상태라 조회가 실패한다("has a null identifier"). 실제로
+     * 동시 요청 시 한쪽이 그렇게 실패했다. 저장소 호출마다 각자의 트랜잭션을 쓰면, 실패한 저장의
+     * 트랜잭션만 롤백되고 이어지는 재조회는 <b>새 트랜잭션에서</b> 먼저 커밋된 행을 볼 수 있다.
+     *
+     * <p>여러 쓰기를 한 단위로 묶을 필요가 없어 트랜잭션 경계가 없어도 무방하다.
      */
-    @Transactional
     public SyncResult syncProfile(AuthProvider provider, String providerId) {
         return userRepository.findByProviderAndProviderId(provider, providerId)
                 .map(existing -> new SyncResult(existing, false))
