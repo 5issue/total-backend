@@ -15,6 +15,18 @@ spring:
     locations: classpath:db/migration
     baseline-on-migrate: false
 
+payment:
+  messaging:
+    # 결제 이벤트를 내보낼 익스체인지. 큐와 바인딩은 소비하는 서비스가 선언한다.
+    exchange: payment.topic.exchange
+  refund:
+    # 반품 승인 환불 이벤트 구독(주문-결제 시퀀스 3절). 큐는 소비자인 우리가 선언한다.
+    exchange: order.topic.exchange
+    routing-key: order.refund.requested
+    queue: payment.refund.queue
+    # 처리할 수 없는 메시지가 무한 재배달되며 큐를 막지 않도록 보낼 곳.
+    dead-letter: payment.refund.dlq
+
 server:
   port: 8083
 

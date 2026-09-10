@@ -31,7 +31,8 @@ public class StubOrderClient implements OrderClient {
     }
 
     @Override
-    public void completePayment(Long orderId) {
-        log.warn("주문 스텁으로 결제 완료 통보를 흉내 냅니다: orderId={}", orderId);
+    public void completePayment(Long orderId, Long paymentId, long paymentAmount,
+                                java.time.LocalDateTime paidAt) {
+        log.warn("주문 스텁으로 결제 완료 통보를 흉내 냅니다: orderId={}, paymentId={}", orderId, paymentId);
     }
 }
