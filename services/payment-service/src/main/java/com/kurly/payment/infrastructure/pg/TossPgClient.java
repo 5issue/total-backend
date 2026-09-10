@@ -7,6 +7,7 @@ import com.kurly.payment.exception.PaymentDeclinedException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
@@ -18,6 +19,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
@@ -36,6 +38,15 @@ import java.util.UUID;
 public class TossPgClient implements PgClient {
 
     private static final String CONFIRM_PATH = "/v1/payments/confirm";
+    private static final String INQUIRY_BY_ORDER_PATH = "/v1/payments/orders/{orderId}";
+    /** 승인이 완료된 상태. */
+    private static final String APPROVED_STATUS = "DONE";
+    /**
+     * 아직 결론이 나지 않은 상태. 실패로 확정하면 안 되고 다음 대사 주기에 다시 봐야 한다.
+     * {@code READY}는 인증 전, {@code IN_PROGRESS}는 인증만 끝난 상태, 가상계좌는 입금 대기다.
+     */
+    private static final Set<String> PENDING_STATUSES =
+            Set.of("READY", "IN_PROGRESS", "WAITING_FOR_DEPOSIT");
     private static final String CANCEL_PATH = "/v1/payments/{paymentKey}/cancel";
     private static final String IDEMPOTENCY_KEY_HEADER = "Idempotency-Key";
 
@@ -71,6 +82,48 @@ public class TossPgClient implements PgClient {
                 receiptUrl(response));
     }
 
+    /**
+     * 응답에서 문자열 값을 꺼낸다.
+     *
+     * <p>{@code String.valueOf}를 그대로 쓰면 값이 없을 때 문자열 {@code "null"}이 만들어진다.
+     * 그 값이 PG 식별자 자리에 저장되면 없는 것이 아니라 <b>이상한 값이 있는 것</b>이 되어,
+     * 조회도 안 되고 비어 있는지 확인하는 코드에도 걸리지 않는다.
+     */
+    private static String text(Map<String, Object> body, String key) {
+        Object value = body == null ? null : body.get(key);
+        return value == null ? null : String.valueOf(value);
+    }
+
+    @Override
+    public Optional<Inquiry> findByOrderId(Long orderId) {
+        try {
+            Map<String, Object> body = restClient.get()
+                    .uri(INQUIRY_BY_ORDER_PATH, orderId)
+                    .retrieve()
+                    .body(new org.springframework.core.ParameterizedTypeReference<>() {
+                    });
+            if (body == null || body.get("status") == null) {
+                return Optional.empty();
+            }
+            String status = text(body, "status");
+            return Optional.of(new Inquiry(
+                    text(body, "paymentKey"),
+                    status,
+                    text(body, "method"),
+                    receiptUrl(body),
+                    APPROVED_STATUS.equals(status),
+                    PENDING_STATUSES.contains(status)));
+        } catch (RestClientResponseException e) {
+            if (e.getStatusCode() == HttpStatus.NOT_FOUND) {
+                // 승인 요청이 PG에 닿지도 않은 경우다. 결제가 일어나지 않은 것이 확실하다.
+                return Optional.empty();
+            }
+            throw pgFailed("조회", e);
+        } catch (Exception e) {
+            throw pgFailed("조회", e);
+        }
+    }
+
     @Override
     public Cancellation cancel(String paymentKey, long amount, String reason) {
         Map<String, Object> request = new LinkedHashMap<>();
@@ -78,7 +131,7 @@ public class TossPgClient implements PgClient {
         request.put("cancelAmount", amount);
 
         Map<String, Object> response = post(CANCEL_PATH, request, paymentKey, "취소");
-        return new Cancellation(String.valueOf(response.get("lastTransactionKey")));
+        return new Cancellation(text(response, "lastTransactionKey"));
     }
 
     @SuppressWarnings("unchecked")
