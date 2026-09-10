@@ -1,0 +1,43 @@
+# 운영 프로파일.
+#
+# 민감값에는 기본값을 두지 않는다. 다만 Boot의 Binder는 해석하지 못한 플레이스홀더를 예외로 만들지 않고
+# 리터럴 문자열로 남기므로, 기동 중단은 각 설정값의 검증 코드가 담당한다(JwtVerificationProperties 등).
+spring:
+  jpa:
+    hibernate:
+      # 운영에서 스키마를 애플리케이션이 바꾸는 일은 없어야 하므로 환경변수로도 못 바꾸게 고정한다.
+      ddl-auto: validate
+  flyway:
+    enabled: true
+  datasource:
+    url: jdbc:mysql://${DB_HOST}:${DB_PORT}/${DB_NAME}?serverTimezone=UTC&characterEncoding=UTF-8
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  rabbitmq:
+    host: ${RABBITMQ_HOST}
+    port: ${RABBITMQ_PORT}
+    username: ${RABBITMQ_USERNAME}
+    password: ${RABBITMQ_PASSWORD}
+  data:
+    redis:
+      host: ${REDIS_HOST}
+      port: ${REDIS_PORT}
+      password: ${REDIS_PASSWORD}
+
+order-service:
+  base-url: ${ORDER_SERVICE_BASE_URL}
+
+toss:
+  base-url: ${TOSS_BASE_URL:https://api.tosspayments.com}
+  # 시크릿 키는 절대 커밋하지 않는다. 배포 환경의 시크릿 저장소에서 주입한다.
+  secret-key: ${TOSS_SECRET_KEY}
+
+kurly:
+  security:
+    issuer: ${JWT_ISSUER}
+    audience: ${JWT_AUDIENCE}
+    jwks-uri: ${JWT_JWKS_URI}
+    # auth-service 장애 중 콜드 스타트하면 JWKS 캐시가 비어 검증이 전면 실패한다.
+    # 현재 공개키를 넣어두면 그 연쇄 장애를 막는다.
+    fallback-jwk: ${JWT_FALLBACK_JWK:}
