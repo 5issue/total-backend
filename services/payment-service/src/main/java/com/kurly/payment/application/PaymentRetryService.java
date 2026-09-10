@@ -68,7 +68,7 @@ public class PaymentRetryService {
         }
         try {
             PgClient.Cancellation cancellation =
-                    pgClient.cancel(task.paymentKey(), task.cancelAmount(), "RETRY");
+                    pgClient.cancel(task.paymentKey(), task.cancelAmount(), "RETRY", task.paymentCancelId());
             paymentRecordService.completeRetry(
                     task.retryId(), task.paymentCancelId(), cancellation.pgCancelKey());
             log.info("재시도 취소 성공: retryId={}, paymentCancelId={}",

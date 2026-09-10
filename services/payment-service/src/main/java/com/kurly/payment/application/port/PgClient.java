@@ -22,8 +22,12 @@ public interface PgClient {
     /**
      * 결제 취소. 부분 취소를 위해 금액을 함께 보낸다.
      * 실패는 예외로 알리며, 호출부가 취소 이력에 남기고 재시도 대상으로 넘긴다.
+     *
+     * @param cancelId 취소 이력({@code payment_cancels})의 식별자. <b>PG 멱등키의 근거가 된다.</b>
+     *                 호출마다 새 키를 만들면, PG는 처리했는데 응답이 유실돼 재시도할 때 PG가
+     *                 같은 취소로 알아보지 못한다. 같은 취소 이력에는 항상 같은 키가 가야 한다
      */
-    Cancellation cancel(String paymentKey, long amount, String reason);
+    Cancellation cancel(String paymentKey, long amount, String reason, Long cancelId);
 
     /**
      * 주문번호로 결제 상태를 조회한다.

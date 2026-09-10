@@ -18,6 +18,7 @@ import static com.kurly.payment.application.PaymentFixtures.USER_ID;
 import static com.kurly.payment.application.PaymentFixtures.approvedPayment;
 import static com.kurly.payment.application.PaymentFixtures.cancel;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
@@ -37,7 +38,7 @@ class PaymentCancelServiceUnitTest {
         var pending = cancel(20L, payment, AMOUNT);
         given(paymentRepository.findById(10L)).willReturn(Optional.of(payment));
         given(paymentRecordService.beginCancel(eq(10L), anyString(), eq(AMOUNT))).willReturn(pending);
-        given(pgClient.cancel(anyString(), eq(AMOUNT), anyString()))
+        given(pgClient.cancel(anyString(), eq(AMOUNT), anyString(), anyLong()))
                 .willReturn(new PgClient.Cancellation(pgCancelKey));
         given(paymentRecordService.completeCancel(20L, pgCancelKey)).willReturn(pending);
     }
@@ -63,7 +64,7 @@ class PaymentCancelServiceUnitTest {
 
             var inOrder = org.mockito.Mockito.inOrder(paymentRecordService, pgClient);
             inOrder.verify(paymentRecordService).beginCancel(eq(10L), anyString(), eq(AMOUNT));
-            inOrder.verify(pgClient).cancel(anyString(), eq(AMOUNT), anyString());
+            inOrder.verify(pgClient).cancel(anyString(), eq(AMOUNT), anyString(), anyLong());
         }
     }
 

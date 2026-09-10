@@ -29,6 +29,17 @@ public interface IdempotencyKeyRepository {
      * 진실은 대사가 이미 맞춰 놓았으므로, 여기서 푸는 것은 <b>잠금뿐</b>이다. 재요청은 결제 상태에
      * 따라 정상 처리되거나 중복으로 거절된다.
      *
+     * <p><b>아직 실행 중인 요청의 키를 풀면 어떻게 되는가.</b> 유예({@code staleAfter})가 요청의 최대
+     * 수명보다 짧으면 이론적으로 그럴 수 있다. 그래도 이중 승인은 일어나지 않는다. 방어선이 셋이다.
+     * <ol>
+     *   <li>PG 승인 멱등키를 {@code paymentKey}로 고정했다 — 재실행이 같은 키를 보내므로 PG가
+     *       원래 응답을 재생한다(TossPgClient)</li>
+     *   <li>토스는 이미 승인된 {@code paymentKey}의 재승인을 거절한다</li>
+     *   <li>같은 주문의 두 번째 성공은 {@code success_order_id} 유니크 제약이 막고,
+     *       걸린 승인분은 보상 취소된다</li>
+     * </ol>
+     * 유예를 줄일 때는 이 셋이 여전히 성립하는지 확인해야 한다.
+     *
      * @return 지운 건수
      */
     int deleteStaleInProgress(java.time.LocalDateTime staleBefore, int limit);

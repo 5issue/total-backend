@@ -134,20 +134,40 @@ class TossPgClientUnitTest {
             stub = new StubHttpServer().stub(CANCEL_PATH, 200, """
                     {"lastTransactionKey":"CANCEL-TX-1","status":"CANCELED"}""");
 
-            PgClient.Cancellation cancellation = client().cancel("TOSS-KEY", 32_000L, "USER_CANCEL");
+            PgClient.Cancellation cancellation = client().cancel("TOSS-KEY", 32_000L, "USER_CANCEL", 20L);
 
             assertThat(cancellation.pgCancelKey()).isEqualTo("CANCEL-TX-1");
         }
 
         @Test
-        void 멱등키를_실어_재시도가_이중_취소가_되지_않게_한다() {
-            // 재시도 배치가 같은 취소를 여러 번 부를 수 있다.
+        void 같은_취소_이력에는_항상_같은_멱등키를_보낸다() {
+            // 재시도 배치가 같은 취소를 여러 번 부른다. 호출마다 새 키를 만들면 PG가 재시도를
+            // 같은 요청으로 알아보지 못해, 멱등키를 보내는 의미가 사라진다.
             stub = new StubHttpServer().stub(CANCEL_PATH, 200, """
                     {"lastTransactionKey":"CANCEL-TX-1"}""");
+            TossPgClient client = client();
 
-            client().cancel("TOSS-KEY", 32_000L, "USER_CANCEL");
+            client.cancel("TOSS-KEY", 32_000L, "USER_CANCEL", 20L);
+            String first = stub.received(CANCEL_PATH).idempotencyKey();
+            client.cancel("TOSS-KEY", 32_000L, "RETRY", 20L);
+            String second = stub.received(CANCEL_PATH).idempotencyKey();
 
-            assertThat(stub.received(CANCEL_PATH).idempotencyKey()).isNotBlank();
+            assertThat(first).isNotBlank();
+            assertThat(second).isEqualTo(first);
+        }
+
+        @Test
+        void 다른_취소_이력에는_다른_멱등키를_보낸다() {
+            // 같은 결제를 두 번 취소하는 별개 시도까지 하나로 묶이면 두 번째가 무시된다.
+            stub = new StubHttpServer().stub(CANCEL_PATH, 200, """
+                    {"lastTransactionKey":"CANCEL-TX-1"}""");
+            TossPgClient client = client();
+
+            client.cancel("TOSS-KEY", 32_000L, "USER_CANCEL", 20L);
+            String first = stub.received(CANCEL_PATH).idempotencyKey();
+            client.cancel("TOSS-KEY", 32_000L, "USER_CANCEL", 21L);
+
+            assertThat(stub.received(CANCEL_PATH).idempotencyKey()).isNotEqualTo(first);
         }
     }
 
@@ -218,6 +238,24 @@ class TossPgClientUnitTest {
 
             assertThat(inquiry.method()).isNull();
             assertThat(inquiry.receiptUrl()).isNull();
+        }
+
+        @Test
+        void 영수증_주소가_없으면_문자열_null을_저장하지_않는다() {
+            // "null"이 영수증 주소로 저장되면 고객에게 깨진 링크가 나간다.
+            stub = new StubHttpServer().stub(INQUIRY_PATH, 200, """
+                    {"paymentKey":"TOSS-KEY","status":"DONE","receipt":{}}""");
+
+            assertThat(client().findByOrderId(900L).orElseThrow().receiptUrl()).isNull();
+        }
+
+        @Test
+        void 상태를_읽을_수_없는_200은_결제_없음으로_다루지_않는다() {
+            // 비어 있음으로 답하면 대사가 "결제 없음"으로 오판해 실패로 못박는다.
+            stub = new StubHttpServer().stub(INQUIRY_PATH, 200, "{}");
+
+            assertThatThrownBy(() -> client().findByOrderId(900L))
+                    .isInstanceOf(BusinessException.class);
         }
 
         @Test

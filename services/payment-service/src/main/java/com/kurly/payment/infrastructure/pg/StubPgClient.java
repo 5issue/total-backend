@@ -36,7 +36,7 @@ public class StubPgClient implements PgClient {
     }
 
     @Override
-    public Cancellation cancel(String paymentKey, long amount, String reason) {
+    public Cancellation cancel(String paymentKey, long amount, String reason, Long cancelId) {
         log.warn("PG 스텁으로 취소를 흉내 냅니다. 실제 취소가 아닙니다: amount={}, reason={}", amount, reason);
         return new Cancellation("STUB-CANCEL-" + UUID.randomUUID());
     }

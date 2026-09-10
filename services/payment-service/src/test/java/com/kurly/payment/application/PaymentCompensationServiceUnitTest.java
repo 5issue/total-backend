@@ -13,6 +13,7 @@ import static com.kurly.payment.application.PaymentFixtures.AMOUNT;
 import static com.kurly.payment.application.PaymentFixtures.approvedPayment;
 import static com.kurly.payment.application.PaymentFixtures.cancel;
 import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
@@ -42,7 +43,7 @@ class PaymentCompensationServiceUnitTest {
         @Test
         void PG_취소가_성공하면_취소를_확정한다() {
             givenCancelBegun();
-            given(pgClient.cancel(anyString(), eq(AMOUNT), anyString()))
+            given(pgClient.cancel(anyString(), eq(AMOUNT), anyString(), anyLong()))
                     .willReturn(new PgClient.Cancellation("PG-CANCEL-1"));
 
             paymentCompensationService.compensate(PAYMENT_ID, "TOSS-KEY", AMOUNT, "ORDER_EXPIRED");
@@ -54,12 +55,12 @@ class PaymentCompensationServiceUnitTest {
         void 인자로_받은_키로_PG에_취소를_건다() {
             // 중복 결제로 기록이 롤백된 경우 엔티티에는 키가 없다. 승인 응답의 키만이 쓸 수 있다.
             givenCancelBegun();
-            given(pgClient.cancel(anyString(), eq(AMOUNT), anyString()))
+            given(pgClient.cancel(anyString(), eq(AMOUNT), anyString(), anyLong()))
                     .willReturn(new PgClient.Cancellation("PG-CANCEL-1"));
 
             paymentCompensationService.compensate(PAYMENT_ID, "PG-ISSUED-KEY", AMOUNT, "DUPLICATE_PAYMENT");
 
-            verify(pgClient).cancel(eq("PG-ISSUED-KEY"), eq(AMOUNT), eq("DUPLICATE_PAYMENT"));
+            verify(pgClient).cancel(eq("PG-ISSUED-KEY"), eq(AMOUNT), eq("DUPLICATE_PAYMENT"), eq(CANCEL_ID));
         }
 
         @Test
@@ -67,7 +68,7 @@ class PaymentCompensationServiceUnitTest {
             // 시도 기록이 없으면 PG 호출이 실패했을 때 재시도할 근거가 사라진다.
             givenCancelBegun();
             willThrow(new IllegalStateException("PG timeout"))
-                    .given(pgClient).cancel(anyString(), eq(AMOUNT), anyString());
+                    .given(pgClient).cancel(anyString(), eq(AMOUNT), anyString(), anyLong());
 
             paymentCompensationService.compensate(PAYMENT_ID, "TOSS-KEY", AMOUNT, "ORDER_EXPIRED");
 
@@ -84,7 +85,7 @@ class PaymentCompensationServiceUnitTest {
             // 여기서 멈추면 고객 돈이 묶인 채로 잊힌다.
             givenCancelBegun();
             willThrow(new IllegalStateException("PG timeout"))
-                    .given(pgClient).cancel(anyString(), eq(AMOUNT), anyString());
+                    .given(pgClient).cancel(anyString(), eq(AMOUNT), anyString(), anyLong());
 
             paymentCompensationService.compensate(PAYMENT_ID, "TOSS-KEY", AMOUNT, "ORDER_EXPIRED");
 
@@ -97,7 +98,7 @@ class PaymentCompensationServiceUnitTest {
             // 호출부는 자기 흐름의 결론을 따로 정한다. 여기서 예외가 나가면 그 결론을 덮어쓴다.
             givenCancelBegun();
             willThrow(new IllegalStateException("PG timeout"))
-                    .given(pgClient).cancel(anyString(), eq(AMOUNT), anyString());
+                    .given(pgClient).cancel(anyString(), eq(AMOUNT), anyString(), anyLong());
 
             assertThatCode(() ->
                     paymentCompensationService.compensate(PAYMENT_ID, "TOSS-KEY", AMOUNT, "ORDER_EXPIRED"))

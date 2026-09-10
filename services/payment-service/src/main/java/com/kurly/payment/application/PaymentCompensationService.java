@@ -33,7 +33,7 @@ public class PaymentCompensationService {
     public void compensate(Long paymentId, String paymentKey, long amount, String reason) {
         var cancel = paymentRecordService.beginCancel(paymentId, reason, amount);
         try {
-            PgClient.Cancellation cancellation = pgClient.cancel(paymentKey, amount, reason);
+            PgClient.Cancellation cancellation = pgClient.cancel(paymentKey, amount, reason, cancel.getId());
             paymentRecordService.completeCancel(cancel.getId(), cancellation.pgCancelKey());
         } catch (RuntimeException e) {
             // 여기서 멈추면 고객 돈이 묶인 채로 남는다. 재시도 큐가 이어받는다.

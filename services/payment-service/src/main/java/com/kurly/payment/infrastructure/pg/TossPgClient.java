@@ -21,7 +21,6 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
-import java.util.UUID;
 
 /**
  * 토스페이먼츠 연동.
@@ -38,6 +37,16 @@ import java.util.UUID;
 public class TossPgClient implements PgClient {
 
     private static final String CONFIRM_PATH = "/v1/payments/confirm";
+    /**
+     * 멱등키 접두사. 승인은 PG가 발급한 {@code paymentKey}로, 취소는 취소 이력 id로 고정한다.
+     *
+     * <p>승인 키에 주문번호를 쓰면 안 된다. 취소 후 같은 주문을 다시 결제할 때 같은 키가 되어,
+     * PG가 <b>이전 결제의 응답을 재생</b>한다. {@code paymentKey}는 승인 시도마다 다르므로
+     * 재시도에는 같고 새 시도에는 다르다는 조건을 정확히 만족한다.
+     */
+    private static final String APPROVE_KEY_PREFIX = "approve-";
+    private static final String CANCEL_KEY_PREFIX = "cancel-";
+
     private static final String INQUIRY_BY_ORDER_PATH = "/v1/payments/orders/{orderId}";
     /** 승인이 완료된 상태. */
     private static final String APPROVED_STATUS = "DONE";
@@ -75,7 +84,7 @@ public class TossPgClient implements PgClient {
         request.put("orderId", String.valueOf(orderId));
         request.put("amount", amount);
 
-        Map<String, Object> response = post(CONFIRM_PATH, request, null, "승인");
+        Map<String, Object> response = post(CONFIRM_PATH, request, null, "승인", APPROVE_KEY_PREFIX + paymentKey);
         return new Approval(
                 String.valueOf(response.get("paymentKey")),
                 String.valueOf(response.get("method")),
@@ -102,10 +111,12 @@ public class TossPgClient implements PgClient {
                     .retrieve()
                     .body(new org.springframework.core.ParameterizedTypeReference<>() {
                     });
-            if (body == null || body.get("status") == null) {
-                return Optional.empty();
-            }
             String status = text(body, "status");
+            if (status == null) {
+                // 상태를 읽을 수 없는 응답을 "결제 없음"으로 다루면 대사가 실패로 못박는다.
+                // 판정 불가는 예외로 알려 선점을 풀고 다음 주기에 다시 묻게 한다.
+                throw pgFailed("조회", null);
+            }
             return Optional.of(new Inquiry(
                     text(body, "paymentKey"),
                     status,
@@ -125,18 +136,22 @@ public class TossPgClient implements PgClient {
     }
 
     @Override
-    public Cancellation cancel(String paymentKey, long amount, String reason) {
+    public Cancellation cancel(String paymentKey, long amount, String reason, Long cancelId) {
         Map<String, Object> request = new LinkedHashMap<>();
         request.put("cancelReason", reason);
         request.put("cancelAmount", amount);
 
-        Map<String, Object> response = post(CANCEL_PATH, request, paymentKey, "취소");
+        Map<String, Object> response = post(CANCEL_PATH, request, paymentKey, "취소", CANCEL_KEY_PREFIX + cancelId);
         return new Cancellation(text(response, "lastTransactionKey"));
     }
 
     @SuppressWarnings("unchecked")
+    /**
+     * @param idempotencyKey <b>재시도해도 같은 값이어야 한다.</b> 호출마다 새로 만들면 PG가 재시도를
+     *                       같은 요청으로 알아보지 못해 멱등키를 보내는 의미가 사라진다
+     */
     private Map<String, Object> post(String path, Map<String, Object> request,
-                                     String paymentKey, String operation) {
+                                     String paymentKey, String operation, String idempotencyKey) {
         try {
             RestClient.RequestBodySpec spec = paymentKey == null
                     ? restClient.post().uri(path)
@@ -144,7 +159,7 @@ public class TossPgClient implements PgClient {
             Map<String, Object> body = spec
                     .contentType(MediaType.APPLICATION_JSON)
                     // 재시도가 이중 결제·이중 취소가 되지 않게 한다.
-                    .header(IDEMPOTENCY_KEY_HEADER, UUID.randomUUID().toString())
+                    .header(IDEMPOTENCY_KEY_HEADER, idempotencyKey)
                     .body(request)
                     .retrieve()
                     .body(new org.springframework.core.ParameterizedTypeReference<>() {
@@ -188,9 +203,13 @@ public class TossPgClient implements PgClient {
 
     /** 영수증 주소는 {@code receipt.url}에 담겨 온다. 승인 시점에만 받을 수 있어 저장해 둔다. */
     private String receiptUrl(Map<String, Object> response) {
-        return response.get("receipt") instanceof Map<?, ?> receipt
-                ? String.valueOf(receipt.get("url"))
-                : null;
+        if (!(response.get("receipt") instanceof Map<?, ?> receipt)) {
+            return null;
+        }
+        // String.valueOf를 쓰면 url이 없을 때 문자열 "null"이 영수증 주소로 저장돼
+        // 고객에게 깨진 링크가 나간다.
+        Object url = receipt.get("url");
+        return url == null ? null : String.valueOf(url);
     }
 
     private BusinessException pgFailed(String operation, Exception cause) {

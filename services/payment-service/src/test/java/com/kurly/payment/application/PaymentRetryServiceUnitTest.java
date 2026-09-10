@@ -41,7 +41,7 @@ class PaymentRetryServiceUnitTest {
         void 성공하면_취소를_확정하고_재시도를_종료한다() {
             given(paymentRecordService.claimDueRetries(eq(50), any()))
                     .willReturn(List.of(task(PaymentRecordService.PG_CANCEL_TASK)));
-            given(pgClient.cancel("TOSS-KEY", 32_000L, "RETRY"))
+            given(pgClient.cancel("TOSS-KEY", 32_000L, "RETRY", 20L))
                     .willReturn(new PgClient.Cancellation("PG-CANCEL-9"));
 
             assertThat(paymentRetryService.runDueTasks(50)).isEqualTo(1);
@@ -56,7 +56,7 @@ class PaymentRetryServiceUnitTest {
             given(paymentRecordService.claimDueRetries(eq(50), any()))
                     .willReturn(List.of(task(PaymentRecordService.PG_CANCEL_TASK)));
             willThrow(new IllegalStateException("PG timeout"))
-                    .given(pgClient).cancel(anyString(), anyLong(), anyString());
+                    .given(pgClient).cancel(anyString(), anyLong(), anyString(), anyLong());
 
             assertThat(paymentRetryService.runDueTasks(50)).isZero();
 
@@ -73,8 +73,8 @@ class PaymentRetryServiceUnitTest {
             given(paymentRecordService.claimDueRetries(eq(50), any()))
                     .willReturn(List.of(failing, succeeding));
             willThrow(new IllegalStateException("boom"))
-                    .given(pgClient).cancel(eq("KEY-A"), anyLong(), anyString());
-            given(pgClient.cancel(eq("KEY-B"), anyLong(), anyString()))
+                    .given(pgClient).cancel(eq("KEY-A"), anyLong(), anyString(), anyLong());
+            given(pgClient.cancel(eq("KEY-B"), anyLong(), anyString(), anyLong()))
                     .willReturn(new PgClient.Cancellation("PG-CANCEL-B"));
 
             assertThat(paymentRetryService.runDueTasks(50)).isEqualTo(1);
@@ -94,7 +94,7 @@ class PaymentRetryServiceUnitTest {
 
             assertThat(paymentRetryService.runDueTasks(50)).isZero();
 
-            verify(pgClient, never()).cancel(anyString(), anyLong(), anyString());
+            verify(pgClient, never()).cancel(anyString(), anyLong(), anyString(), anyLong());
         }
 
         @Test
@@ -122,7 +122,7 @@ class PaymentRetryServiceUnitTest {
             assertThat(paymentRetryService.runDueTasks(50)).isZero();
 
             verify(paymentRecordService).failRetry(eq(30L), anyString());
-            verify(pgClient, never()).cancel(anyString(), anyLong(), anyString());
+            verify(pgClient, never()).cancel(anyString(), anyLong(), anyString(), anyLong());
         }
     }
 }
