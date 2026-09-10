@@ -2,7 +2,6 @@ package com.kurly.common.swagger;
 
 import com.kurly.common.exception.ErrorCode;
 import com.kurly.common.exception.GlobalErrorCode;
-import com.kurly.common.response.ApiResponse;
 import com.kurly.common.response.ResultStatus;
 import com.kurly.common.security.Authenticated;
 import io.swagger.v3.oas.models.Operation;
@@ -10,11 +9,11 @@ import io.swagger.v3.oas.models.examples.Example;
 import io.swagger.v3.oas.models.media.Content;
 import io.swagger.v3.oas.models.media.MediaType;
 import io.swagger.v3.oas.models.media.Schema;
+import io.swagger.v3.oas.models.responses.ApiResponse;
 import io.swagger.v3.oas.models.responses.ApiResponses;
 import org.springdoc.core.customizers.OperationCustomizer;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.context.annotation.Bean;
-import org.springframework.core.annotation.AnnotatedElementUtils;
 import org.springframework.web.method.HandlerMethod;
 
 import java.lang.reflect.Method;
@@ -36,8 +35,8 @@ public class SwaggerErrorResponseConfig {
                         .add(new TargetError(GlobalErrorCode.UNAUTHORIZED, GlobalErrorCode.UNAUTHORIZED.getMessage()));
             }
 
-            // 2. 수동 지정된 커스텀 메시지 어노테이션(@ApiErrorCodeExample) 수집
-            Set<ApiErrorCodeExample> manualExamples = findManualAnnotations(handlerMethod);
+            // 2. 수동 지정된 커스텀 메시지 어노테이션(@ApiErrorCodeExample, @ApiErrorCodeExamples) 수집
+            List<ApiErrorCodeExample> manualExamples = findManualAnnotations(handlerMethod);
             for (ApiErrorCodeExample ex : manualExamples) {
                 ErrorCode errorCode = findErrorCodeEnum(ex.status(), ex.code());
                 if (errorCode != null) {
@@ -47,13 +46,16 @@ public class SwaggerErrorResponseConfig {
                 }
             }
 
-            // 3. 간소화 어노테이션(@ApiErrors) 수집 (클래스 내 Enum 기본 메시지 사용)
-            ApiErrors simpleErrors = findAnnotation(handlerMethod, ApiErrors.class);
-            if (simpleErrors != null) {
+            // 3. 간소화 어노테이션(@ApiErrors) 수집
+            List<ApiErrors> simpleErrorsList = findSimpleAnnotations(handlerMethod);
+            for (ApiErrors simpleErrors : simpleErrorsList) {
                 for (Class<? extends ErrorCode> clazz : simpleErrors.value()) {
-                    for (ErrorCode ec : clazz.getEnumConstants()) {
-                        statusGroup.computeIfAbsent(ec.getStatus().value(), k -> new ArrayList<>())
-                                .add(new TargetError(ec, ec.getMessage()));
+                    ErrorCode[] constants = clazz.getEnumConstants();
+                    if (constants != null) {
+                        for (ErrorCode ec : constants) {
+                            statusGroup.computeIfAbsent(ec.getStatus().value(), k -> new ArrayList<>())
+                                    .add(new TargetError(ec, ec.getMessage()));
+                        }
                     }
                 }
             }
@@ -66,54 +68,76 @@ public class SwaggerErrorResponseConfig {
         };
     }
 
-    private Set<ApiErrorCodeExample> findManualAnnotations(HandlerMethod handlerMethod) {
-        Set<ApiErrorCodeExample> result = new LinkedHashSet<>();
-        result.addAll(AnnotatedElementUtils.findAllMergedAnnotations(handlerMethod.getMethod(), ApiErrorCodeExample.class));
+    /**
+     * Controller 메서드 및 인터페이스 메서드에서 @ApiErrorCodeExample 과 @ApiErrorCodeExamples 컨테이너를 모두 추출
+     */
+    private List<ApiErrorCodeExample> findManualAnnotations(HandlerMethod handlerMethod) {
+        List<ApiErrorCodeExample> result = new ArrayList<>();
+
+        extractExamples(handlerMethod.getMethod(), result);
 
         for (Class<?> iface : handlerMethod.getBeanType().getInterfaces()) {
             for (Method method : iface.getMethods()) {
-                if (method.getName().equals(handlerMethod.getMethod().getName())
-                        && method.getParameterCount() == handlerMethod.getMethod().getParameterCount()) {
-                    result.addAll(AnnotatedElementUtils.findAllMergedAnnotations(method, ApiErrorCodeExample.class));
+                if (method.getName().equals(handlerMethod.getMethod().getName())) {
+                    extractExamples(method, result);
                 }
             }
         }
         return result;
     }
 
-    private <A extends java.lang.annotation.Annotation> A findAnnotation(HandlerMethod handlerMethod, Class<A> annotationType) {
-        A annotation = AnnotatedElementUtils.findMergedAnnotation(handlerMethod.getMethod(), annotationType);
-        if (annotation != null) return annotation;
+    private void extractExamples(Method method, List<ApiErrorCodeExample> targetList) {
+        ApiErrorCodeExample single = method.getAnnotation(ApiErrorCodeExample.class);
+        if (single != null) {
+            targetList.add(single);
+        }
+        ApiErrorCodeExamples multiple = method.getAnnotation(ApiErrorCodeExamples.class);
+        if (multiple != null) {
+            targetList.addAll(Arrays.asList(multiple.value()));
+        }
+    }
+
+    private List<ApiErrors> findSimpleAnnotations(HandlerMethod handlerMethod) {
+        List<ApiErrors> result = new ArrayList<>();
+        ApiErrors controllerAnno = handlerMethod.getMethodAnnotation(ApiErrors.class);
+        if (controllerAnno != null) {
+            result.add(controllerAnno);
+        }
 
         for (Class<?> iface : handlerMethod.getBeanType().getInterfaces()) {
             for (Method method : iface.getMethods()) {
-                if (method.getName().equals(handlerMethod.getMethod().getName())
-                        && method.getParameterCount() == handlerMethod.getMethod().getParameterCount()) {
-                    annotation = AnnotatedElementUtils.findMergedAnnotation(method, annotationType);
-                    if (annotation != null) return annotation;
+                if (method.getName().equals(handlerMethod.getMethod().getName())) {
+                    ApiErrors ifaceAnno = method.getAnnotation(ApiErrors.class);
+                    if (ifaceAnno != null) {
+                        result.add(ifaceAnno);
+                    }
                 }
             }
         }
-        return null;
+        return result;
     }
 
     private void injectResponses(ApiResponses responses, Map<Integer, List<TargetError>> statusGroup) {
         statusGroup.forEach((statusCode, errorList) -> {
             String statusKey = String.valueOf(statusCode);
-            io.swagger.v3.oas.models.responses.ApiResponse apiResponse = responses.computeIfAbsent(
+            ApiResponse apiResponse = responses.computeIfAbsent(
                     statusKey,
-                    k -> new io.swagger.v3.oas.models.responses.ApiResponse().description("Error Response")
+                    k -> new ApiResponse().description("Error Response")
             );
 
-            Content content = apiResponse.getContent() == null ? new Content() : apiResponse.getContent();
+            Content content = apiResponse.getContent();
+            if (content == null) {
+                content = new Content();
+                apiResponse.setContent(content);
+            }
+
             MediaType mediaType = content.getOrDefault("application/json", new MediaType());
 
             if (mediaType.getSchema() == null) {
-                mediaType.setSchema(new Schema<ApiResponse<Void>>().$ref("#/components/schemas/ApiResponse"));
+                mediaType.setSchema(new Schema<>().type("object"));
             }
 
-            for (int i = 0; i < errorList.size(); i++) {
-                TargetError target = errorList.get(i);
+            for (TargetError target : errorList) {
                 ErrorCode ec = target.errorCode;
                 String msg = target.customMessage;
 
@@ -128,7 +152,12 @@ public class SwaggerErrorResponseConfig {
                 errorBody.put("timestamp", Instant.now().toString());
 
                 example.setValue(errorBody);
-                mediaType.addExamples(ec.getCode() + "_" + (i + 1) + " (" + msg + ")", example);
+
+                String exampleKey = msg.equals(ec.getMessage())
+                        ? ec.getCode()
+                        : ec.getCode() + " (" + msg + ")";
+
+                mediaType.addExamples(exampleKey, example);
             }
 
             content.addMediaType("application/json", mediaType);
@@ -137,7 +166,10 @@ public class SwaggerErrorResponseConfig {
     }
 
     private ErrorCode findErrorCodeEnum(Class<? extends ErrorCode> enumClass, String codeName) {
-        for (ErrorCode constant : enumClass.getEnumConstants()) {
+        ErrorCode[] constants = enumClass.getEnumConstants();
+        if (constants == null) return null;
+
+        for (ErrorCode constant : constants) {
             if (constant.name().equalsIgnoreCase(codeName) || constant.getCode().equalsIgnoreCase(codeName)) {
                 return constant;
             }
