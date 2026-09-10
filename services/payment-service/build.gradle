@@ -46,6 +46,8 @@ jacocoTestCoverageVerification {
                     '**/presentation/dto/**',
                     '**/domain/enums/**',
                     '**/exception/PaymentErrorCode.class',
+                    // 로컬 전용 대역. 실제 어댑터가 붙으면 그때는 측정 대상이다.
+                    '**/Stub*.class',
             ])
         }))
     }
