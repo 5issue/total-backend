@@ -28,6 +28,11 @@ spring:
 order-service:
   base-url: ${ORDER_SERVICE_BASE_URL}
 
+toss:
+  base-url: ${TOSS_BASE_URL:https://api.tosspayments.com}
+  # 시크릿 키는 절대 커밋하지 않는다. 배포 환경의 시크릿 저장소에서 주입한다.
+  secret-key: ${TOSS_SECRET_KEY}
+
 kurly:
   security:
     issuer: ${JWT_ISSUER}
