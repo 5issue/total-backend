@@ -23,4 +23,14 @@ public interface PaymentRepository {
 
     /** 같은 주문에 이미 성공한 결제가 있는지 확인한다. 중복 결제 차단의 마지막 방어선이다. */
     boolean existsByOrderIdAndStatus(Long orderId, com.kurly.payment.domain.enums.PaymentStatus status);
+
+    /**
+     * 대사가 필요한 결제를 선점하며 가져온다.
+     *
+     * <p>대상은 {@code REQUESTED}(승인 결과를 못 받고 멈춘 건)와 {@code FAILED}(타임아웃을 실패로
+     * 기록했지만 PG는 승인했을 수 있는 건) 둘 다이다. 성공·취소는 이미 결론이 난 상태라 제외한다.
+     *
+     * @param staleBefore 이 시각 이전에 요청된 건만. 진행 중인 정상 결제를 건드리지 않기 위한 유예다
+     */
+    java.util.List<Payment> claimReconcilableForUpdateSkipLocked(java.time.LocalDateTime staleBefore, int limit);
 }

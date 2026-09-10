@@ -8,6 +8,8 @@ import com.kurly.payment.domain.entity.PaymentRetry;
 import com.kurly.payment.domain.repository.PaymentCancelRepository;
 import com.kurly.payment.domain.repository.PaymentOutboxRepository;
 import com.kurly.payment.domain.repository.PaymentRepository;
+import com.kurly.payment.domain.enums.PaymentStatus;
+import com.kurly.payment.domain.repository.IdempotencyKeyRepository;
 import com.kurly.payment.domain.repository.PaymentRetryRepository;
 import com.kurly.payment.exception.PaymentNotFoundException;
 import lombok.RequiredArgsConstructor;
@@ -44,6 +46,7 @@ public class PaymentRecordService {
     private final PaymentCancelRepository paymentCancelRepository;
     private final PaymentOutboxRepository paymentOutboxRepository;
     private final PaymentRetryRepository paymentRetryRepository;
+    private final IdempotencyKeyRepository idempotencyKeyRepository;
     private final JsonMapper jsonMapper;
 
     /** PG 승인 전에 결제 행을 먼저 남긴다. 승인 결과를 어디에 기록할지 미리 정해두기 위함이다. */
@@ -189,6 +192,51 @@ public class PaymentRecordService {
                 .build());
     }
 
+    /**
+     * 대사 대상을 선점하며 값으로 꺼낸다.
+     *
+     * <p>엔티티가 아니라 레코드를 돌려준다. 호출부는 PG·주문 호출을 하느라 트랜잭션 밖에서 오래
+     * 머무는데, 그 사이 준영속 엔티티를 들고 있으면 지연 로딩과 변경 감지가 모두 함정이 된다.
+     *
+     * <p>선점 표시({@code reconciled_at})를 조회와 같은 트랜잭션에서 남긴다. 표시를 나중에 하면
+     * 다른 인스턴스가 같은 결제를 함께 집어 PG에 두 번 묻고 두 번 정정한다.
+     */
+    @Transactional
+    public List<ReconcileTarget> claimReconcilable(int limit, LocalDateTime staleBefore) {
+        return paymentRepository.claimReconcilableForUpdateSkipLocked(staleBefore, limit).stream()
+                .peek(Payment::claimReconciliation)
+                .map(payment -> new ReconcileTarget(
+                        payment.getId(),
+                        payment.getOrderId(),
+                        payment.getTotalAmount(),
+                        payment.getStatus()))
+                .toList();
+    }
+
+    /** 결론을 내지 못한 대사의 선점을 되돌려 다음 주기가 이어받게 한다. */
+    @Transactional
+    public void releaseReconciliationClaim(Long paymentId) {
+        findPayment(paymentId).releaseReconciliation();
+    }
+
+    /** 매달린 멱등키 선점을 지운다. @see IdempotencyKeyRepository#deleteStaleInProgress */
+    @Transactional
+    public int deleteStaleIdempotencyKeys(LocalDateTime staleBefore, int limit) {
+        return idempotencyKeyRepository.deleteStaleInProgress(staleBefore, limit);
+    }
+
+    /** 보관 기간이 지난 완료 멱등키를 지운다. @see IdempotencyKeyRepository#deleteCompletedBefore */
+    @Transactional
+    public int deleteCompletedIdempotencyKeys(LocalDateTime before, int limit) {
+        return idempotencyKeyRepository.deleteCompletedBefore(before, limit);
+    }
+
+    /** 발행을 마친 아웃박스를 지운다. @see PaymentOutboxRepository#deletePublishedBefore */
+    @Transactional
+    public int deletePublishedOutbox(LocalDateTime before, int limit) {
+        return paymentOutboxRepository.deletePublishedBefore(before, limit);
+    }
+
     private Payment findPayment(Long paymentId) {
         return paymentRepository.findById(paymentId).orElseThrow(PaymentNotFoundException::new);
     }
@@ -198,6 +246,18 @@ public class PaymentRecordService {
      *
      * @param paymentKey PG 취소 호출에 필요한 결제 식별자
      */
+    /**
+     * 대사 대상 한 건.
+     *
+     * @param status 선점 시점의 결제 상태. {@code FAILED}였다면 이미 실패로 기록돼 있어
+     *               다시 실패로 쓸 필요가 없다
+     */
+    public record ReconcileTarget(Long paymentId, Long orderId, Long totalAmount, PaymentStatus status) {
+        public boolean alreadyFailed() {
+            return status == PaymentStatus.FAILED;
+        }
+    }
+
     public record RetryTask(Long retryId, String taskType, String paymentKey,
                             Long paymentCancelId, long cancelAmount) {
     }

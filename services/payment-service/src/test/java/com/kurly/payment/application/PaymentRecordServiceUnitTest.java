@@ -9,6 +9,7 @@ import com.kurly.payment.domain.enums.PaymentStatus;
 import com.kurly.payment.domain.repository.PaymentCancelRepository;
 import com.kurly.payment.domain.repository.PaymentOutboxRepository;
 import com.kurly.payment.domain.repository.PaymentRepository;
+import com.kurly.payment.domain.repository.IdempotencyKeyRepository;
 import com.kurly.payment.domain.repository.PaymentRetryRepository;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -37,12 +38,14 @@ class PaymentRecordServiceUnitTest {
     @Mock PaymentCancelRepository paymentCancelRepository;
     @Mock PaymentOutboxRepository paymentOutboxRepository;
     @Mock PaymentRetryRepository paymentRetryRepository;
+    @Mock IdempotencyKeyRepository idempotencyKeyRepository;
 
     PaymentRecordService paymentRecordService;
 
     private void createService() {
         paymentRecordService = new PaymentRecordService(paymentRepository, paymentCancelRepository,
-                paymentOutboxRepository, paymentRetryRepository, JsonMapper.builder().build());
+                paymentOutboxRepository, paymentRetryRepository, idempotencyKeyRepository,
+                JsonMapper.builder().build());
     }
 
     @Nested

@@ -85,6 +85,13 @@ public class Payment {
     @Column(name = "canceled_at")
     private LocalDateTime canceledAt;
 
+    /**
+     * PG 대사를 마친 시각. {@code null}이면 아직 맞춰보지 않은 건이다.
+     * 대사 중에는 선점 표시로도 쓰여, 여러 인스턴스가 같은 결제를 동시에 조회하지 않게 한다.
+     */
+    @Column(name = "reconciled_at")
+    private LocalDateTime reconciledAt;
+
     @Builder
     private Payment(Long orderId, Long userId, Long totalAmount) {
         // 금액 불변식은 DB CHECK로도 막지만, 잘못된 금액의 결제 객체가 아예 만들어지지 않게 한다.
@@ -129,5 +136,18 @@ public class Payment {
 
     public boolean isCancellable() {
         return status.isCancellable();
+    }
+
+    /** 대사 대상으로 선점한다. 조회 트랜잭션 안에서 표시해 두어 다른 인스턴스가 집지 않게 한다. */
+    public void claimReconciliation() {
+        this.reconciledAt = LocalDateTime.now();
+    }
+
+    /**
+     * 선점을 되돌린다. PG 조회나 후속 처리가 실패해 <b>결론을 내지 못했을 때</b> 부른다.
+     * 되돌리지 않으면 대사되지 않은 건이 대사 완료로 남아 영영 다시 보지 않게 된다.
+     */
+    public void releaseReconciliation() {
+        this.reconciledAt = null;
     }
 }

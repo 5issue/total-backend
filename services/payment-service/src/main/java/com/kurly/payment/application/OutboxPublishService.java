@@ -2,12 +2,14 @@ package com.kurly.payment.application;
 
 import com.kurly.payment.application.port.EventPublisher;
 import com.kurly.payment.domain.entity.PaymentOutbox;
+import com.kurly.payment.domain.enums.OutboxStatus;
 import com.kurly.payment.domain.repository.PaymentOutboxRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 /**
@@ -33,12 +35,13 @@ public class OutboxPublishService {
     /**
      * 미발행 이벤트를 한 묶음 발행한다.
      *
+     * @param maxAttempts 이 횟수만큼 실패하면 {@code FAILED}로 멈춘다
      * @return 발행에 성공한 건수
      */
     @Transactional
-    public int publishPending(int batchSize) {
-        List<PaymentOutbox> pending =
-                paymentOutboxRepository.findPendingForUpdateSkipLocked(batchSize);
+    public int publishPending(int batchSize, int maxAttempts) {
+        List<PaymentOutbox> pending = paymentOutboxRepository
+                .findPendingForUpdateSkipLocked(LocalDateTime.now(), batchSize);
         if (pending.isEmpty()) {
             return 0;
         }
@@ -50,10 +53,17 @@ public class OutboxPublishService {
                 event.markPublished();
                 published++;
             } catch (RuntimeException e) {
-                // PENDING으로 남겨 다음 주기에 다시 시도한다. 브로커 장애는 대개 일시적이다.
-                // 반복 실패하는 건을 걸러낼 시도 횟수는 아직 없다(남은 과제).
-                log.error("아웃박스 발행 실패. 다음 주기에 재시도한다: eventId={}, eventType={}",
-                        event.getEventId(), event.getEventType(), e);
+                // 브로커 장애는 대개 일시적이라 백오프를 두고 다시 시도한다. 다만 상한에 도달하면
+                // FAILED로 멈춘다 — 나가지 않는 이벤트가 배치 묶음을 계속 차지하면 뒤에 쌓인
+                // 정상 이벤트가 그만큼 밀린다.
+                event.recordFailure(e.getMessage(), maxAttempts);
+                if (event.getStatus() == OutboxStatus.FAILED) {
+                    log.error("아웃박스 발행을 {}회 실패해 중단한다. 사람이 봐야 한다: eventId={}, eventType={}",
+                            event.getAttemptCount(), event.getEventId(), event.getEventType(), e);
+                } else {
+                    log.warn("아웃박스 발행 실패. {}회째, 다음 시각으로 미룬다: eventId={}, eventType={}",
+                            event.getAttemptCount(), event.getEventId(), event.getEventType(), e);
+                }
             }
         }
         log.info("아웃박스 발행 완료: 대상={}, 성공={}", pending.size(), published);
