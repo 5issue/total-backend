@@ -17,7 +17,9 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.atMost;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
 @ExtendWith(MockitoExtension.class)
@@ -84,6 +86,36 @@ class PaymentMaintenanceServiceUnitTest {
             paymentMaintenanceService.purgeExpiredIdempotencyKeys(500, RETENTION);
 
             verify(paymentRecordService, never()).deleteStaleIdempotencyKeys(any(), anyInt());
+        }
+
+        @Test
+        void 묶음을_다_채우면_남은_것이_없을_때까지_반복한다() {
+            // 한 주기에 한 묶음만 지우면 쌓이는 속도를 따라잡지 못한다.
+            given(paymentRecordService.deleteCompletedIdempotencyKeys(any(), eq(500)))
+                    .willReturn(500, 500, 120);
+
+            paymentMaintenanceService.purgeExpiredIdempotencyKeys(500, RETENTION);
+
+            verify(paymentRecordService, times(3)).deleteCompletedIdempotencyKeys(any(), eq(500));
+        }
+
+        @Test
+        void 묶음을_못_채우면_더_돌지_않는다() {
+            given(paymentRecordService.deleteCompletedIdempotencyKeys(any(), eq(500))).willReturn(3);
+
+            paymentMaintenanceService.purgeExpiredIdempotencyKeys(500, RETENTION);
+
+            verify(paymentRecordService, times(1)).deleteCompletedIdempotencyKeys(any(), eq(500));
+        }
+
+        @Test
+        void 끝없이_돌지_않도록_상한에서_멈춘다() {
+            // 상한이 없으면 한 주기가 테이블을 오래 붙잡아 다른 워커의 커넥션까지 마른다.
+            given(paymentRecordService.deletePublishedOutbox(any(), eq(500))).willReturn(500);
+
+            paymentMaintenanceService.purgePublishedOutbox(500, RETENTION);
+
+            verify(paymentRecordService, atMost(30)).deletePublishedOutbox(any(), eq(500));
         }
 
         @Test

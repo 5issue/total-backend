@@ -21,6 +21,9 @@ import java.time.LocalDateTime;
 @RequiredArgsConstructor
 public class PaymentMaintenanceService {
 
+    /** 한 주기가 테이블을 지나치게 오래 붙잡지 않도록 두는 반복 상한. */
+    private static final int MAX_PURGE_ROUNDS = 20;
+
     private final PaymentRecordService paymentRecordService;
 
     /**
@@ -50,8 +53,9 @@ public class PaymentMaintenanceService {
      * 방어선으로 남아 있고, 그 경우 승인분은 보상 취소된다.
      */
     public void purgeExpiredIdempotencyKeys(int limit, Duration retention) {
-        int purged = paymentRecordService.deleteCompletedIdempotencyKeys(
-                LocalDateTime.now().minus(retention), limit);
+        LocalDateTime before = LocalDateTime.now().minus(retention);
+        int purged = purgeInBatches("멱등키",
+                () -> paymentRecordService.deleteCompletedIdempotencyKeys(before, limit), limit);
         if (purged > 0) {
             log.info("보관 기간이 지난 멱등키 정리: {}건", purged);
         }
@@ -59,10 +63,35 @@ public class PaymentMaintenanceService {
 
     /** 발행을 마친 지 오래된 아웃박스 이벤트를 지운다. 발행 워커의 조회 대상이 그만큼 줄어든다. */
     public void purgePublishedOutbox(int limit, Duration retention) {
-        int purged = paymentRecordService.deletePublishedOutbox(
-                LocalDateTime.now().minus(retention), limit);
+        LocalDateTime before = LocalDateTime.now().minus(retention);
+        int purged = purgeInBatches("아웃박스",
+                () -> paymentRecordService.deletePublishedOutbox(before, limit), limit);
         if (purged > 0) {
             log.info("발행 완료 아웃박스 정리: {}건", purged);
         }
+    }
+
+    /**
+     * 지울 것이 남지 않을 때까지 묶음 단위로 반복한다.
+     *
+     * <p>한 주기에 한 묶음만 지우면 <b>쌓이는 속도를 따라잡지 못한다.</b> 하루 한 번 500건씩 지우는데
+     * 하루에 500건 넘게 만료되면 잔여량이 계속 는다.
+     *
+     * <p>반복 상한을 둔다. 상한이 없으면 한 번의 주기가 테이블을 오래 붙잡고, 밀린 양이 많을 때
+     * 다른 워커의 커넥션까지 말라붙는다. 남은 것은 다음 주기가 이어서 지운다.
+     */
+    private int purgeInBatches(String what, java.util.function.IntSupplier deleteBatch, int limit) {
+        int total = 0;
+        for (int round = 0; round < MAX_PURGE_ROUNDS; round++) {
+            int deleted = deleteBatch.getAsInt();
+            total += deleted;
+            // 묶음 크기를 못 채웠다면 더 지울 것이 없다.
+            if (deleted < limit) {
+                return total;
+            }
+        }
+        log.warn("{} 정리가 상한({}회)에 걸려 중단됐다. 남은 분은 다음 주기가 이어받는다: 이번에 {}건 삭제",
+                what, MAX_PURGE_ROUNDS, total);
+        return total;
     }
 }
