@@ -1,14 +1,17 @@
 package com.kurly.order.application;
 
+import com.kurly.common.exception.BusinessException;
+import com.kurly.common.security.AuthenticatedPrincipal;
+import com.kurly.common.security.Role;
 import com.kurly.order.domain.cart.Cart;
 import com.kurly.order.domain.cart.CartItem;
 import com.kurly.order.domain.cart.CartRepository;
 import com.kurly.order.domain.cart.DeliveryType;
 import com.kurly.order.domain.common.OrderErrorCode;
 import com.kurly.order.domain.common.StorageType;
-import com.kurly.common.exception.BusinessException;
 import com.kurly.order.presentation.dto.CartResponseDto;
 import com.kurly.order.presentation.dto.DeliveryAddressResponseDto;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -29,9 +32,19 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 class CartServiceUnitTest {
 
-    @Mock CartRepository cartRepository;
-    @Mock CartExternalService externalService;
-    @InjectMocks CartService cartService;
+    @Mock
+    CartRepository cartRepository;
+    @Mock
+    CartExternalService externalService;
+    @InjectMocks
+    CartService cartService;
+
+    private AuthenticatedPrincipal me;
+
+    @BeforeEach
+    void setUp() {
+        me = new AuthenticatedPrincipal(1L, Role.USER);
+    }
 
     @Nested
     @DisplayName("장바구니 조회")
@@ -46,7 +59,7 @@ class CartServiceUnitTest {
             when(externalService.getAddress(1L, null)).thenReturn(address);
             when(externalService.getProducts(List.of())).thenReturn(List.of());
 
-            var response = cartService.getByMemberId(1L);
+            var response = cartService.getByMemberId(me);
 
             assertThat(response.selectedAddress()).isEqualTo(address);
             verify(cartRepository).createIfAbsent(1L);
@@ -62,7 +75,7 @@ class CartServiceUnitTest {
             when(externalService.getAddress(1L, null)).thenReturn(address);
             when(externalService.getProducts(List.of(100L))).thenReturn(List.of());
 
-            assertThatThrownBy(() -> cartService.getByMemberId(1L))
+            assertThatThrownBy(() -> cartService.getByMemberId(me))
                     .isInstanceOf(BusinessException.class)
                     .extracting("errorCode")
                     .isEqualTo(OrderErrorCode.ORD_INCOMPLETE_PRODUCT_RESPONSE);
@@ -85,7 +98,7 @@ class CartServiceUnitTest {
             when(externalService.getAddress(1L, 10L)).thenReturn(address);
             when(externalService.getDeliveryPromise(address)).thenReturn(promise);
 
-            var response = cartService.updateDeliveryAddress(1L, 10L);
+            var response = cartService.updateDeliveryAddress(me, 10L);
 
             assertThat(response.expectedDeliveryAt()).isEqualTo(expectedAt);
             assertThat(cart.getAddressId()).isEqualTo(10L);

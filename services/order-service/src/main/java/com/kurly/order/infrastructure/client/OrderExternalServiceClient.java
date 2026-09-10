@@ -1,19 +1,25 @@
 package com.kurly.order.infrastructure.client;
 
-import com.kurly.order.application.OrderExternalService;
+import com.kurly.common.response.ApiResponse;
 import com.kurly.order.application.CartExternalService;
+import com.kurly.order.application.OrderExternalService;
 import com.kurly.order.domain.cart.CartItem;
-import com.kurly.order.presentation.dto.CheckoutInventoryResponseDto;
 import com.kurly.order.presentation.dto.CartResponseDto;
+import com.kurly.order.presentation.dto.CheckoutInventoryResponseDto;
 import com.kurly.order.presentation.dto.DeliveryAddressResponseDto;
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
-import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.stereotype.Component;
+import org.springframework.util.StringUtils;
+import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
 
+import java.net.URI;
 import java.time.Duration;
 import java.util.List;
 
@@ -26,7 +32,6 @@ public class OrderExternalServiceClient implements OrderExternalService, CartExt
     private final RestClient memberClient;
 
     public OrderExternalServiceClient(
-            RestClient.Builder builder,
             @Value("${services.oms.base-url:http://localhost:8085}") String omsBaseUrl,
             @Value("${services.payment.base-url:http://localhost:8083}") String paymentBaseUrl,
             @Value("${services.product.base-url:http://localhost:8081}") String productBaseUrl,
@@ -34,10 +39,10 @@ public class OrderExternalServiceClient implements OrderExternalService, CartExt
             @Value("${services.http.connect-timeout:2s}") Duration connectTimeout,
             @Value("${services.http.read-timeout:5s}") Duration readTimeout
     ) {
-        this.omsClient = securedClient(builder, omsBaseUrl, connectTimeout, readTimeout);
-        this.paymentClient = securedClient(builder, paymentBaseUrl, connectTimeout, readTimeout);
-        this.productClient = securedClient(builder, productBaseUrl, connectTimeout, readTimeout);
-        this.memberClient = securedClient(builder, memberBaseUrl, connectTimeout, readTimeout);
+        this.omsClient = securedClient(omsBaseUrl, connectTimeout, readTimeout);
+        this.paymentClient = securedClient(paymentBaseUrl, connectTimeout, readTimeout);
+        this.productClient = securedClient(productBaseUrl, connectTimeout, readTimeout);
+        this.memberClient = securedClient(memberBaseUrl, connectTimeout, readTimeout);
     }
 
     @Override
@@ -81,17 +86,17 @@ public class OrderExternalServiceClient implements OrderExternalService, CartExt
                 .toBodilessEntity();
     }
 
-    @Override
     public CartResponseDto.Address getAddress(Long memberId, Long addressId) {
-        AddressApiResponse response = addressId == null
-                ? memberClient.get().uri("/internal/v1/users/{memberId}/delivery-addresses/default", memberId)
-                    .retrieve().body(AddressApiResponse.class)
-                : memberClient.get().uri("/internal/v1/users/{memberId}/delivery-addresses/{addressId}", memberId, addressId)
-                    .retrieve().body(AddressApiResponse.class);
-        if (response == null || response.data() == null) {
-            throw new IllegalStateException("회원 서비스의 배송지 응답이 비어 있습니다.");
+        try {
+            ApiResponse<CartResponseDto.Address> response = memberClient.get()
+                    .uri("/internal/v1/members/{memberId}/addresses/{addressId}", memberId, addressId)
+                    .retrieve()
+                    .body(new ParameterizedTypeReference<>() {
+                    });
+            return response != null ? response.getData() : null;
+        } catch (HttpClientErrorException.NotFound e) {
+            return null;
         }
-        return response.data();
     }
 
     @Override
@@ -115,6 +120,36 @@ public class OrderExternalServiceClient implements OrderExternalService, CartExt
             throw new IllegalStateException("OMS의 배송 가능 여부 응답이 비어 있습니다.");
         }
         return response.data();
+    }
+
+    private RestClient securedClient(String baseUrl, Duration connectTimeout, Duration readTimeout) {
+        SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
+        requestFactory.setConnectTimeout(connectTimeout);
+        requestFactory.setReadTimeout(readTimeout);
+
+        return RestClient.builder()
+                .baseUrl(baseUrl)
+                .requestFactory(requestFactory)
+                .requestInterceptor((request, body, execution) -> {
+                    ServletRequestAttributes attributes = (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
+                    if (attributes != null) {
+                        HttpServletRequest currentRequest = attributes.getRequest();
+                        String authHeader = currentRequest.getHeader(HttpHeaders.AUTHORIZATION);
+
+                        // 대상 URI 검증: HTTPS이거나 로컬/클러스터 내부 통신일 때만 헤더 전파 허용
+                        URI uri = request.getURI();
+                        boolean isSecureOrInternal = "https".equalsIgnoreCase(uri.getScheme())
+                                || "localhost".equals(uri.getHost())
+                                || "127.0.0.1".equals(uri.getHost())
+                                || (uri.getHost() != null && uri.getHost().endsWith(".svc.cluster.local"));
+
+                        if (StringUtils.hasText(authHeader) && isSecureOrInternal) {
+                            request.getHeaders().set(HttpHeaders.AUTHORIZATION, authHeader);
+                        }
+                    }
+                    return execution.execute(request, body);
+                })
+                .build();
     }
 
     private record CancelEligibility(String status) {
@@ -145,19 +180,5 @@ public class OrderExternalServiceClient implements OrderExternalService, CartExt
     }
 
     private record PromiseApiResponse(DeliveryAddressResponseDto.Promise data) {
-    }
-
-    private RestClient securedClient(RestClient.Builder builder, String baseUrl,
-                                     Duration connectTimeout, Duration readTimeout) {
-        SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
-        requestFactory.setConnectTimeout(connectTimeout);
-        requestFactory.setReadTimeout(readTimeout);
-        return builder.clone().baseUrl(baseUrl).requestFactory(requestFactory).requestInterceptor((request, body, execution) -> {
-            if (SecurityContextHolder.getContext().getAuthentication() instanceof JwtAuthenticationToken authentication) {
-                request.getHeaders().set(HttpHeaders.AUTHORIZATION,
-                        "Bearer " + authentication.getToken().getTokenValue());
-            }
-            return execution.execute(request, body);
-        }).build();
     }
 }

@@ -1,10 +1,13 @@
 package com.kurly.order.application;
 
 import com.kurly.common.exception.BusinessException;
+import com.kurly.common.security.AuthenticatedPrincipal;
+import com.kurly.common.security.Role;
 import com.kurly.order.domain.claim.OrderClaimRepository;
 import com.kurly.order.domain.common.OrderErrorCode;
 import com.kurly.order.domain.order.OrderRepository;
 import com.kurly.order.presentation.dto.ReturnRequestDto;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -14,11 +17,12 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.ApplicationEventPublisher;
 
-import java.util.Optional;
 import java.util.List;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.when;
+
 
 @ExtendWith(MockitoExtension.class)
 class OrderServiceUnitExceptionTest {
@@ -33,6 +37,13 @@ class OrderServiceUnitExceptionTest {
     OrderExternalService externalService;
     @InjectMocks
     OrderService orderService;
+
+    private AuthenticatedPrincipal me;
+
+    @BeforeEach
+    void setUp() {
+        me = new AuthenticatedPrincipal(1L, Role.USER);
+    }
 
     @Nested
     @DisplayName("주문 조회 예외 테스트")
@@ -55,9 +66,10 @@ class OrderServiceUnitExceptionTest {
 
         @Test
         void 증빙이_필요한_사유는_사진_없이_접수할_수_없다() {
+            // RTN02는 사진 증빙 필수 사유
             ReturnRequestDto request = new ReturnRequestDto("RTN02", "상품 불량", List.of());
 
-            assertThatThrownBy(() -> orderService.requestReturn(1L, 1L, request))
+            assertThatThrownBy(() -> orderService.requestReturn(me, 1L, request))
                     .isInstanceOf(BusinessException.class)
                     .extracting("errorCode")
                     .isEqualTo(OrderErrorCode.ORD_MISSING_RETURN_EVIDENCE);
