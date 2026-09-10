@@ -23,18 +23,18 @@ public class CartController implements CartApi {
 
     @Override
     @GetMapping
-    public ApiResponse<CartResponseDto> detail(@AuthPrincipal AuthenticatedPrincipal principal) {
+    public ApiResponse<CartResponseDto> detail(@AuthPrincipal AuthenticatedPrincipal me) {
         return ApiResponse.success("장바구니 조회에 성공했습니다.",
-                cartService.getByMemberId(principal.userId()));
+                cartService.getByMemberId(me));
     }
 
     @Override
     @PutMapping("/delivery-address")
     public ApiResponse<DeliveryAddressResponseDto> edit(
-            @AuthPrincipal AuthenticatedPrincipal principal,
+            @AuthPrincipal AuthenticatedPrincipal me,
             @Valid @RequestBody DeliveryAddressRequestDto request
     ) {
         return ApiResponse.success("배송 약속 재조회에 성공했습니다.",
-                cartService.updateDeliveryAddress(principal.userId(), request.addressId()));
+                cartService.updateDeliveryAddress(me, request.addressId()));
     }
 }

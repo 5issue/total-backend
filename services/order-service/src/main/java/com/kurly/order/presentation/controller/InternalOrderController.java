@@ -1,7 +1,7 @@
 package com.kurly.order.presentation.controller;
 
 import com.kurly.common.response.ApiResponse;
-import com.kurly.common.security.Authenticated;
+import com.kurly.common.security.PublicApi;
 import com.kurly.order.application.OrderService;
 import com.kurly.order.presentation.api.InternalOrderApi;
 import com.kurly.order.presentation.dto.CompletePayRequestDto;
@@ -16,7 +16,7 @@ import org.springframework.web.bind.annotation.*;
 @RestController
 @RequestMapping("/internal/v1/orders")
 @RequiredArgsConstructor
-@Authenticated
+@PublicApi
 public class InternalOrderController implements InternalOrderApi {
 
     private final OrderService orderService;

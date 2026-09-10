@@ -25,85 +25,85 @@ public class OrderController implements OrderApi {
     @PostMapping("/checkout")
     @ResponseStatus(HttpStatus.CREATED)
     public ApiResponse<CheckoutResponseDto> checkout(
-            @AuthPrincipal AuthenticatedPrincipal principal,
+            @AuthPrincipal AuthenticatedPrincipal me,
             @Valid @RequestBody CheckoutRequestDto request
     ) {
-        return ApiResponse.success("주문서 생성 성공", orderService.checkout(principal.userId(), request));
+        return ApiResponse.success("주문서 생성 성공", orderService.checkout(me, request));
     }
 
     @Override
     @GetMapping
     public ApiResponse<OrderPageResponseDto> list(
-            @AuthPrincipal AuthenticatedPrincipal principal,
+            @AuthPrincipal AuthenticatedPrincipal me,
             @RequestParam(defaultValue = "3M") String range,
             @RequestParam(required = false) String productName,
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "20") int size
     ) {
         return ApiResponse.success("주문 목록 조회에 성공했습니다.",
-                orderService.getAll(principal.userId(), range, productName, page, size));
+                orderService.getAll(me, range, productName, page, size));
     }
 
     @Override
     @GetMapping("/{orderId}")
     public ApiResponse<OrderDetailResponseDto> detail(
-            @AuthPrincipal AuthenticatedPrincipal principal,
+            @AuthPrincipal AuthenticatedPrincipal me,
             @PathVariable @Positive Long orderId
     ) {
-        return ApiResponse.success("주문 상세 조회에 성공했습니다.", orderService.getById(principal.userId(), orderId));
+        return ApiResponse.success("주문 상세 조회에 성공했습니다.", orderService.getById(me, orderId));
     }
 
     @Override
     @GetMapping("/cancellations-returns")
     public ApiResponse<ClaimHistoryPageResponseDto> listClaims(
-            @AuthPrincipal AuthenticatedPrincipal principal,
+            @AuthPrincipal AuthenticatedPrincipal me,
             @RequestParam(required = false) String requestType,
             @RequestParam(required = false) String requestStatus,
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "20") int size
     ) {
         return ApiResponse.success("취소·반품 내역을 조회했습니다.",
-                orderService.getClaimHistories(principal.userId(), requestType, requestStatus, page, size));
+                orderService.getClaimHistories(me, requestType, requestStatus, page, size));
     }
 
     @Override
     @GetMapping("/{orderId}/returns/preview")
     public ApiResponse<ReturnPreviewResponseDto> returnPreview(
-            @AuthPrincipal AuthenticatedPrincipal principal,
+            @AuthPrincipal AuthenticatedPrincipal me,
             @PathVariable @Positive Long orderId
     ) {
         return ApiResponse.success("반품 접수 정보를 조회했습니다.",
-                orderService.getReturnPreview(principal.userId(), orderId));
+                orderService.getReturnPreview(me, orderId));
     }
 
     @Override
     @PostMapping("/place-order")
     public ApiResponse<PlaceOrderResponseDto> placeOrder(
-            @AuthPrincipal AuthenticatedPrincipal principal,
+            @AuthPrincipal AuthenticatedPrincipal me,
             @Valid @RequestBody PlaceOrderRequestDto request
     ) {
-        return ApiResponse.success("주문 결제 요청 성공", orderService.placeOrder(principal.userId(), request.orderId()));
+        return ApiResponse.success("주문 결제 요청 성공", orderService.placeOrder(me, request.orderId()));
     }
 
     @Override
     @PostMapping("/{orderId}/cancel")
     public ApiResponse<OrderClaimResponseDto> cancel(
-            @AuthPrincipal AuthenticatedPrincipal principal,
+            @AuthPrincipal AuthenticatedPrincipal me,
             @PathVariable @Positive Long orderId,
             @Valid @RequestBody ClaimRequestDto request
     ) {
-        return ApiResponse.success("전체 주문 취소가 접수되었습니다.", orderService.cancel(principal.userId(), orderId, request));
+        return ApiResponse.success("전체 주문 취소가 접수되었습니다.", orderService.cancel(me, orderId, request));
     }
 
     @Override
     @PostMapping("/{orderId}/returns")
     @ResponseStatus(HttpStatus.CREATED)
     public ApiResponse<OrderClaimResponseDto> createReturn(
-            @AuthPrincipal AuthenticatedPrincipal principal,
+            @AuthPrincipal AuthenticatedPrincipal me,
             @PathVariable @Positive Long orderId,
             @Valid @RequestBody ReturnRequestDto request
     ) {
         return ApiResponse.success("전체 주문 반품이 접수되었습니다.",
-                orderService.requestReturn(principal.userId(), orderId, request));
+                orderService.requestReturn(me, orderId, request));
     }
 }

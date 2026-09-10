@@ -25,7 +25,7 @@ public interface InternalOrderApi {
     @Operation(summary = "결제 완료 동기 확정 통보", description = "PG 결제 성공 직후 주문 서비스로 주문을 PAID 상태로 전이합니다.")
     @ApiErrorCodeExample(status = OrderErrorCode.class, code = "ORD_NOT_FOUND_ORDER")
     @ApiErrorCodeExample(status = OrderErrorCode.class, code = "ORD_CONFLICT_ALREADY_PAID")
-    @ApiErrorCodeExample(status = OrderErrorCode.class, code = "ORD_INVALID_STATUS", message = "주문 금액과 결제 금액이 일치하지 않습니다.")
+    @ApiErrorCodeExample(status = OrderErrorCode.class, code = "ORD_INVALID_PAYMENT_AMOUNT")
     @ApiErrorCodeExample(status = OrderErrorCode.class, code = "ORD_EXPIRED_PAYMENT_TIMEOUT")
     ApiResponse<CompletePayResponseDto> completePay(
             @Parameter(description = "주문 ID") Long orderId,
