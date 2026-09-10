@@ -1,6 +1,7 @@
 package com.kurly.product.presentation;
 
 import com.kurly.common.response.ApiResponse;
+import com.kurly.common.security.PublicApi;
 import com.kurly.product.application.ProductQueryService;
 import com.kurly.product.domain.enums.PriceBand;
 import com.kurly.product.domain.dto.ProductSearchCondition;
@@ -27,11 +28,13 @@ public class ProductController {
         this.productQueryService = productQueryService;
     }
 
+    @PublicApi
     @GetMapping("/home-recommendations")
     public ApiResponse<HomeResponse> getHomeRecommendations() {
         return ApiResponse.success(productQueryService.getHomeRecommendations());
     }
 
+    @PublicApi
     @GetMapping
     public ApiResponse<Slice<ProductSummaryResponse>> getProducts(
             @RequestParam(required = false) Long categoryId,
@@ -46,6 +49,7 @@ public class ProductController {
         return ApiResponse.success(productQueryService.getProducts(condition, sort, page, size));
     }
 
+    @PublicApi
     @GetMapping("/filters")
     public ApiResponse<ProductFilterResponse> getFilters(
             @RequestParam(required = false) Long categoryId,
@@ -53,6 +57,7 @@ public class ProductController {
         return ApiResponse.success(productQueryService.getFilters(categoryId, keyword));
     }
 
+    @PublicApi
     @GetMapping("/{productId}")
     public ApiResponse<ProductDetailResponse> getProductDetail(@PathVariable Long productId) {
         return ApiResponse.success(productQueryService.getProductDetail(productId));
