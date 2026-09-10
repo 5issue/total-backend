@@ -20,9 +20,11 @@ public record CreateAddressRequest(
         @Size(max = 50, message = "수취인 이름은 50자를 넘을 수 없습니다.")
         String recipientName,
 
-        // 수취인이 유선전화를 쓸 수 있어 휴대전화 형식으로 좁히지 않는다.
+        // 유선전화도 허용하되 자릿수 구조를 강제한다. [0-9-] 만으로는 "---------" 같은
+        // 숫자 없는 값도 통과한다.
         @NotBlank(message = "수취인 연락처는 필수입니다.")
-        @Pattern(regexp = "^[0-9-]{9,20}$", message = "연락처는 숫자와 하이픈만 사용할 수 있습니다.")
+        @Pattern(regexp = "^0\\d{1,2}-?\\d{3,4}-?\\d{4}$",
+                message = "연락처 형식이 올바르지 않습니다.")
         String phone,
 
         @NotBlank(message = "우편번호는 필수입니다.")

@@ -134,6 +134,33 @@ class UserControllerUnitExceptionTest {
         }
 
         @Test
+        void 하이픈만_있는_연락처는_400이다() throws Exception {
+            // [0-9-] 문자 집합만으로는 숫자가 하나도 없는 값도 통과한다.
+            expectInvalid("""
+                    {"addressName":"집","recipientName":"홍길동","phone":"---------",
+                     "zipCode":"06234","address":"서울시 강남구"}""", "phone");
+        }
+
+        @Test
+        void 유선전화는_허용한다() throws Exception {
+            // 수취인이 유선전화를 쓸 수 있어 휴대전화 형식으로 좁히지 않는다.
+            com.kurly.user.domain.entity.DeliveryAddress created =
+                    com.kurly.user.domain.entity.DeliveryAddress.builder()
+                            .userId(1L).addressName("집").recipientName("홍길동")
+                            .phone("02-123-4567").zipCode("06234").address("서울시 강남구")
+                            .defaultAddress(true).build();
+            org.springframework.test.util.ReflectionTestUtils.setField(created, "id", 1L);
+            given(deliveryAddressService.create(anyLong(), any())).willReturn(created);
+
+            mockMvc.perform(post("/api/v1/users/me/addresses")
+                            .requestAttr(AuthenticatedPrincipal.ATTRIBUTE, ME)
+                            .contentType(MediaType.APPLICATION_JSON).content("""
+                                    {"addressName":"집","recipientName":"홍길동","phone":"02-123-4567",
+                                     "zipCode":"06234","address":"서울시 강남구"}"""))
+                    .andExpect(status().isCreated());
+        }
+
+        @Test
         void 우편번호가_5자리가_아니면_400이다() throws Exception {
             expectInvalid("""
                     {"addressName":"집","recipientName":"홍길동","phone":"010-1234-5678",
