@@ -18,6 +18,7 @@ import jakarta.validation.Valid;
 
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.CacheControl;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseCookie;
 import org.springframework.http.ResponseEntity;
@@ -49,8 +50,10 @@ public class AuthController {
         AdminLoginResponse body = new AdminLoginResponse(
                 tokens.accessToken().token(), tokens.accessToken().ttl().toSeconds());
 
+        // 본문에 access token이 실리므로 브라우저·중간 캐시에 남지 않게 한다.
         return ResponseEntity.ok()
                 .header(HttpHeaders.SET_COOKIE, refreshCookie.toString())
+                .cacheControl(CacheControl.noStore())
                 .body(ApiResponse.success("관리자로그인이 완료되었습니다.", body));
     }
 
@@ -73,6 +76,7 @@ public class AuthController {
 
         return ResponseEntity.ok()
                 .header(HttpHeaders.SET_COOKIE, rotatedCookie.toString())
+                .cacheControl(CacheControl.noStore())
                 .body(ApiResponse.success("토큰이 성공적으로 재발급되었습니다.", body));
     }
 

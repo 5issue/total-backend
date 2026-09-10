@@ -37,6 +37,9 @@ out/
 
 # Environment
 .env
+# 로컬 전용 실제 시크릿 (소셜 client secret, JWT 개인키 등)
+application-secret.yml
+**/application-secret.yml
 
 # macOS
 .DS_Store

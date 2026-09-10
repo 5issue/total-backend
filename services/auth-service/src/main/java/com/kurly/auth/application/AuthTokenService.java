@@ -81,7 +81,13 @@ public class AuthTokenService {
             throw invalidRefreshToken();
         }
 
-        stored.revoke();
+        // 여기까지의 검사는 조회 시점의 스냅샷이다. 폐기는 조건부 갱신으로 수행해 동시 요청 중
+        // 하나만 통과시킨다. 진 쪽은 같은 토큰을 두 번 쓴 것과 구분되지 않으므로 재사용으로 다룬다.
+        if (userRefreshTokenRepository.revokeIfActive(tokenHash) == 0) {
+            log.warn("refresh token 동시 사용 감지: authUserId={}", user.getId());
+            revokeAllUserSessions(user.getId());
+            throw invalidRefreshToken();
+        }
 
         return issueUserTokens(user);
     }
@@ -118,7 +124,11 @@ public class AuthTokenService {
             throw invalidRefreshToken();
         }
 
-        stored.revoke();
+        if (adminRefreshTokenRepository.revokeIfActive(tokenHash) == 0) {
+            log.warn("refresh token 동시 사용 감지: authAdminId={}", admin.getId());
+            revokeAllAdminSessions(admin.getId());
+            throw invalidRefreshToken();
+        }
 
         return issueAdminTokens(admin);
     }
