@@ -1,6 +1,7 @@
 package com.kurly.product.presentation;
 
 import com.kurly.common.response.ApiResponse;
+import com.kurly.common.security.Authenticated;
 import com.kurly.common.security.RequireRole;
 import com.kurly.common.security.Role;
 import com.kurly.product.application.ProductInventoryService;
@@ -19,21 +20,21 @@ public class ProductInventoryController {
 
     private final ProductInventoryService productInventoryService;
 
-    @RequireRole(Role.ADMIN)
+    @Authenticated
     @PostMapping("/hold")
     public ApiResponse<Void> hold(@Valid @RequestBody InventoryAdjustRequest request) {
         productInventoryService.hold(request.orderId(), request.items());
         return ApiResponse.success();
     }
 
-    @RequireRole(Role.ADMIN)
+    @Authenticated
     @PostMapping("/release")
     public ApiResponse<Void> release(@Valid @RequestBody InventoryAdjustRequest request) {
         productInventoryService.release(request.orderId(), request.items());
         return ApiResponse.success();
     }
 
-    @RequireRole(Role.ADMIN)
+    @Authenticated
     @PostMapping("/confirm")
     public ApiResponse<Void> confirm(@Valid @RequestBody InventoryAdjustRequest request) {
         productInventoryService.confirm(request.orderId(), request.items());
