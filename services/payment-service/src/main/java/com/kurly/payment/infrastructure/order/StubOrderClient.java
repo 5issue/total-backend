@@ -27,7 +27,7 @@ public class StubOrderClient implements OrderClient {
     @Override
     public OrderSnapshot fetch(Long orderId) {
         log.warn("주문 스텁을 사용합니다. 실제 주문 금액·소유자를 조회하지 않습니다: orderId={}", orderId);
-        return new OrderSnapshot(orderId, STUB_OWNER_USER_ID, STUB_AMOUNT, true);
+        return new OrderSnapshot(orderId, STUB_OWNER_USER_ID, STUB_AMOUNT, true, false);
     }
 
     @Override
