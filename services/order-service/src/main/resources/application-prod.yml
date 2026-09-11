@@ -1,18 +1,25 @@
 spring:
   datasource:
-    url: jdbc:mysql://${ORDER_DB_HOST}:${ORDER_DB_PORT:3306}/${ORDER_DB_NAME:order_db}
-    username: ${ORDER_DB_USERNAME}
-    password: ${ORDER_DB_PASSWORD}
+    url: jdbc:mysql://${DB_HOST}:${DB_PORT}/${DB_NAME}?serverTimezone=UTC&characterEncoding=UTF-8
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
   jpa:
     hibernate:
       ddl-auto: validate
   rabbitmq:
     host: ${RABBITMQ_HOST}
-    port: ${RABBITMQ_PORT:5672}
+    port: ${RABBITMQ_PORT}
     username: ${RABBITMQ_USERNAME}
     password: ${RABBITMQ_PASSWORD}
   data:
     redis:
       host: ${REDIS_HOST}
-      port: ${REDIS_PORT:6379}
+      port: ${REDIS_PORT}
       password: ${REDIS_PASSWORD}
+
+kurly:
+  security:
+    enabled: true
+    issuer: ${JWT_ISSUER}
+    audience: ${JWT_AUDIENCE}
+    jwks-uri: ${JWT_JWKS_URI}
