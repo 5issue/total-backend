@@ -96,6 +96,8 @@ public class PaymentCheckoutService {
         try {
             orderClient.completePayment(
                     orderId, payment.getId(), payment.getTotalAmount(), payment.getApprovedAt());
+            // 남기지 않으면 대사 배치가 이 결제를 "인계되지 않은 성공 결제"로 보고 다시 집는다.
+            paymentRecordService.markOrderNotified(payment.getId());
         } catch (OrderClient.OrderAlreadyExpiredException e) {
             log.warn("주문 만료로 보상 취소 수행: paymentId={}, orderId={}", payment.getId(), orderId);
             paymentCompensationService.compensate(

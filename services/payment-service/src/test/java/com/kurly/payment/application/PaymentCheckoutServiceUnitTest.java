@@ -39,7 +39,26 @@ class PaymentCheckoutServiceUnitTest {
     @BeforeEach
     void payableOrder() {
         given(orderClient.fetch(ORDER_ID))
-                .willReturn(new OrderClient.OrderSnapshot(ORDER_ID, USER_ID, AMOUNT, true));
+                .willReturn(new OrderClient.OrderSnapshot(ORDER_ID, USER_ID, AMOUNT, true, false));
+    }
+
+    @Nested
+    @DisplayName("주문 인계")
+    class HandoverTest {
+
+        @Test
+        void 인계에_성공하면_완료_시각을_남긴다() {
+            // 남기지 않으면 대사 배치가 모든 정상 결제를 "인계되지 않은 성공 결제"로 보고
+            // 다시 집어 재통보하고, 그때 오는 409를 만료로 오인해 환불까지 간다.
+            given(paymentRecordService.createRequested(ORDER_ID, USER_ID, AMOUNT)).willReturn(payment(10L));
+            given(pgClient.approve(PAYMENT_KEY, ORDER_ID, AMOUNT))
+                    .willReturn(new PgClient.Approval(PAYMENT_KEY, "카드", null));
+            given(paymentRecordService.recordApproval(eq(10L), any())).willReturn(approvedPayment(10L));
+
+            paymentCheckoutService.checkout(USER_ID, ORDER_ID, PAYMENT_KEY, AMOUNT);
+
+            verify(paymentRecordService).markOrderNotified(10L);
+        }
     }
 
     @Nested

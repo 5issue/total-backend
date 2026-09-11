@@ -31,7 +31,8 @@ public interface OrderClient {
      * @param totalAmount 주문 총액(원 단위 정수). 요청 금액과 일치해야 한다
      * @param payable     결제를 받을 수 있는 상태인지. 유효시간 판단은 주문 서비스가 한다
      */
-    record OrderSnapshot(Long orderId, Long ownerUserId, long totalAmount, boolean payable) {
+    record OrderSnapshot(Long orderId, Long ownerUserId, long totalAmount, boolean payable,
+                         boolean alreadyPaid) {
     }
 
     /**

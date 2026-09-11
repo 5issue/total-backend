@@ -45,7 +45,7 @@ class PaymentCheckoutServiceUnitExceptionTest {
 
     private void givenOrder(Long owner, long amount, boolean payable) {
         given(orderClient.fetch(ORDER_ID))
-                .willReturn(new OrderClient.OrderSnapshot(ORDER_ID, owner, amount, payable));
+                .willReturn(new OrderClient.OrderSnapshot(ORDER_ID, owner, amount, payable, false));
     }
 
     @Nested
