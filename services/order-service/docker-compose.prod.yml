@@ -5,8 +5,8 @@ services:
     ports:
       - "${DB_BIND_ADDRESS:-127.0.0.1}:${DB_PORT:-3306}:3306"
     environment:
-      MYSQL_DATABASE: ${DB_NAME:-order_db}
-      MYSQL_USER: ${DB_USERNAME:-order}
+      MYSQL_DATABASE: ${DB_NAME:?DB_NAME is required}
+      MYSQL_USER: ${DB_USERNAME:?DB_USERNAME is required}
       MYSQL_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
       MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:?DB_ROOT_PASSWORD is required}
       TZ: Asia/Seoul
