@@ -43,9 +43,13 @@ class PaymentReconciliationServiceUnitTest {
     @InjectMocks PaymentReconciliationService paymentReconciliationService;
 
     private void givenTarget(PaymentStatus status) {
+        givenTarget(status, false);
+    }
+
+    private void givenTarget(PaymentStatus status, boolean approvedButNotHandedOver) {
         given(paymentRecordService.claimReconcilable(anyInt(), any(), any()))
                 .willReturn(List.of(new PaymentRecordService.ReconcileTarget(
-                        PAYMENT_ID, ORDER_ID, AMOUNT, status, "TOSS-KEY", false)));
+                        PAYMENT_ID, ORDER_ID, AMOUNT, status, "TOSS-KEY", approvedButNotHandedOver)));
     }
 
     private void givenPgSays(String status, boolean approved) {
@@ -59,6 +63,12 @@ class PaymentReconciliationServiceUnitTest {
 
     private void reconcile() {
         paymentReconciliationService.reconcileStalePayments(100, STALE_AFTER);
+    }
+
+    /** 주문이 아직 결제로 확정되지 않은 상태. 인계 실패 시 환불로 가는 경로다. */
+    private void givenOrderNotPaid() {
+        given(orderClient.fetch(ORDER_ID))
+                .willReturn(new OrderClient.OrderSnapshot(ORDER_ID, 1L, AMOUNT, false, false));
     }
 
     @Nested
@@ -193,6 +203,7 @@ class PaymentReconciliationServiceUnitTest {
             givenPgSays("DONE", true);
             willThrow(new OrderClient.OrderAlreadyExpiredException(ORDER_ID))
                     .given(orderClient).completePayment(eq(ORDER_ID), anyLong(), anyLong(), any());
+            givenOrderNotPaid();
 
             reconcile();
 
@@ -207,6 +218,7 @@ class PaymentReconciliationServiceUnitTest {
             givenPgSays("DONE", true);
             willThrow(new IllegalStateException("order-service 응답 없음"))
                     .given(orderClient).completePayment(eq(ORDER_ID), anyLong(), anyLong(), any());
+            givenOrderNotPaid();
 
             reconcile();
 
@@ -250,11 +262,49 @@ class PaymentReconciliationServiceUnitTest {
             givenNotHandedOver();
             willThrow(new OrderClient.OrderAlreadyExpiredException(ORDER_ID))
                     .given(orderClient).completePayment(eq(ORDER_ID), anyLong(), anyLong(), any());
+            givenOrderNotPaid();
 
             reconcile();
 
             verify(paymentCompensationService)
                     .compensate(eq(PAYMENT_ID), eq("TOSS-KEY"), eq(AMOUNT), anyString());
+        }
+    }
+
+    @Nested
+    @DisplayName("재통보가 이미 결제된 주문에 갔을 때")
+    class AlreadyPaidTest {
+
+        @Test
+        void 통보가_실패해도_주문이_결제_확정이면_환불하지_않는다() {
+            // 재통보의 409를 만료로 오인하면 멀쩡한 결제를 되돌린다.
+            givenTarget(PaymentStatus.SUCCESS, true);
+            willThrow(new OrderClient.OrderAlreadyExpiredException(ORDER_ID))
+                    .given(orderClient).completePayment(eq(ORDER_ID), anyLong(), anyLong(), any());
+            given(orderClient.fetch(ORDER_ID))
+                    .willReturn(new OrderClient.OrderSnapshot(ORDER_ID, 1L, AMOUNT, false, true));
+
+            reconcile();
+
+            verify(paymentCompensationService, never())
+                    .compensate(anyLong(), anyString(), anyLong(), anyString());
+            verify(paymentRecordService).markOrderNotified(PAYMENT_ID);
+        }
+
+        @Test
+        void 주문_상태를_확인할_수_없으면_환불하지_않고_다음_주기로_미룬다() {
+            // 모르는 채로 환불하면 멀쩡한 결제를 되돌릴 수 있다.
+            givenTarget(PaymentStatus.SUCCESS, true);
+            willThrow(new OrderClient.OrderAlreadyExpiredException(ORDER_ID))
+                    .given(orderClient).completePayment(eq(ORDER_ID), anyLong(), anyLong(), any());
+            willThrow(new IllegalStateException("order-service 응답 없음"))
+                    .given(orderClient).fetch(ORDER_ID);
+
+            reconcile();
+
+            verify(paymentCompensationService, never())
+                    .compensate(anyLong(), anyString(), anyLong(), anyString());
+            verify(paymentRecordService).releaseReconciliationClaim(PAYMENT_ID);
         }
     }
 

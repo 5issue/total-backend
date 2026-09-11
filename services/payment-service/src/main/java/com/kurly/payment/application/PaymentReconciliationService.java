@@ -2,6 +2,7 @@ package com.kurly.payment.application;
 
 import com.kurly.payment.application.port.OrderClient;
 import com.kurly.payment.application.port.PgClient;
+import com.kurly.payment.exception.OrderNotFoundException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -132,11 +133,35 @@ public class PaymentReconciliationService {
             // 남기지 않으면 다음 주기가 이 결제를 미인계로 보고 계속 집는다.
             paymentRecordService.markOrderNotified(target.paymentId());
             log.info("대사로 정정한 결제를 주문에 넘겼다: paymentId={}", target.paymentId());
+            return;
         } catch (RuntimeException e) {
-            log.warn("주문 인계 실패. 환불한다: paymentId={}, orderId={}",
-                    target.paymentId(), target.orderId(), e);
-            paymentCompensationService.compensate(
-                    target.paymentId(), paymentKey, target.totalAmount(), "RECONCILE_ORDER_UNAVAILABLE");
+            log.warn("주문 인계 실패: paymentId={}, orderId={}", target.paymentId(), target.orderId(), e);
+        }
+
+        // 통보 실패를 곧바로 만료로 읽으면 안 된다. 재통보는 이미 결제로 확정된 주문에도 갈 수 있고,
+        // 그때 오는 409를 만료로 오인하면 <b>멀쩡한 결제를 환불</b>하게 된다. 주문에 직접 되묻는다.
+        if (isAlreadyPaid(target.orderId())) {
+            log.info("주문이 이미 결제로 확정돼 있다. 인계 완료로 본다: paymentId={}", target.paymentId());
+            paymentRecordService.markOrderNotified(target.paymentId());
+            return;
+        }
+
+        paymentCompensationService.compensate(
+                target.paymentId(), paymentKey, target.totalAmount(), "RECONCILE_ORDER_UNAVAILABLE");
+    }
+
+    /**
+     * 주문이 결제로 확정됐는지 되묻는다.
+     *
+     * <p>조회 자체가 실패하면 <b>판단하지 않고 예외를 올린다.</b> 호출부가 선점을 풀어 다음 주기가
+     * 다시 보게 된다. 모르는 채로 환불하면 멀쩡한 결제를 되돌릴 수 있다.
+     */
+    private boolean isAlreadyPaid(Long orderId) {
+        try {
+            return orderClient.fetch(orderId).alreadyPaid();
+        } catch (OrderNotFoundException e) {
+            // 없거나 만료된 주문이다(주문 명세상 404가 둘을 구분하지 않는다). 살려둘 이유가 없다.
+            return false;
         }
     }
 

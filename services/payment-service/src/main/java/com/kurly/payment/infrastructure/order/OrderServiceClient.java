@@ -40,6 +40,8 @@ public class OrderServiceClient implements OrderClient {
      * 이 값이 어긋나면 모든 주문이 결제 불가로 판정되어 결제가 전부 막힌다.
      */
     private static final String PAYABLE_STATUS = "PENDING_PAYMENT";
+    /** 주문이 결제로 확정된 상태. 이미 이 상태면 우리 통보가 (다른 경로로든) 반영된 것이다. */
+    private static final String PAID_STATUS = "PAID";
 
     private final RestClient restClient;
 
@@ -108,7 +110,8 @@ public class OrderServiceClient implements OrderClient {
                 Long.valueOf(order.get("orderId").toString()),
                 Long.valueOf(order.get("userId").toString()),
                 Long.parseLong(order.get("amount").toString()),
-                PAYABLE_STATUS.equals(String.valueOf(order.get("status"))));
+                PAYABLE_STATUS.equals(String.valueOf(order.get("status"))),
+                PAID_STATUS.equals(String.valueOf(order.get("status"))));
     }
 
     /** 응답은 {@code ApiResponse}로 감싸여 온다. 실제 값은 {@code data}에 있다. */
