@@ -22,5 +22,12 @@ spring:
       port: ${REDIS_PORT:6379}
       password: ${REDIS_PASSWORD:}
 
+kurly:
+  security:
+    enabled: true
+    issuer: ${JWT_ISSUER:https://auth.kurly.local}
+    audience: ${JWT_AUDIENCE:kurly-api}
+    jwks-uri: ${JWT_JWKS_URI:http://localhost:8081/.well-known/jwks.json}
+
 server:
   port: 8084

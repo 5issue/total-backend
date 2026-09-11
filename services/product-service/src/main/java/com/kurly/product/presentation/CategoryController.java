@@ -1,6 +1,7 @@
 package com.kurly.product.presentation;
 
 import com.kurly.common.response.ApiResponse;
+import com.kurly.common.security.PublicApi;
 import com.kurly.product.application.CategoryService;
 import com.kurly.product.infrastructure.entity.Category.CategoryType;
 import com.kurly.product.presentation.dto.CategoryResponse;
@@ -21,6 +22,7 @@ public class CategoryController {
         this.categoryService = categoryService;
     }
 
+    @PublicApi
     @GetMapping("/categories")
     public ApiResponse<Map<CategoryType, List<CategoryResponse>>> getCategories() {
         return ApiResponse.success(categoryService.getCategoryTree());
