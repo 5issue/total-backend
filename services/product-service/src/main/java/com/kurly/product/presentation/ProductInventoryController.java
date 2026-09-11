@@ -2,6 +2,7 @@ package com.kurly.product.presentation;
 
 import com.kurly.common.response.ApiResponse;
 import com.kurly.common.security.Authenticated;
+import com.kurly.common.security.PublicApi;
 import com.kurly.common.security.RequireRole;
 import com.kurly.common.security.Role;
 import com.kurly.product.application.ProductInventoryService;
@@ -27,14 +28,14 @@ public class ProductInventoryController {
         return ApiResponse.success();
     }
 
-    @Authenticated
+    @PublicApi
     @PostMapping("/release")
     public ApiResponse<Void> release(@Valid @RequestBody InventoryAdjustRequest request) {
         productInventoryService.release(request.orderId(), request.items());
         return ApiResponse.success();
     }
 
-    @Authenticated
+    @PublicApi
     @PostMapping("/confirm")
     public ApiResponse<Void> confirm(@Valid @RequestBody InventoryAdjustRequest request) {
         productInventoryService.confirm(request.orderId(), request.items());
