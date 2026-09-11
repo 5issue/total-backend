@@ -3,8 +3,6 @@ spring:
     name: product-service
   profiles:
     default: local
-  datasource:
-    driver-class-name: org.postgresql.Driver
   jpa:
     open-in-view: false
 
