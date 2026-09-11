@@ -1,33 +1,11 @@
 spring:
   application:
     name: product-service
-  datasource:
-    url: jdbc:postgresql://${POSTGRES_HOST:localhost}:${POSTGRES_PORT:5436}/${POSTGRES_DB:product}
-    driver-class-name: org.postgresql.Driver
-    username: ${POSTGRES_USER:postgres}
-    password: ${POSTGRES_PASSWORD:password}
+  profiles:
+    default: local
   jpa:
-    hibernate:
-      ddl-auto: update
     open-in-view: false
-    show-sql: true
-  rabbitmq:
-    host: ${RABBITMQ_HOST:localhost}
-    port: ${RABBITMQ_PORT:5672}
-    username: ${RABBITMQ_USERNAME:guest}
-    password: ${RABBITMQ_PASSWORD:guest}
-  data:
-    redis:
-      host: ${REDIS_HOST:localhost}
-      port: ${REDIS_PORT:6379}
-      password: ${REDIS_PASSWORD:}
 
 kurly:
   security:
     enabled: true
-    issuer: ${JWT_ISSUER:https://auth.kurly.local}
-    audience: ${JWT_AUDIENCE:kurly-api}
-    jwks-uri: ${JWT_JWKS_URI:http://localhost:8081/.well-known/jwks.json}
-
-server:
-  port: 8084
