@@ -136,7 +136,8 @@ services:
         { url: 'http://127.0.0.1:8084/v3/api-docs', name: '4. Product Service' },
         { url: 'http://127.0.0.1:8085/v3/api-docs', name: '5. WMS Service' },
         { url: 'http://127.0.0.1:8086/v3/api-docs', name: '6. OMS Service' },
-        { url: 'http://127.0.0.1:8087/v3/api-docs', name: '7. SCM Service' }
+        { url: 'http://127.0.0.1:8087/v3/api-docs', name: '7. SCM Service' },
+        { url: 'http://127.0.0.1:8088/v3/api-docs', name: '8. User Service' }
       ]"
       CONFIG_URL_FILTER_TYPE: "combo"
     extra_hosts:
