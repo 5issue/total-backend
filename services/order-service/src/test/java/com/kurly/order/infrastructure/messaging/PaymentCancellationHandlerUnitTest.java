@@ -25,7 +25,7 @@ class PaymentCancellationHandlerUnitTest {
     @Test
     void 결제_취소_성공_후에만_재고_복구_이벤트를_발행한다() {
         OrderEvent restoreEvent = new OrderEvent(UUID.randomUUID(), "order.canceled.inventory-restore",
-                1L, 2L, List.of(), LocalDateTime.now());
+                "rsv_test", 1L, 2L, List.of(), LocalDateTime.now());
         PaymentCancellationHandler handler = new PaymentCancellationHandler(externalService, rabbitTemplate);
 
         handler.cancel(new PaymentCancellationEvent(3L, restoreEvent));
