@@ -140,14 +140,8 @@ public class OrderExternalServiceClient implements OrderExternalService, CartExt
                         HttpServletRequest currentRequest = attributes.getRequest();
                         String authHeader = currentRequest.getHeader(HttpHeaders.AUTHORIZATION);
 
-                        // 대상 URI 검증: HTTPS이거나 로컬/클러스터 내부 통신일 때만 헤더 전파 허용
                         URI uri = request.getURI();
-                        boolean isSecureOrInternal = "https".equalsIgnoreCase(uri.getScheme())
-                                || "localhost".equals(uri.getHost())
-                                || "127.0.0.1".equals(uri.getHost())
-                                || (uri.getHost() != null && uri.getHost().endsWith(".svc.cluster.local"));
-
-                        if (StringUtils.hasText(authHeader) && isSecureOrInternal) {
+                        if (StringUtils.hasText(authHeader) && "https".equalsIgnoreCase(uri.getScheme())) {
                             request.getHeaders().set(HttpHeaders.AUTHORIZATION, authHeader);
                         }
                     }

@@ -25,7 +25,10 @@ import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 
 @Service
@@ -67,6 +70,14 @@ public class OrderService {
             throw new BusinessException(OrderErrorCode.ORD_INVALID_CART_ITEMS);
         }
 
+        CartResponseDto.Address address = externalService.getAddress(memberId, cart.getAddressId());
+        if (address == null || address.recipientName() == null || address.recipientName().isBlank()
+                || address.recipientPhone() == null || address.recipientPhone().isBlank()
+                || address.zipCode() == null || address.zipCode().isBlank()
+                || address.address() == null || address.address().isBlank()) {
+            throw new BusinessException(OrderErrorCode.ORD_NOT_FOUND_ADDRESS);
+        }
+
         orderRepository.findActiveCheckoutForUpdate(memberId).ifPresent(existing -> {
             if (existing.getInventoryReservationToken() != null &&
                     existing.getInventoryReservedUntil() != null &&
@@ -88,10 +99,7 @@ public class OrderService {
             throw new BusinessException(OrderErrorCode.ORD_INCOMPLETE_PRODUCT_RESPONSE, "상품 재고 서비스 통신에 실패했습니다.");
         }
 
-        if (hold == null || hold.items() == null || hold.items().size() != selectedItems.size()
-                || hold.items().stream().anyMatch(responseItem -> selectedItems.stream().noneMatch(cartItem ->
-                cartItem.getProductId().equals(responseItem.productId())
-                        && cartItem.getQuantity().equals(responseItem.quantity())))) {
+        if (hold == null || hold.items() == null || !inventoryItemsMatch(selectedItems, hold.items())) {
             throw new BusinessException(OrderErrorCode.ORD_INCOMPLETE_PRODUCT_RESPONSE);
         }
 
@@ -117,11 +125,6 @@ public class OrderService {
                 hold.shippingFee(),
                 orderItems
         ));
-
-        CartResponseDto.Address address = externalService.getAddress(memberId, cart.getAddressId());
-        if (address == null) {
-            throw new BusinessException(OrderErrorCode.ORD_NOT_FOUND_ADDRESS);
-        }
 
         OrderDeliveryInfo deliveryInfo = OrderDeliveryInfo.createSnapshot(
                 order,
@@ -287,7 +290,6 @@ public class OrderService {
 
         eventPublisher.publishEvent(OrderEvent.of("order.inventory.confirm", paidOrder));
 
-        // 2. [비동기 6] OMS 도메인: 출고 전표 생성 및 이관 이벤트 발행
         OrderDeliveryInfo deliveryInfo = orderDeliveryInfoRepository.findById(orderId)
                 .orElseThrow(() -> new BusinessException(OrderErrorCode.ORD_NOT_FOUND_ORDER));
         eventPublisher.publishEvent(SalesOrderCreatedEvent.of(paidOrder, deliveryInfo));
@@ -445,6 +447,20 @@ public class OrderService {
     private boolean hasColdItem(Order order) {
         return order.getItems().stream()
                 .anyMatch(item -> item.getStorageType() == StorageType.CHILLED || item.getStorageType() == StorageType.FROZEN);
+    }
+
+    private boolean inventoryItemsMatch(List<CartItem> requested,
+                                        List<CheckoutInventoryResponseDto.Item> received) {
+        Map<InventoryItemKey, Long> requestedItems = requested.stream()
+                .map(item -> new InventoryItemKey(item.getProductId(), item.getQuantity()))
+                .collect(Collectors.groupingBy(Function.identity(), Collectors.counting()));
+        Map<InventoryItemKey, Long> receivedItems = received.stream()
+                .map(item -> new InventoryItemKey(item.productId(), item.quantity()))
+                .collect(Collectors.groupingBy(Function.identity(), Collectors.counting()));
+        return requestedItems.equals(receivedItems);
+    }
+
+    private record InventoryItemKey(Long productId, Integer quantity) {
     }
 
     private ClaimType parseClaimType(String value) {
