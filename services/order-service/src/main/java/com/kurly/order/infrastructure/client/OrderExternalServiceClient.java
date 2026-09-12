@@ -46,14 +46,18 @@ public class OrderExternalServiceClient implements OrderExternalService, CartExt
     }
 
     @Override
-    public CheckoutInventoryResponseDto holdInventory(List<CartItem> items) {
-        var request = new InventoryHoldRequest(items.stream()
-                .map(item -> new InventoryHoldItem(item.getProductId(), item.getQuantity())).toList());
+    public CheckoutInventoryResponseDto holdInventory(String reservationToken, List<CartItem> items) {
+        var request = new InventoryHoldRequest(
+                reservationToken,
+                items.stream().map(item -> new InventoryHoldItem(item.getProductId(), item.getQuantity())).toList()
+        );
+
         InventoryHoldApiResponse response = productClient.post()
                 .uri("/internal/v1/products/inventory/hold")
                 .body(request)
                 .retrieve()
                 .body(InventoryHoldApiResponse.class);
+
         if (response == null || response.data() == null) {
             throw new IllegalStateException("상품 서비스의 재고 선점 응답이 비어 있습니다.");
         }
@@ -89,7 +93,7 @@ public class OrderExternalServiceClient implements OrderExternalService, CartExt
     public CartResponseDto.Address getAddress(Long memberId, Long addressId) {
         try {
             ApiResponse<CartResponseDto.Address> response = memberClient.get()
-                    .uri("/internal/v1/members/{memberId}/addresses/{addressId}", memberId, addressId)
+                    .uri("/internal/v1/users/{memberId}/delivery-addresses/{addressId}", memberId, addressId)
                     .retrieve()
                     .body(new ParameterizedTypeReference<>() {
                     });
@@ -114,7 +118,7 @@ public class OrderExternalServiceClient implements OrderExternalService, CartExt
 
     @Override
     public DeliveryAddressResponseDto.Promise getDeliveryPromise(CartResponseDto.Address address) {
-        PromiseApiResponse response = omsClient.post().uri("/internal/v1/oms/delivery-promises")
+        PromiseApiResponse response = omsClient.post().uri("/internal/v1/oms/delivery-promise")
                 .body(address).retrieve().body(PromiseApiResponse.class);
         if (response == null || response.data() == null) {
             throw new IllegalStateException("OMS의 배송 가능 여부 응답이 비어 있습니다.");
@@ -158,7 +162,7 @@ public class OrderExternalServiceClient implements OrderExternalService, CartExt
     private record CancelEligibilityResponse(CancelEligibility data) {
     }
 
-    private record InventoryHoldRequest(List<InventoryHoldItem> items) {
+    private record InventoryHoldRequest(String reservationToken, List<InventoryHoldItem> items) {
     }
 
     private record InventoryHoldItem(Long productId, Integer quantity) {

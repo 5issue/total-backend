@@ -42,8 +42,8 @@ public interface OrderJpaRepository extends OrderRepository, JpaRepository<Order
 
     @Override
     @Modifying(clearAutomatically = true, flushAutomatically = true)
-    @Query("update Order o set o.status = 'PAID', o.paymentId = :paymentId, o.paidAt = :paidAt, " +
-            "o.inventoryReservationToken = null where o.id = :orderId and o.status = 'PENDING_PAYMENT' " +
+    @Query("update Order o set o.status = 'PAID', o.paymentId = :paymentId, o.paidAt = :paidAt " +
+            "where o.id = :orderId and o.status = 'PENDING_PAYMENT' " +
             "and o.inventoryReservedUntil >= :now")
     int completePayment(@Param("orderId") Long orderId, @Param("paymentId") Long paymentId,
                         @Param("paidAt") LocalDateTime paidAt, @Param("now") LocalDateTime now);
