@@ -19,19 +19,16 @@ public class ProductInventoryService {
     private static final long RESERVATION_TTL_SECONDS = 20 * 60;
 
     @Transactional
-    public void hold(String eventId, List<ReserveItem> items) {
+    public void hold(String reservationToken, List<ReserveItem> items) {
         List<Long> productIds = items.stream().map(ReserveItem::productId).toList();
         List<Integer> quantities = items.stream().map(ReserveItem::quantity).toList();
 
-        productInventoryRepository.holdInventory(eventId, productIds, quantities, RESERVATION_TTL_SECONDS);
+        productInventoryRepository.holdInventory(reservationToken, productIds, quantities);
     }
 
     @Transactional
-    public void release(String eventId, List<ReserveItem> items) {
-        List<Long> productIds = items.stream().map(ReserveItem::productId).toList();
-        List<Integer> quantities = items.stream().map(ReserveItem::quantity).toList();
-
-        productInventoryRepository.releaseInventory(eventId, productIds, quantities, RESERVATION_TTL_SECONDS);
+    public void release(String reservationToken) {
+        productInventoryRepository.releaseInventory(reservationToken, RESERVATION_TTL_SECONDS);
     }
 
     @Transactional
@@ -47,5 +44,13 @@ public class ProductInventoryService {
         }
     }
 
+    @Transactional
+    public void restore(String eventId, List<ReserveItem> items) {
+        for (ReserveItem item : items) {
+            ProductInventory inventory = productInventoryRepository.findByProductId(item.productId()
+            ).orElseThrow(() -> new EntityNotFoundException("상품 재고를 찾을 수 없습니다. productId=" + item.productId()));
 
+            inventory.restore(item.quantity());
+        }
+    }
 }

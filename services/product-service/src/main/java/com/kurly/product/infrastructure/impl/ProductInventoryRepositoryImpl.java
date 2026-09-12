@@ -40,20 +40,23 @@ public class ProductInventoryRepositoryImpl implements ProductInventoryRepositor
     }
 
     @Override
-    public void holdInventory(String eventId, List<Long> productIds, List<Integer> quantities, Long ttlSeconds) {
+    public void holdInventory(String reservationToken, List<Long> productIds, List<Integer> quantities) {
+        String reservationTokenKey = getReservationKey(reservationToken);
         List<String> keys = new ArrayList<>();
         List<String> args = new ArrayList<>();
-        keys.add(getHoldIdempotencyKey(eventId));
-        args.add(String.valueOf(ttlSeconds));
-        for(int i = 0; i < productIds.size(); i++) {
+        keys.add(reservationTokenKey);
+
+        for (int i = 0; i < productIds.size(); i++) {
             keys.add(getKey(productIds.get(i)));
+            args.add(String.valueOf(productIds.get(i)));
             args.add(String.valueOf(quantities.get(i)));
         }
 
         Long result = executeScript(holdScript, keys, args);
 
-        if(result != null && result == -1L) {
-            for (Long productId : productIds) {
+        if (result != null && result == -1L) {
+            for (int i = 0; i < productIds.size(); i++) {
+                Long productId = productIds.get(i);
                 String key = getKey(productId);
                 Boolean hasKey = redisTemplate.hasKey(key);
 
@@ -64,7 +67,6 @@ public class ProductInventoryRepositoryImpl implements ProductInventoryRepositor
             result = executeScript(holdScript, keys, args);
         }
 
-
         if (result == null || result == -1L) {
             throw new ProductException(ProductErrorCode.INVENTORY_UNAVAILABLE);
         }
@@ -74,15 +76,11 @@ public class ProductInventoryRepositoryImpl implements ProductInventoryRepositor
     }
 
     @Override
-    public void releaseInventory(String eventId, List<Long> productIds, List<Integer> quantities, Long ttlSeconds) {
-        List<String> keys = new ArrayList<>();
-        List<String> args = new ArrayList<>();
-        keys.add(getReleaseIdempotencyKey(eventId));
-        args.add(String.valueOf(ttlSeconds));
-        for(int i = 0; i < productIds.size(); i++) {
-            keys.add(getKey(productIds.get(i)));
-            args.add(String.valueOf(quantities.get(i)));
-        }
+    public void releaseInventory(String reservationToken, Long ttlSeconds) {
+        String reservationTokenKey = getReservationKey(reservationToken);
+
+        List<String> keys = List.of(reservationTokenKey);
+        List<String> args = List.of(String.valueOf(ttlSeconds));
 
         executeScript(releaseScript, keys, args);
     }
@@ -104,11 +102,8 @@ public class ProductInventoryRepositoryImpl implements ProductInventoryRepositor
     private String getKey(Long productId) {
         return "product:inventory:" + productId;
     }
-    private String getHoldIdempotencyKey(String eventId) {
-        return "idempotency:hold:" + eventId;
-    }
-    private String getReleaseIdempotencyKey(String eventId) {
-        return "idempotency:release:" + eventId;
+    private String getReservationKey(String reservationToken) {
+        return "reservation:" + reservationToken;
     }
 
 }

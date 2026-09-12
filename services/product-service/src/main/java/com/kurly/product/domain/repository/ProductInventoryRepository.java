@@ -8,10 +8,9 @@ public interface ProductInventoryRepository {
 
     Optional<ProductInventory> findByProductId(Long productId);
 
-    void holdInventory(String eventId, List<Long> productIds, List<Integer> quantities, Long ttlSeconds);
+    void holdInventory(String reservationToken, List<Long> productIds, List<Integer> quantities);
 
-    void releaseInventory(String eventId, List<Long> productIds, List<Integer> quantities, Long ttlSeconds);
+    void releaseInventory(String reservationToken, Long ttlSeconds);
 
     void syncInventoryToRedis(Long productId);
-//    int getAvailableInventory(Long productId);
 }

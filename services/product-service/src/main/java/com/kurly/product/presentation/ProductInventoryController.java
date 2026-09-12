@@ -21,24 +21,19 @@ public class ProductInventoryController {
 
     private final ProductInventoryService productInventoryService;
 
-    @Authenticated
+//    @Authenticated
+    @PublicApi
     @PostMapping("/hold")
     public ApiResponse<Void> hold(@Valid @RequestBody InventoryAdjustRequest request) {
-        productInventoryService.hold(request.eventId().toString(), request.toReserveItems());
+        productInventoryService.hold(request.reservationToken().toString(), request.toReserveItems());
         return ApiResponse.success();
     }
 
     @PublicApi
     @PostMapping("/release")
     public ApiResponse<Void> release(@Valid @RequestBody InventoryAdjustRequest request) {
-        productInventoryService.release(request.eventId().toString(), request.toReserveItems());
+        productInventoryService.release(request.reservationToken().toString());
         return ApiResponse.success();
     }
 
-    @PublicApi
-    @PostMapping("/confirm")
-    public ApiResponse<Void> confirm(@Valid @RequestBody InventoryAdjustRequest request) {
-        productInventoryService.confirm(request.eventId().toString(), request.toReserveItems());
-        return ApiResponse.success();
-    }
 }
