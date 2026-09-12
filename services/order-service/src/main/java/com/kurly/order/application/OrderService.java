@@ -400,10 +400,13 @@ public class OrderService {
     }
 
     @Transactional
-    public void completeCancel(Long orderId) {
+    public void completeCancel(Long orderId, String reservationToken) {
         Order order = orderRepository.findByIdForUpdate(orderId)
                 .orElseThrow(() -> new BusinessException(OrderErrorCode.ORD_NOT_FOUND_ORDER));
 
+        if (reservationToken == null || !reservationToken.equals(order.getInventoryReservationToken())) {
+            throw new BusinessException(OrderErrorCode.ORD_INVALID_STATUS, "재고 복구 토큰이 주문과 일치하지 않습니다.");
+        }
         order.completeCancel();
     }
 

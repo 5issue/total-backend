@@ -15,7 +15,10 @@ public class OrderInventoryRestoredHandler {
 
     @RabbitListener(queues = OrderRabbitMqConfig.INVENTORY_RESTORED_QUEUE)
     public void handle(ProductInventoryRestoredEvent event) {
-        log.info("상품 재고 원복 완료 수신: orderId={}, eventId={}", event.orderId(), event.eventId());
-        orderService.completeCancel(event.orderId());
+        log.info("상품 재고 복구 결과 수신: orderId={}, eventId={}, status={}",
+                event.orderId(), event.eventId(), event.status());
+        if ("RESTORED".equals(event.status())) {
+            orderService.completeCancel(event.orderId(), event.reservationToken());
+        }
     }
 }

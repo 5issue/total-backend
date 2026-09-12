@@ -6,7 +6,9 @@ import java.util.UUID;
 public record ProductInventoryRestoredEvent(
         UUID eventId,
         String routingKey,
+        String reservationToken,
         Long orderId,
+        String status,
         LocalDateTime restoredAt
 ) {
 }
