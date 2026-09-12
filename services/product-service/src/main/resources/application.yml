@@ -6,6 +6,18 @@ spring:
   jpa:
     open-in-view: false
 
+product:
+  inventory:
+    exchange: order.topic.exchange
+    release-routing-key: order.inventory.release
+    release-queue: product.inventory.release.queue
+    confirm-routing-key: order.inventory.confirm
+    confirm-queue: product.inventory.confirm.queue
+    restore-routing-key: order.inventory.restore
+    restore-queue: product.inventory.restore.queue
+    # 처리할 수 없는 메시지가 무한 재배달되며 큐를 막지 않도록 보낼 곳.
+    dead-letter: product.inventory.dlq
+
 kurly:
   security:
     enabled: true
