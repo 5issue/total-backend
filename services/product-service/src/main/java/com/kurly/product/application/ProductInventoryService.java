@@ -1,6 +1,7 @@
 package com.kurly.product.application;
 
 import com.kurly.common.exception.EntityNotFoundException;
+import com.kurly.common.exception.InvalidValueException;
 import com.kurly.product.domain.dto.ReserveItem;
 import com.kurly.product.domain.exception.ProductErrorCode;
 import com.kurly.product.domain.exception.ProductException;
@@ -39,6 +40,11 @@ public class ProductInventoryService {
 
     @Transactional
     public void confirm(Long orderId, List<ReserveItem> items) {
+        long distinctProductIdCount = items.stream().map(ReserveItem::productId).distinct().count();
+        if (distinctProductIdCount != items.size()) {
+            throw new InvalidValueException("items에 같은 productId가 중복될 수 없습니다.");
+        }
+
         Map<Long, ProductInventory> inventories = new LinkedHashMap<>();
         for (ReserveItem item : items) {
             inventories.computeIfAbsent(item.productId(), productId -> productInventoryRepository.findByProductId(productId)
