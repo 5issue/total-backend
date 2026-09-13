@@ -11,6 +11,10 @@ if status == 'RELEASE' then
     return 1  -- 이미 취소된 경우 (멱등성 성공 처리)
 end
 
+if status == 'CONFIRM' then
+    return -2 -- 이미 확정된 예약이다. 뒤늦게 도착한 해제 이벤트 등 — 여기서 취소하면 안 된다.
+end
+
 local itemsStr = redis.call('HGET', reservationTokenKey, 'items')
 if not itemsStr or itemsStr == "" then
     -- 아이템 정보가 없어도 상태는 RELEASE로 변경

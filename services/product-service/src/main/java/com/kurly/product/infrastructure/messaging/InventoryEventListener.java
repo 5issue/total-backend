@@ -2,6 +2,7 @@ package com.kurly.product.infrastructure.messaging;
 
 import com.kurly.common.exception.BusinessException;
 import com.kurly.product.application.ProductInventoryService;
+import com.kurly.product.domain.exception.ProductErrorCode;
 import com.kurly.product.domain.exception.ProductException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -35,9 +36,14 @@ public class InventoryEventListener {
     @RabbitListener(queues = "${product.inventory.confirm-queue}")
     public void onConfirm(InventoryEvent event) {
         try {
-            productInventoryService.confirm(event.orderId(), event.items());
+            productInventoryService.confirm(event.reservationToken(), event.orderId(), event.items());
         } catch (ProductException e) {
-            log.info("재고 확정 실패(재고 부족)로 종료. eventId={}, orderId={}", event.eventId(), event.orderId());
+            if (e.getErrorCode() == ProductErrorCode.OUT_OF_STOCK) {
+                log.info("재고 확정 실패(재고 부족)로 종료. eventId={}, orderId={}", event.eventId(), event.orderId());
+            } else {
+                log.error("재고 확정 실패. DLQ로 보낸다: eventId={}, orderId={}", event.eventId(), event.orderId(), e);
+                throw new AmqpRejectAndDontRequeueException("재고 확정 실패: orderId=" + event.orderId(), e);
+            }
         } catch (Exception e) {
             log.error("재고 선점 확정 실패. DLQ로 보낸다: eventId={}, orderId={}", event.eventId(), event.orderId(), e);
             throw new AmqpRejectAndDontRequeueException("재고 선점 확정 실패: orderId=" + event.orderId(), e);

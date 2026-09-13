@@ -39,7 +39,7 @@ public class ProductInventoryService {
     }
 
     @Transactional
-    public void confirm(Long orderId, List<ReserveItem> items) {
+    public void confirm(String reservationToken, Long orderId, List<ReserveItem> items) {
         long distinctProductIdCount = items.stream().map(ReserveItem::productId).distinct().count();
         if (distinctProductIdCount != items.size()) {
             throw new InvalidValueException("items에 같은 productId가 중복될 수 없습니다.");
@@ -65,6 +65,8 @@ public class ProductInventoryService {
         for (ReserveItem item : items) {
             inventories.get(item.productId()).hold(item.quantity());
         }
+
+        productInventoryRepository.confirmInventory(reservationToken, RESERVATION_TTL_SECONDS);
 
         outboxService.recordConfirmed(orderId);
     }

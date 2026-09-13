@@ -10,6 +10,8 @@ public interface ProductInventoryRepository {
 
     void holdInventory(String reservationToken, List<Long> productIds, List<Integer> quantities);
 
+    void confirmInventory(String reservationToken, Long ttlSeconds);
+
     void releaseInventory(String reservationToken, Long ttlSeconds);
 
     void syncInventoryToRedis(Long productId);

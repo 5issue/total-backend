@@ -25,12 +25,14 @@ public class ProductInventoryRepositoryImpl implements ProductInventoryRepositor
 
     private final StringRedisTemplate redisTemplate;
     private RedisScript<Long> holdScript;
+    private RedisScript<Long> confirmScript;
     private RedisScript<Long> releaseScript;
     private final ProductInventoryJpaRepository productInventoryJpaRepository;
 
     @PostConstruct
     public void init() {
         this.holdScript = RedisScript.of(new ClassPathResource("lua/stock_hold.lua"), Long.class);
+        this.confirmScript = RedisScript.of(new ClassPathResource("lua/stock_confirm.lua"), Long.class);
         this.releaseScript = RedisScript.of(new ClassPathResource("lua/stock_release.lua"), Long.class);
     }
 
@@ -76,13 +78,31 @@ public class ProductInventoryRepositoryImpl implements ProductInventoryRepositor
     }
 
     @Override
+    public void confirmInventory(String reservationToken, Long ttlSeconds) {
+        String reservationTokenKey = getReservationKey(reservationToken);
+
+        List<String> keys = List.of(reservationTokenKey);
+        List<String> args = List.of(String.valueOf(ttlSeconds));
+
+        Long result = executeScript(confirmScript, keys, args);
+
+        if (result == null || result == -1L) {
+            throw new ProductException(ProductErrorCode.INVALID_RESERVATION_STATE);
+        }
+    }
+
+    @Override
     public void releaseInventory(String reservationToken, Long ttlSeconds) {
         String reservationTokenKey = getReservationKey(reservationToken);
 
         List<String> keys = List.of(reservationTokenKey);
         List<String> args = List.of(String.valueOf(ttlSeconds));
 
-        executeScript(releaseScript, keys, args);
+        Long result = executeScript(releaseScript, keys, args);
+
+        if (result != null && result == -2L) {
+            log.warn("이미 확정된 예약에 대한 해제 요청을 무시한다: reservationToken={}", reservationToken);
+        }
     }
 
     @Override
