@@ -2,6 +2,7 @@ package com.kurly.product.infrastructure.messaging;
 
 import com.kurly.common.exception.BusinessException;
 import com.kurly.product.application.ProductInventoryService;
+import com.kurly.product.domain.exception.ProductException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.AmqpRejectAndDontRequeueException;
@@ -24,7 +25,7 @@ public class InventoryEventListener {
     @RabbitListener(queues = "${product.inventory.release-queue}")
     public void onRelease(InventoryEvent event) {
         try {
-            productInventoryService.release(event.reservationToken().toString());
+            productInventoryService.release(event.reservationToken());
         } catch (BusinessException e) {
             log.error("재고 선점 해제 실패. DLQ로 보낸다: eventId={}, orderId={}", event.eventId(), event.orderId(), e);
             throw new AmqpRejectAndDontRequeueException("재고 선점 해제 실패: orderId=" + event.orderId(), e);
@@ -34,8 +35,10 @@ public class InventoryEventListener {
     @RabbitListener(queues = "${product.inventory.confirm-queue}")
     public void onConfirm(InventoryEvent event) {
         try {
-            productInventoryService.confirm(event.eventId().toString(), event.items());
-        } catch (BusinessException e) {
+            productInventoryService.confirm(event.orderId(), event.items());
+        } catch (ProductException e) {
+            log.info("재고 확정 실패(재고 부족)로 종료. eventId={}, orderId={}", event.eventId(), event.orderId());
+        } catch (Exception e) {
             log.error("재고 선점 확정 실패. DLQ로 보낸다: eventId={}, orderId={}", event.eventId(), event.orderId(), e);
             throw new AmqpRejectAndDontRequeueException("재고 선점 확정 실패: orderId=" + event.orderId(), e);
         }
@@ -44,8 +47,8 @@ public class InventoryEventListener {
     @RabbitListener(queues = "${product.inventory.restore-queue}")
     public void onRestore(InventoryEvent event) {
         try {
-            productInventoryService.restore(event.eventId().toString(), event.items());
-        } catch (BusinessException e) {
+            productInventoryService.restore(event.orderId(), event.items());
+        } catch (Exception e) {
             log.error("재고 복구 실패. DLQ로 보낸다: eventId={}, orderId={}", event.eventId(), event.orderId(), e);
             throw new AmqpRejectAndDontRequeueException("재고 복구 실패: orderId=" + event.orderId(), e);
         }

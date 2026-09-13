@@ -8,6 +8,10 @@ import org.springframework.amqp.core.ExchangeBuilder;
 import org.springframework.amqp.core.Queue;
 import org.springframework.amqp.core.QueueBuilder;
 import org.springframework.amqp.core.TopicExchange;
+import org.springframework.amqp.rabbit.config.RetryInterceptorBuilder;
+import org.springframework.amqp.rabbit.config.SimpleRabbitListenerContainerFactory;
+import org.springframework.amqp.rabbit.connection.ConnectionFactory;
+import org.springframework.amqp.rabbit.retry.RejectAndDontRequeueRecoverer;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -15,6 +19,21 @@ import org.springframework.context.annotation.Configuration;
 @Configuration
 @EnableConfigurationProperties(InventoryMessagingProperties.class)
 public class InventoryMessagingConfig {
+
+    @Bean
+    public SimpleRabbitListenerContainerFactory inventoryListenerContainerFactory(ConnectionFactory connectionFactory) {
+        SimpleRabbitListenerContainerFactory factory = new SimpleRabbitListenerContainerFactory();
+        factory.setConnectionFactory(connectionFactory);
+
+        factory.setAdviceChain(
+                RetryInterceptorBuilder.stateless()
+                        .maxRetries(3)
+                        .backOffOptions(1000, 2.0, 5000)
+                        .recoverer(new RejectAndDontRequeueRecoverer())
+                        .build()
+        );
+        return factory;
+    }
 
     @Bean
     public TopicExchange orderTopicExchange(InventoryMessagingProperties properties) {
