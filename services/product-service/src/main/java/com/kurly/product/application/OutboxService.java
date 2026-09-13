@@ -1,5 +1,6 @@
 package com.kurly.product.application;
 
+import com.kurly.product.application.event.OutboxRecordedEvent;
 import com.kurly.product.infrastructure.entity.ProductOutbox;
 import com.kurly.product.infrastructure.jpa.ProductOutboxJpaRepository;
 import com.kurly.product.infrastructure.messaging.ProductOutboxProperties;
@@ -10,6 +11,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -28,8 +30,8 @@ public class OutboxService {
     private final ProductOutboxJpaRepository productOutboxJpaRepository;
     private final ProductOutboxProperties productOutboxProperties;
     private final ObjectMapper objectMapper;
+    private final ApplicationEventPublisher applicationEventPublisher;
 
-    /** 재고 확정 성공. 호출자(재고 확정)의 트랜잭션과 같은 트랜잭션에서 커밋된다. */
     @Transactional
     public void recordConfirmed(Long orderId) {
         saveConfirmedOutbox(orderId, ProductInventoryConfirmedEvent.Status.CONFIRMED, null);
@@ -84,5 +86,6 @@ public class OutboxService {
                 .build();
 
         productOutboxJpaRepository.save(outboxEvent);
+        applicationEventPublisher.publishEvent(new OutboxRecordedEvent(outboxEvent.getId()));
     }
 }

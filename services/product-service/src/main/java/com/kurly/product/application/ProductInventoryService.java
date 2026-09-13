@@ -71,7 +71,7 @@ public class ProductInventoryService {
 
             inventory.restore(item.quantity());
         }
-        
+
         outboxService.recordRestored(orderId);
     }
 }
