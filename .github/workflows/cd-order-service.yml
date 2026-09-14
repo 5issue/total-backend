@@ -1,10 +1,10 @@
-name: CD - auth-service
+name: CD - order-service
 
 on:
   push:
     branches: [develop]
     paths:
-      - 'services/auth-service/**'
+      - 'services/order-service/**'
       - 'common/**'
   workflow_dispatch:
 
@@ -31,10 +31,10 @@ jobs:
       - name: 이미지 빌드·push
         env:
           REGISTRY: ${{ steps.ecr-login.outputs.registry }}
-          REPO: kurly-auth
+          REPO: kurly-order
           TAG: ${{ github.sha }}
         run: |
-          docker build -f services/auth-service/Dockerfile -t $REGISTRY/$REPO:$TAG .
+          docker build -f services/order-service/Dockerfile -t $REGISTRY/$REPO:$TAG .
           docker push $REGISTRY/$REPO:$TAG
           docker tag $REGISTRY/$REPO:$TAG $REGISTRY/$REPO:latest
           docker push $REGISTRY/$REPO:latest
