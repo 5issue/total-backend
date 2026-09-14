@@ -11,6 +11,7 @@ public enum ProductErrorCode implements ErrorCode {
 
     OUT_OF_STOCK(HttpStatus.BAD_REQUEST, "PROD400", "재고가 부족합니다."),
     INVENTORY_UNAVAILABLE(HttpStatus.INTERNAL_SERVER_ERROR, "PROD500", "재고 정보를 처리할 수 없습니다."),
+    INVALID_RESERVATION_STATE(HttpStatus.CONFLICT, "PROD409", "HOLD 상태가 아닌 예약은 확정할 수 없습니다."),
     ;
 
     private final HttpStatus status;

@@ -56,7 +56,7 @@ public class ProductInventory {
         this.reservedQuantity += quantity;
     }
 
-    public void release(int quantity) {
+    public void restore(int quantity) {
         this.reservedQuantity = Math.max(0, this.reservedQuantity - quantity);
     }
 }

@@ -7,6 +7,7 @@ import com.kurly.product.domain.repository.ProductInventoryRepository;
 import com.kurly.product.infrastructure.entity.ProductInventory;
 import com.kurly.product.infrastructure.jpa.ProductInventoryJpaRepository;
 import jakarta.annotation.PostConstruct;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -24,13 +25,17 @@ public class ProductInventoryRepositoryImpl implements ProductInventoryRepositor
 
     private final StringRedisTemplate redisTemplate;
     private RedisScript<Long> holdScript;
+    private RedisScript<Long> confirmScript;
     private RedisScript<Long> releaseScript;
+    private RedisScript<Long> restoreScript;
     private final ProductInventoryJpaRepository productInventoryJpaRepository;
 
     @PostConstruct
     public void init() {
         this.holdScript = RedisScript.of(new ClassPathResource("lua/stock_hold.lua"), Long.class);
+        this.confirmScript = RedisScript.of(new ClassPathResource("lua/stock_confirm.lua"), Long.class);
         this.releaseScript = RedisScript.of(new ClassPathResource("lua/stock_release.lua"), Long.class);
+        this.restoreScript = RedisScript.of(new ClassPathResource("lua/stock_restore.lua"), Long.class);
     }
 
     @Override
@@ -39,17 +44,34 @@ public class ProductInventoryRepositoryImpl implements ProductInventoryRepositor
     }
 
     @Override
-    public void holdInventory(Long orderId, Long productId, int quantity, Long orderItemId, Long ttlSeconds) {
-        List<String> keys = List.of(getKey(productId), getHoldIdempotencyKey(orderId, orderItemId));
+    public void holdInventory(String reservationToken, List<Long> productIds, List<Integer> quantities) {
+        String reservationTokenKey = getReservationKey(reservationToken);
+        List<String> keys = new ArrayList<>();
+        List<String> args = new ArrayList<>();
+        keys.add(reservationTokenKey);
 
-        Long result = executeScript(holdScript, keys, quantity, ttlSeconds);
+        for (int i = 0; i < productIds.size(); i++) {
+            keys.add(getKey(productIds.get(i)));
+            args.add(String.valueOf(productIds.get(i)));
+            args.add(String.valueOf(quantities.get(i)));
+        }
+
+        Long result = executeScript(holdScript, keys, args);
+
         if (result != null && result == -1L) {
-            syncInventoryToRedis(productId);
-            result = executeScript(holdScript, keys, quantity, ttlSeconds);
+            for (int i = 0; i < productIds.size(); i++) {
+                Long productId = productIds.get(i);
+                String key = getKey(productId);
+                Boolean hasKey = redisTemplate.hasKey(key);
+
+                if (hasKey == null || !hasKey) {
+                    syncInventoryToRedis(productId);
+                }
+            }
+            result = executeScript(holdScript, keys, args);
         }
 
         if (result == null || result == -1L) {
-            // 스크립트가 nil 을 반환했거나, 동기화 후에도 재고 해시가 없는 경우 → 인프라 이상
             throw new ProductException(ProductErrorCode.INVENTORY_UNAVAILABLE);
         }
         if (result == 0L) {
@@ -58,17 +80,46 @@ public class ProductInventoryRepositoryImpl implements ProductInventoryRepositor
     }
 
     @Override
-    public void releaseInventory(Long orderId, Long productId, int quantity, Long orderItemId, Long ttlSeconds) {
-        List<String> keys = List.of(getKey(productId), getReleaseIdempotencyKey(orderId, orderItemId), getHoldIdempotencyKey(orderId, orderItemId));
+    public void releaseInventory(String reservationToken, Long ttlSeconds) {
+        String reservationTokenKey = getReservationKey(reservationToken);
 
-        Long result = executeScript(releaseScript, keys, quantity, ttlSeconds);
-        if (result != null && result == -1L) {
-            log.warn("선점 취소 요청이 들어왔으나 Redis에 해당 상품 재고 키가 존재하지 않습니다 (만료 또는 휘발). orderItemId: {}", orderItemId);
-        }
-        if(result != null && result == -2L) {
-            log.warn("선점 취소 요청이 들어왔으나 Redis에 해당 상품 선점 키가 존재하지 않습니다 (이미 취소되었거나 만료). orderItemId: {}", orderItemId);
+        List<String> keys = List.of(reservationTokenKey);
+        List<String> args = List.of(String.valueOf(ttlSeconds));
+
+        Long result = executeScript(releaseScript, keys, args);
+
+        if (result != null && result == -2L) {
+            log.warn("이미 확정된 예약에 대한 해제 요청을 무시한다: reservationToken={}", reservationToken);
         }
     }
+
+    @Override
+    public void confirmInventory(String reservationToken, Long ttlSeconds) {
+        String reservationTokenKey = getReservationKey(reservationToken);
+
+        List<String> keys = List.of(reservationTokenKey);
+        List<String> args = List.of(String.valueOf(ttlSeconds));
+
+        Long result = executeScript(confirmScript, keys, args);
+
+        if (result == null || result == -1L) {
+            throw new ProductException(ProductErrorCode.INVALID_RESERVATION_STATE);
+        }
+    }
+
+    @Override
+    public void restoreInventory(String reservationToken, List<Long> productIds, List<Integer> quantities) {
+        List<String> keys = new ArrayList<>();
+        List<String> args = new ArrayList<>();
+
+        for (int i = 0; i < productIds.size(); i++) {
+            keys.add(getKey(productIds.get(i)));
+            args.add(String.valueOf(quantities.get(i)));
+        }
+
+        executeScript(restoreScript, keys, args);
+    }
+
 
     @Override
     public void syncInventoryToRedis(Long productId) {
@@ -81,17 +132,14 @@ public class ProductInventoryRepositoryImpl implements ProductInventoryRepositor
                 "reserved_quantity", String.valueOf(inventory.getReservedQuantity())));
     }
 
-    private Long executeScript(RedisScript<Long> script, List<String> keys, int quantity, Long ttlSeconds) {
-        return redisTemplate.execute(script, keys, String.valueOf(quantity), String.valueOf(ttlSeconds));
+    private Long executeScript(RedisScript<Long> script, List<String> keys, List<String> args) {
+        return redisTemplate.execute(script, keys, args.toArray());
     }
     private String getKey(Long productId) {
         return "product:inventory:" + productId;
     }
-    private String getHoldIdempotencyKey(Long orderId, Long orderItemId) {
-        return "idempotency:hold:" + orderId + ":" + orderItemId;
-    }
-    private String getReleaseIdempotencyKey(Long orderId, Long orderItemId) {
-        return "idempotency:release:" + orderId + ":" + orderItemId;
+    private String getReservationKey(String reservationToken) {
+        return "reservation:" + reservationToken;
     }
 
 }

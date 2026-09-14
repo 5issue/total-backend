@@ -1,18 +1,36 @@
 package com.kurly.product.presentation.dto;
 
-import jakarta.validation.Valid;
-import jakarta.validation.constraints.NotEmpty;
+import com.kurly.product.domain.dto.ReserveItem;
+import jakarta.annotation.Nullable;
+import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.NotNull;
-import jakarta.validation.constraints.Positive;
 import java.util.List;
+import java.util.UUID;
 
 public record InventoryAdjustRequest(
-        @NotNull Long orderId,
-        @NotEmpty @Valid List<ReserveItem> items
+        @NotNull UUID reservationToken,
+        @Nullable List<ReserveItemRequest> items
 ) {
-    public record ReserveItem(
-            @NotNull Long orderItemId,
-            @NotNull Long productId,
-            @NotNull @Positive Integer quantity
-    ) {}
+    public record ReserveItemRequest(
+            Long productId,
+            Integer quantity
+    ) {
+        public ReserveItem toReserveItem() {
+            return new ReserveItem(productId, quantity);
+        }
+    }
+
+    @AssertTrue(message = "items에 같은 productId가 중복될 수 없습니다.")
+    public boolean isItemsProductIdUnique() {
+        if (items == null) {
+            return true;
+        }
+        long distinctProductIdCount = items.stream().map(ReserveItemRequest::productId).distinct().count();
+        return distinctProductIdCount == items.size();
+    }
+
+    public List<ReserveItem> toReserveItems() {
+        assert items != null;
+        return items.stream().map(ReserveItemRequest::toReserveItem).toList();
+    }
 }
