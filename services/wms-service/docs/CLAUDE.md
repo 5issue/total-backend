@@ -12,7 +12,7 @@
 - 역할: 창고 관리(입고 → 적치/보충 → 재고 현행화 → 출고), FEFO 기준 LOT 관리
 - 로컬 포트: 앱 `8085`, PostgreSQL `5437` (근거: [service-port-convention.md](../../../docs/service-port-convention.md))
 - 상세 데이터 모델: [erd-spec.md](./erd-spec.md)
-- API 명세: TypeSpec (`api-spec/main.tsp`)
+- API 명세: TypeSpec 우선(API-first) — [6. API 명세](#6-api-명세-typespec--openapi--swaggerpostman) 참고
 - 현재 상태: Flyway 베이스라인 스키마 + JPA 엔티티 10종 구현 완료, Repository/Service/Controller 및 API 미구현 (2026-09-14 기준)
 
 ## 2. 빌드 / 실행 / 테스트 명령어
@@ -196,7 +196,90 @@ class InventoryServiceUnitTest {
 
 - Line/Branch 커버리지 80% 이상을 목표로 작성 (`./gradlew :wms-service:test`가 jacocoTestReport까지 실행).
 
-## 6. 참고 문서
+## 6. API 명세 (TypeSpec → OpenAPI → Swagger/Postman)
+
+API를 먼저 TypeSpec으로 설계하고(`api-spec/`), 거기서 OpenAPI를 생성해 Swagger/Postman에 동기화하는 API-first 흐름을 사용합니다. wms-service가 이 저장소에서 TypeSpec을 쓰는 첫 서비스라 아래 구조는 다른 서비스에 그대로 재사용할 수 있게 일반적으로 잡았습니다.
+
+### 6.1 폴더/파일 구조
+
+모델(DTO)과 라우트(엔드포인트)를 분리하고, 라우트는 다시 `internal`(서비스 간 통신, `/internal/v1/wms/...`)과 `client`(BO 어드민/PDA 현장 작업자, `/api/v1/wms/...`)로 나눕니다. 같은 도메인이라도 호출 주체가 다르면 별도 인터페이스로 분리하되, 모델은 `models/`에서 공유합니다.
+
+```
+api-spec/
+├── main.tsp                       # @service, @server, @useAuth, 전역 @tagMetadata. 모든 파일을 import.
+├── tspconfig.yaml                  # @typespec/openapi3 emitter 설정 (출력: tsp-output/schema/)
+├── redocly.yaml                     # lint/문서 빌드 설정
+├── package.json
+│
+├── common/
+│   ├── response.tsp                 # ApiResponse<T>/ErrorResponse — com.kurly.common.response.ApiResponse<T>와 1:1 대응
+│   └── types.tsp                     # StorageType, TaskStatus 등 여러 도메인이 공유하는 enum
+│
+├── models/                           # Request/Response DTO. 라우트 파일은 여기서 import만 한다.
+│   ├── products.dto.tsp                # 상품 동기화 DTO
+│   ├── inbound.dto.tsp                  # ASN/검수/적치 DTO
+│   ├── inventory.dto.tsp                 # 창고/로케이션 마스터, 재고 조회/선점/이동 DTO
+│   ├── outbound.dto.tsp                   # 출고 지시/피킹/패킹/송장 DTO
+│   └── workers.dto.tsp                     # 작업자 등록/상태 DTO
+│
+└── routes/
+    ├── internal/                      # 서비스 간 통신 (SCM/OMS/상품 서비스 → WMS)
+    │   ├── products.internal.tsp        # POST .../products/sync
+    │   ├── inbound.internal.tsp          # POST .../inbounds/asn
+    │   ├── inventory.internal.tsp         # POST .../inventories/restore
+    │   └── outbound.internal.tsp           # POST .../outbounds/orders (수신 + FEFO 할당)
+    └── client/                          # BO 어드민 / PDA 현장 작업자
+        ├── inbound.api.tsp                # 검수, 적치 추천/확정
+        ├── inventory.api.tsp               # 가용 재고 조회, 선점(Soft-alloc), 이동 지시
+        │                                    #  + Locations interface: 구역/로케이션 마스터 (base path가 달라 별도 interface)
+        ├── outbound.api.tsp                 # 피킹 Task 조회/할당/결과 반영, 패킹·송장(placeholder)
+        ├── workers.api.tsp                   # 작업자 등록/상태 변경
+        └── monitoring.api.tsp                # 히트맵/작업자 UPH — 지표 정의 전 구조만 (placeholder)
+```
+
+- 응답은 반드시 `WmsService.Common.ApiResponse<T>`로 감싸서 선언합니다 (실제 Spring 쪽 `ApiResponse<T>` 래핑과 동일하게, [5.6](#56-controller--응답-포맷) 참고). 실패 시 형태는 `WmsService.Common.ErrorResponse`이며, 각 op 리턴 타입에 `| WmsService.Common.ErrorResponse`로 명시합니다.
+- 서비스/엔티티에 이미 있는 enum과 이름을 맞춥니다(`InboundUnit`, `OutboundOrderStatus`, `LocationType` 등 — `infrastructure/entity/*`의 nested enum과 1:1).
+- 인증은 전역 `@useAuth(BearerAuth)`로 선언되어 있습니다 (실제로는 `common`의 JWT `Authorization: Bearer` 검증과 대응, [5.6](#56-controller--응답-포맷)의 `@RequireRole`/`@PublicApi`). `internal`/`client`를 실제로 다른 인증 방식(서비스 키 vs 사용자 JWT)으로 분리할지는 아직 결정되지 않았다.
+- 재고 선점은 두 단계로 나뉜다: ① `POST /api/v1/wms/inventories/allocation` — 주문 접수 시점의 Soft-alloc, 아직 `OutboundOrder`가 없을 수 있어 호출측 `referenceId`로 식별. ② `POST /internal/v1/wms/outbounds/orders` — OMS 주문 확정 시 출고 지시 생성 + FEFO 하드 할당을 함께 수행. 취소되면 `POST /internal/v1/wms/inventories/restore`로 복구. 실제 연동 순서/책임 분리는 확정된 것이 아니라 계약상 가정이다.
+- `routes/internal/outbound.internal.tsp`, `models/workers.dto.tsp` + `routes/client/workers.api.tsp`는 논의된 파일 목록에 없었지만, 각각 "OMS의 출고 지시 생성 호출(서비스 간 통신)"과 "`/api/v1/wms/workers/**`라는 독립된 base path"라 새로 추가했다. `Worker`는 아직 Java 엔티티가 없어 구현 전 엔티티/마이그레이션 추가가 필요하다(모델 파일에 TODO로 표시).
+- `routes/client/inventory.api.tsp`의 `Locations` interface(`/api/v1/wms/warehouses/**`, `/api/v1/wms/locations/**`)는 base path가 `/api/v1/wms/inventories`와 달라 같은 파일 안에서도 별도 `interface`로 분리했다. Warehouse/Location 마스터 관리가 커지면 그때 `warehouse.dto.tsp`/`warehouse.api.tsp`로 완전히 독립시킨다.
+- 아직 확정되지 않은 도메인 규칙(FEFO 할당, 패킹/송장, 모니터링 지표 등)에 걸린 모델·엔드포인트는 `[placeholder]` 표시 + `// TODO:`/`// 참고:` 주석으로 남기고, 계약은 최소 형태로만 작성합니다. 요구사항이 정해지면 그때 필드를 채웁니다.
+- 엔티티에 없는 필드가 요청/응답에 필요해지면(예: `InboundOrder.poNumber`) `// TODO:` 주석으로 남기고 엔티티/마이그레이션 작업과 별도로 추적합니다.
+- 도메인 하나의 모델/라우트가 파일 하나로 감당이 안 될 만큼 커지면 그때 더 세분화합니다(YAGNI) — 예: `monitoring.api.tsp`는 아직 모델이 적어 `models/monitoring.dto.tsp`로 분리하지 않고 파일 내부에 둡니다.
+
+### 6.2 명령어
+
+```bash
+cd api-spec
+npm install                # 최초 1회
+
+npm run build               # tsp compile . → tsp-output/schema/{3.1.0,3.0.0}/openapi.yaml
+npm run watch                # 파일 변경 감지하며 재컴파일만 (Swagger 미표시)
+npm run swagger                # 빌드 1회 + OpenAPI 3.0 파일로 로컬 Swagger UI 기동 (:8090, 파일 변경 시 브라우저 자동 갱신)
+npm run dev                     # watch + swagger를 함께 실행하는 단일 명령 — 평소 작업할 땐 이것만 쓰면 됨
+npm run lint                     # redocly lint로 OpenAPI 스타일 검사 (에러 0개 유지)
+npm run docs                      # 정적 Redoc 미리보기 HTML 생성 (tsp-output/docs.html, 공유/리뷰용)
+npm run postman:generate           # OpenAPI → Postman 컬렉션 생성 (postman/wms-service.postman_collection.json)
+```
+
+- `tsp-output/`, `postman/`, `node_modules/`는 전부 생성 산출물이라 Git에 커밋하지 않습니다(루트 `.gitignore`).
+- PR 전에 최소 `npm run lint`(에러 0개)까지는 통과시킵니다.
+- `tspconfig.yaml`은 `kind: project`를 쓰지 않습니다 — 이 값이 있으면 `tsp compile . --watch`가 `config-project-not-as-cli-config` 에러로 죽는다(`tsp init` 스캐폴드 기본값이 이랬다). 일반 단일 엔트리포인트 프로젝트에서는 그냥 지운다.
+- `openapi-versions`에 `3.1.0`과 `3.0.0`을 둘 다 지정해 두 버전을 함께 생성합니다. lint/docs/postman은 최신 사양인 3.1.0을 쓰고, 로컬 Swagger UI(`npm run swagger`/`dev`)만 3.0.0을 씁니다 — `swagger-ui-watcher`가 물고 있는 Swagger UI 번들(3.x대)이 3.1의 JSON Schema 문법(`data: T | null` 같은 nullable 유니온이 `anyOf`+`type: 'null'`로 나오는 것 등)을 완전히 지원하지 않을 수 있어서다.
+
+### 6.3 Swagger 동기화
+
+**`npm run dev` (또는 `npm run swagger`)가 실시간 동기화입니다.** `tsp compile . --watch`가 파일 저장마다 OpenAPI를 재생성하고, `swagger-ui-watcher`가 그 파일을 `chokidar`로 감시하다가 바뀌면 소켓으로 브라우저에 바로 밀어 넣습니다 — 브라우저 새로고침도 필요 없습니다. `http://127.0.0.1:8090`으로 접속해 두면 `.tsp` 파일을 저장하는 즉시 화면이 갱신되는 걸 확인할 수 있습니다 (2026-09-14 실제 동작 확인: 필드 하나 추가 → 재컴파일 → "File changed. Sent updated spec to the browser." 로그 → 파일에 반영까지 3초 내).
+
+**`http://localhost:8085/swagger-ui/index.html`(springdoc)과는 별개입니다.** 그건 실행 중인 Spring Boot 앱이 실제 `@RestController`를 스캔해서 만드는 문서라, 컨트롤러가 하나도 없는 지금은 `paths: []`로 비어 있는 게 정상입니다 — TypeSpec과 동기화가 안 된 게 아니라 애초에 이 둘은 연결되어 있지 않습니다. 컨트롤러를 구현하기 시작하면 그때부터 `:8085`가 의미를 가지며, 이 시점부터는 **TypeSpec 계약 = 실제 컨트롤러 응답 모양이 일치하는지 사람이 리뷰**해야 합니다(둘을 자동으로 diff하는 CI는 아직 없음). 어긋나면 TypeSpec을 갱신하거나 컨트롤러를 계약에 맞게 고칩니다.
+
+### 6.4 Postman 동기화
+
+- `npm run postman:generate`로 로컬에 컬렉션 JSON을 만든 뒤, Postman 앱에서 Import하거나 팀 워크스페이스에 업로드합니다.
+- 지속적으로 팀 워크스페이스와 동기화하려면(다음 단계): Postman API Key + 대상 컬렉션 UID를 발급받아 `PUT https://api.getpostman.com/collections/{collectionUid}`로 생성된 JSON을 올리는 스크립트를 추가합니다. 자격 증명이 필요한 작업이라 아직 자동화하지 않았습니다.
+- `openapi-to-postmanv2`의 전이 의존성(`js-yaml`, `uuid`)에 알려진 취약점이 있습니다(로컬 변환 도구이고 우리가 만든 OpenAPI만 입력으로 받으므로 실사용 위험은 낮음). `npm audit`으로 상태를 주기적으로 확인하고, 상위 메이저 릴리스가 이를 해결하면 업그레이드합니다.
+
+## 7. 참고 문서
 
 - [팀컨벤션-코드스타일.md](../../../docs/팀컨벤션-코드스타일.md)
 - [Repository 아키텍처 계층 분리 및 구현 전략.md](../../../docs/Repository%20아키텍처%20계층%20분리%20및%20구현%20전략.md)
@@ -205,7 +288,7 @@ class InventoryServiceUnitTest {
 - [erd-spec.md](./erd-spec.md) — wms-service 데이터 모델
 - product-service 실제 구현체: `services/product-service/src/main/java/com/kurly/product/`
 
-## 7. 개발 진행 상황
+## 8. 개발 진행 상황
 
 새 작업을 시작/완료할 때 아래 표에 이어서 기록합니다. 상태는 `계획` / `진행중` / `완료` / `보류` 중 하나.
 
@@ -214,5 +297,10 @@ class InventoryServiceUnitTest {
 | 2026-09-14 | PostgreSQL `docker-compose.yml` 추가, `build.gradle` mysql→postgresql 드라이버 교체, `application.yml`을 local/prod로 분리 | 완료 | 포트 5437, env var 이름 product-service와 동일 |
 | 2026-09-14 | 본 하네스 문서(`docs/CLAUDE.md`) 작성 | 완료 | product-service 실제 코드 + 팀컨벤션 문서 기준 |
 | 2026-09-14 | Flyway 도입 (`V1__baseline_schema.sql`), ERD 기반 JPA 엔티티 10종(`Warehouse`, `WmsProduct`, `Location`, `InboundOrder`, `InboundItem`, `Inventory`, `StockMovement`, `OutboundOrder`, `OutboundItem`, `Outbox`) 구현 | 완료 | `ddl-auto: validate`로 기동 검증 완료. 공유 enum(`StorageType`, `OutboxStatus`)은 `domain/enums`, 엔티티 전용 enum은 nested로 배치 |
-| - | Repository(2파일 구조)·Service·Controller 구현 | 계획 | 엔티티만 우선 반영, [erd-spec.md](./erd-spec.md)의 미결 사항(로케이션 주소 체계, 재고 예약 시점 등) 먼저 확정 필요 |
-| - | API 구현 (TypeSpec `api-spec/main.tsp` 기반) | 계획 | 입고/출고/재고 조회 엔드포인트 |
+| 2026-09-14 | TypeSpec API-first 구조 수립, OpenAPI3/Postman 생성 파이프라인(`npm run build/lint/docs/postman:generate`) 구성 | 완료 | 상품 동기화·ASN 생성 2개 엔드포인트는 실제 예시 기반. `redocly lint` 에러 0개 |
+| 2026-09-14 | `api-spec/`을 `common/`·`models/`·`routes/{internal,client}` 구조로 재구성, BO/PDA 클라이언트 API(검수·적치·피킹·이동지시) 및 모니터링/패킹/송장 placeholder 추가 | 완료 | 16개 경로 생성 확인. 패킹/송장/모니터링 지표는 요구사항 미확정 상태의 구조만 |
+| 2026-09-14 | 전체 API 목록(18개 엔드포인트) 반영: 창고/로케이션 마스터(`Locations` interface), 작업자 관리(`workers.dto/api.tsp`, 신규), 재고 선점을 Soft-alloc(client)/FEFO 하드 할당(internal)/복구(internal) 3단계로 재설계 | 완료 | 21개 오퍼레이션(20개 경로) 생성, `redocly lint` 에러 0개. `Worker`는 Java 엔티티 아직 없음(TODO) |
+| 2026-09-14 | 로컬 Swagger 실시간 동기화 구성(`swagger-ui-watcher` + `tsp compile --watch`, `npm run dev`), `tspconfig.yaml`의 `kind: project` 제거(있으면 `--watch`가 에러로 죽는 버그), `openapi-versions`에 3.0.0 추가 | 완료 | 필드 추가 → 브라우저 자동 반영까지 실측 3초 내. springdoc(`:8085/swagger-ui`)과는 여전히 별개(컨트롤러 미구현이라 `paths: []`) |
+| - | Repository(2파일 구조)·Service·Controller 구현 | 계획 | 엔티티만 우선 반영, [erd-spec.md](./erd-spec.md)의 미결 사항(로케이션 주소 체계, 재고 예약 시점 등) 및 `api-spec/` 계약 먼저 확정 필요 |
+| - | `InboundOrder`에 `po_number` 컬럼 추가 검토 | 계획 | `api-spec/inbound.tsp`의 TODO 참고 — SCM 발주번호 연계에 필요 |
+| - | Postman 팀 워크스페이스 자동 동기화 스크립트 | 계획 | Postman API Key/컬렉션 UID 발급 후 진행 ([6.4](#64-postman-동기화) 참고) |

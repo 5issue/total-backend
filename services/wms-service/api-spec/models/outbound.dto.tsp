@@ -1,0 +1,123 @@
+import "../common/response.tsp";
+import "../common/types.tsp";
+
+namespace WmsService.Outbound;
+
+/** `OutboundOrder.OutboundOrderStatus`와 1:1로 대응한다. */
+enum OutboundOrderStatus {
+  ALLOCATED,
+  PICKING,
+  PACKING,
+  COMPLETED,
+  CANCELED,
+}
+
+/** `OutboundItem.OutboundItemStatus`와 1:1로 대응한다. */
+enum OutboundItemStatus {
+  PENDING,
+  PICKED,
+  SHORTAGE,
+}
+
+// ── internal: OMS 주문 수신 + FEFO 재고 할당 ──────────────────────────────
+// 이 호출 하나로 출고 지시(OutboundOrder) 생성과 FEFO 기준 하드 할당(LOT/로케이션 배정)을
+// 함께 수행한다. 클라이언트 쪽 Soft-alloc(inventory.internal.tsp 참고)과는 별개의, 확정 단계다.
+// 참고: FEFO 할당 로직 자체는 docs/erd-spec.md 논의 필요 사항이라 결과 필드는 최소로 둔다.
+
+model OutboundItemRequest {
+  productId: int64;
+
+  @minValue(1)
+  orderedQuantity: int32;
+}
+
+model OutboundOrderCreateRequest {
+  @doc("프론트오피스 주문 ID (OMS/주문 도메인 연계).")
+  orderId: int64;
+
+  warehouseId: int64;
+
+  @minItems(1)
+  items: OutboundItemRequest[];
+}
+
+model OutboundItemResponse {
+  id: int64;
+  productId: int64;
+  orderedQuantity: int32;
+  pickedQuantity: int32;
+  status: OutboundItemStatus;
+
+  @doc("FEFO 할당 결과. 결품 등으로 아직 할당되지 않았으면 null.")
+  allocatedLocationId: int64 | null;
+  allocatedLotNo: string | null;
+  allocatedExpiredDate: plainDate | null;
+}
+
+model OutboundOrderResponse {
+  id: int64;
+  orderId: int64;
+  warehouseId: int64;
+  status: OutboundOrderStatus;
+  items: OutboundItemResponse[];
+}
+
+// ── client: 피킹 ──────────────────────────────────────────
+
+@doc("출고 지시 1건에서 피킹해야 할 품목 1개. FEFO 할당 결과(locationId/lotNo)가 채워진 상태로 내려간다.")
+model PickingTaskResponse {
+  outboundItemId: int64;
+  outboundOrderId: int64;
+  productId: int64;
+  locationId: int64 | null;
+  lotNo: string | null;
+  orderedQuantity: int32;
+  status: WmsService.Common.TaskStatus;
+
+  @doc("작업자에게 할당되기 전에는 null.")
+  workerId: int64 | null;
+}
+
+@doc("대기 중인 피킹 Task를 작업자 1명에게 배정한다. 배정 전략(선입선출/동선 최적화 등)은 서버가 정한다.")
+model PickingTaskAssignRequest {
+  workerId: int64;
+  warehouseId: int64;
+}
+
+model PickItemRequest {
+  @minValue(0)
+  pickedQuantity: int32;
+}
+
+// ── client: 패킹/송장 ──────────────────────────────────────────
+// TODO: 포장재/보냉재 추천 알고리즘, TMS 연동 방식(송장 발급 API 계약 등)이 아직 정해지지 않았다.
+// 아래 모델은 화면/계약 형태를 미리 잡아두기 위한 최소 구조이며, 요구사항 확정 후 필드를 채운다.
+
+model PackingRecommendationRequest {
+  outboundOrderId: int64;
+}
+
+@doc("[placeholder] 출고 지시 품목의 부피/무게, 보관 유형(냉장/냉동)을 기준으로 포장재·보냉재를 추천한다.")
+model PackingRecommendationResponse {
+  outboundOrderId: int64;
+
+  @doc("추천 박스 규격 코드. 포장재 마스터/알고리즘 확정 전이라 자유 문자열로 둔다.")
+  recommendedBoxCode: string;
+
+  @doc("냉장/냉동 품목이 포함되어 보냉재가 필요한지 여부.")
+  requiresCoolant: boolean;
+
+  @doc("보냉재 종류 (예: 아이스팩, 드라이아이스). 불필요하면 null.")
+  coolantType: string | null;
+}
+
+model ShippingConfirmRequest {
+  outboundOrderId: int64;
+}
+
+@doc("[placeholder] 패킹 검수 완료 후 TMS(운송관리시스템) 연동으로 발급되는 배송 송장 정보.")
+model ShippingInvoiceResponse {
+  outboundOrderId: int64;
+  carrier: string;
+  trackingNumber: string;
+}
