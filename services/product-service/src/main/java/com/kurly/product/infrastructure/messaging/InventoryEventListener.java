@@ -23,7 +23,7 @@ public class InventoryEventListener {
 
     private final ProductInventoryService productInventoryService;
 
-    @RabbitListener(queues = "${product.inventory.release-queue}")
+    @RabbitListener(queues = "${product.inventory.release-queue}", containerFactory = "inventoryListenerContainerFactory")
     public void onRelease(InventoryEvent event) {
         try {
             productInventoryService.release(event.reservationToken());
@@ -33,7 +33,7 @@ public class InventoryEventListener {
         }
     }
 
-    @RabbitListener(queues = "${product.inventory.confirm-queue}")
+    @RabbitListener(queues = "${product.inventory.confirm-queue}", containerFactory = "inventoryListenerContainerFactory")
     public void onConfirm(InventoryEvent event) {
         try {
             productInventoryService.confirm(event.reservationToken(), event.orderId(), event.items());
@@ -50,7 +50,7 @@ public class InventoryEventListener {
         }
     }
 
-    @RabbitListener(queues = "${product.inventory.restore-queue}")
+    @RabbitListener(queues = "${product.inventory.restore-queue}", containerFactory = "inventoryListenerContainerFactory")
     public void onRestore(InventoryEvent event) {
         try {
             productInventoryService.restore(event.orderId(), event.items());
