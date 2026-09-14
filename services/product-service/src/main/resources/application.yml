@@ -5,6 +5,11 @@ spring:
     default: local
   jpa:
     open-in-view: false
+  rabbitmq:
+    publisher-confirm-type: correlated
+    publisher-returns: true
+    template:
+      mandatory: true
 
 product:
   inventory:
