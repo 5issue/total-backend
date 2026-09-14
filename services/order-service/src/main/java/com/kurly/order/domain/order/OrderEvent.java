@@ -7,6 +7,7 @@ import java.util.UUID;
 public record OrderEvent(
         UUID eventId,
         String routingKey,
+        String reservationToken,
         Long orderId,
         Long memberId,
         List<Item> items,
@@ -16,6 +17,7 @@ public record OrderEvent(
         return new OrderEvent(
                 UUID.randomUUID(),
                 routingKey,
+                order.getInventoryReservationToken(),
                 order.getId(),
                 order.getMemberId(),
                 order.getItems().stream().map(item -> new Item(item.getProductId(), item.getQuantity())).toList(),

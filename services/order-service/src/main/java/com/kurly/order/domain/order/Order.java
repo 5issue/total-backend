@@ -128,7 +128,15 @@ public class Order extends BaseEntity {
         this.status = OrderStatus.PAID;
         this.paymentId = paymentId;
         this.paidAt = paidAt;
-        this.inventoryReservationToken = null;
+    }
+
+    public void completeCancel() {
+        if (this.status == OrderStatus.CANCELLED) {
+            return;
+        }
+        Assert.isTrue(this.status == OrderStatus.CANCEL_PROCESSING,
+                "CANCEL_PROCESSING 상태에서만 취소 완료 처리가 가능합니다.");
+        this.status = OrderStatus.CANCELLED;
     }
 
     public void markExpired() {
