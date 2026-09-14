@@ -66,9 +66,9 @@ public class ProductInventoryService {
             inventories.get(item.productId()).hold(item.quantity());
         }
 
-        productInventoryRepository.confirmInventory(reservationToken, RESERVATION_TTL_SECONDS);
-
         outboxService.recordConfirmed(orderId);
+
+        productInventoryRepository.confirmInventory(reservationToken, RESERVATION_TTL_SECONDS);
     }
 
     @Transactional
@@ -81,5 +81,7 @@ public class ProductInventoryService {
         }
 
         outboxService.recordRestored(orderId);
+
+        productInventoryRepository.restoreInventory(null, items.stream().map(ReserveItem::productId).toList(), items.stream().map(ReserveItem::quantity).toList());
     }
 }

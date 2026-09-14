@@ -27,6 +27,7 @@ public class ProductInventoryRepositoryImpl implements ProductInventoryRepositor
     private RedisScript<Long> holdScript;
     private RedisScript<Long> confirmScript;
     private RedisScript<Long> releaseScript;
+    private RedisScript<Long> restoreScript;
     private final ProductInventoryJpaRepository productInventoryJpaRepository;
 
     @PostConstruct
@@ -34,6 +35,7 @@ public class ProductInventoryRepositoryImpl implements ProductInventoryRepositor
         this.holdScript = RedisScript.of(new ClassPathResource("lua/stock_hold.lua"), Long.class);
         this.confirmScript = RedisScript.of(new ClassPathResource("lua/stock_confirm.lua"), Long.class);
         this.releaseScript = RedisScript.of(new ClassPathResource("lua/stock_release.lua"), Long.class);
+        this.restoreScript = RedisScript.of(new ClassPathResource("lua/stock_restore.lua"), Long.class);
     }
 
     @Override
@@ -78,6 +80,20 @@ public class ProductInventoryRepositoryImpl implements ProductInventoryRepositor
     }
 
     @Override
+    public void releaseInventory(String reservationToken, Long ttlSeconds) {
+        String reservationTokenKey = getReservationKey(reservationToken);
+
+        List<String> keys = List.of(reservationTokenKey);
+        List<String> args = List.of(String.valueOf(ttlSeconds));
+
+        Long result = executeScript(releaseScript, keys, args);
+
+        if (result != null && result == -2L) {
+            log.warn("이미 확정된 예약에 대한 해제 요청을 무시한다: reservationToken={}", reservationToken);
+        }
+    }
+
+    @Override
     public void confirmInventory(String reservationToken, Long ttlSeconds) {
         String reservationTokenKey = getReservationKey(reservationToken);
 
@@ -92,18 +108,18 @@ public class ProductInventoryRepositoryImpl implements ProductInventoryRepositor
     }
 
     @Override
-    public void releaseInventory(String reservationToken, Long ttlSeconds) {
-        String reservationTokenKey = getReservationKey(reservationToken);
+    public void restoreInventory(String reservationToken, List<Long> productIds, List<Integer> quantities) {
+        List<String> keys = new ArrayList<>();
+        List<String> args = new ArrayList<>();
 
-        List<String> keys = List.of(reservationTokenKey);
-        List<String> args = List.of(String.valueOf(ttlSeconds));
-
-        Long result = executeScript(releaseScript, keys, args);
-
-        if (result != null && result == -2L) {
-            log.warn("이미 확정된 예약에 대한 해제 요청을 무시한다: reservationToken={}", reservationToken);
+        for (int i = 0; i < productIds.size(); i++) {
+            keys.add(getKey(productIds.get(i)));
+            args.add(String.valueOf(quantities.get(i)));
         }
+
+        executeScript(restoreScript, keys, args);
     }
+
 
     @Override
     public void syncInventoryToRedis(Long productId) {
