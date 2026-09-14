@@ -1,0 +1,24 @@
+services:
+  postgres-wms:
+    image: postgres:16-alpine
+    container_name: kurly-postgres-wms
+    hostname: postgres-wms
+    ports:
+      - "5437:5432"
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-wms}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-password}
+    volumes:
+      - wms_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-wms}" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+volumes:
+  wms_postgres_data:
+    name: kurly-wms-postgres-data
