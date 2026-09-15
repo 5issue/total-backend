@@ -228,6 +228,8 @@ function buildPageChildren(doc, ep) {
   return blocks;
 }
 
+// 중요도/검토 상태는 팀원이 노션에서 직접 판단해 바꾸는 값이라, 새로 만들 때만
+// 기본값을 채우고 이미 있는 행은 절대 덮어쓰지 않는다 (피드백/수정요청과 같은 취급).
 function buildProperties(ep, isNew) {
   const properties = {
     이름: { title: rt(ep.summary) },
@@ -236,9 +238,9 @@ function buildProperties(ep, isNew) {
     Bearer: { checkbox: ep.bearer },
     도메인: { select: { name: DEFAULT_DOMAIN } },
     상세: { select: { name: ep.tag } },
-    중요도: { select: { name: DEFAULT_IMPORTANCE } },
   };
   if (isNew) {
+    properties['중요도'] = { select: { name: DEFAULT_IMPORTANCE } };
     properties['검토 상태'] = { select: { name: DEFAULT_REVIEW_STATUS } };
   }
   return properties;

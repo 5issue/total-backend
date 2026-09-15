@@ -40,6 +40,7 @@ docker compose down
 - Java 25 툴체인, Spring Boot 4.1.0, `io.spring.dependency-management`는 루트 `build.gradle`(`subprojects {}`)에서 전 서비스 공통 적용됩니다. wms-service의 `build.gradle`에는 이 서비스에만 필요한 의존성만 추가합니다.
 - Lombok, `spring-boot-starter-test`, JUnit 5 launcher, jacoco는 루트에서 이미 전 서비스에 공통 적용되어 있으므로 서비스별 `build.gradle`에 다시 선언하지 않습니다.
 - jacoco 커버리지 목표: Line 80% / Branch 80% 이상 (팀컨벤션 문서 기준). 임계값 강제(verification)는 서비스별로 개별 적용하며, 아직 테스트가 없는 서비스의 빌드를 깨뜨리지 않기 위해 루트에서는 강제하지 않습니다.
+- CI(`.github/workflows/ci-wms-service.yml`의 `build-and-test` job)는 `./gradlew :common:build :wms-service:build`를 그대로 돌립니다(product-service와 동일 패턴). 아직 리포지토리/서비스 레이어와 테스트가 없어 Postgres 서비스 컨테이너는 없습니다 — 실제 DB를 쓰는 통합 테스트가 추가되면 auth-service의 MySQL 서비스 컨테이너 패턴을 참고해 Postgres 컨테이너를 붙입니다.
 
 ## 3. 환경 설정 (application.yml 구성)
 
@@ -291,13 +292,13 @@ npm run sync:notion            # 실제 upsert
 ```
 
 - 매칭 키는 `PATH(endpoint)` + `METHOD`. 같은 조합이 있으면 속성 갱신 + 본문 전체 재작성, 없으면 새 행 생성.
-- `피드백/수정요청`, `검토 상태`는 업데이트 payload에 아예 포함하지 않아서 절대 덮어쓰지 않는다(`buildProperties`가 이 두 키를 아예 만들지 않는 방식). `검토 상태`는 새 행을 만들 때만 기본값("🟢 정상")을 채운다. **`중요도`는 보호 대상이 아니라 매번 "중"으로 덮어쓴다** — 특정 엔드포인트의 중요도를 수동으로 올려놨다면 다음 sync에서 되돌아간다. 이것도 보존하고 싶으면 스크립트의 `buildProperties`를 고치면 된다.
+- `피드백/수정요청`, `검토 상태`, `중요도`는 업데이트 payload에 아예 포함하지 않아서 절대 덮어쓰지 않는다(`buildProperties`가 기존 행에는 이 키들을 아예 만들지 않는 방식). 셋 다 새 행을 만들 때만 기본값(중요도 "중", 검토 상태 "🟢 정상")을 채우고, 그 이후로는 팀원이 노션에서 바꾼 값을 그대로 유지한다.
 - 페이지 "속성"과 달리 페이지 "본문"(Request/Response 블록)은 매번 통째로 지우고 새로 쓴다. 팀원이 본문에 직접 적어둔 메모는 다음 sync에서 사라지니, 코멘트는 본문이 아니라 `피드백/수정요청` 속성에 남기도록 안내한다.
 - Request Body/Response 예시 JSON은 TypeSpec에 `@example`을 안 붙여놔서 스키마를 보고 자동 생성한 값이다 (문자열은 `"string"`, `*Id`류 정수는 `1`, `*quantity`류는 `10` 등 휴리스틱). 실제 값이 아니라 "필드가 이런 모양"이라는 뜻으로만 보면 된다.
 - "HTTP 에러 코드 정의" 표는 OpenAPI 스펙에 도메인별 에러 코드가 없어서(`default` → `ErrorResponse`만 정의됨) `common/exception/GlobalErrorCode.java`의 공통 코드(COMMON400~500)로 채운 기본값이다. 엔드포인트별 도메인 에러 코드는 이 스크립트가 알 방법이 없으니 팀원이 직접 보강해야 한다.
 - 노션 API 2025-09-03부터 데이터베이스 아래에 "data source" 개념이 생겨서, 행 조회는 `dataSources.query`로 한다(SDK에 `databases.query`가 아예 없어졌다). 스크립트가 `NOTION_DATABASE_ID`로 첫 번째 data source를 자동으로 찾아 쓰므로 평소 쓰는 단일 data source 데이터베이스라면 신경 쓸 필요 없다.
 - 실행 시작 시 데이터베이스에 9개 속성(이름/PATH(endpoint)/METHOD/Bearer/도메인/상세/중요도/피드백·수정요청/검토 상태)이 정확한 타입으로 있는지 먼저 검증하고, 하나라도 다르면 무엇이 문제인지 즉시 알려주고 종료한다.
-- GitHub Actions: `.github/workflows/ci-wms-service.yml`의 `sync-notion` job이 `services/wms-service/**` 변경을 `develop`에 push할 때(+ 수동 실행) 돌린다. PR에서는 돌지 않는다(`if: github.event_name != 'pull_request'`) — merge된 것만 문서에 반영하기 위함. 리포지토리 Settings → Secrets에 `NOTION_TOKEN`, `NOTION_DATABASE_ID`, `NOTION_EVENT_DATABASE_ID`를 등록해야 동작한다.
+- GitHub Actions: `.github/workflows/ci-wms-service.yml`에 job이 두 개다. `build-and-test`는 push/PR 둘 다에서 돌며 다른 서비스와 동일한 컴파일/테스트 검사를 한다. `sync-notion`은 `services/wms-service/**` 변경을 `develop`에 push할 때(+ 수동 실행)만 돌고 PR에서는 돌지 않는다(`if: github.event_name != 'pull_request'`) — merge된 것만 문서에 반영하기 위함. 두 job은 진행 중 실행 취소 정책이 달라서(빌드는 취소해도 되지만 노션 sync는 취소하면 페이지가 반쯤 갱신된 채 남을 수 있음) workflow 레벨이 아니라 job 레벨로 각각 `concurrency`를 건다. `sync-notion`은 리포지토리 Settings → Secrets에 `NOTION_TOKEN`, `NOTION_DATABASE_ID`, `NOTION_EVENT_DATABASE_ID`를 등록해야 동작한다.
 - OpenAPI 파싱/예시 생성/노션 블록 빌더/노션 API 호출 같은 공통 로직은 `scripts/lib/notion-openapi.js`에 모아뒀다. [6.6](#66-비동기-이벤트-명세-typespec--notion-event-db)의 이벤트 동기화 스크립트도 이 파일을 그대로 가져다 쓴다.
 
 ### 6.6 비동기 이벤트 명세 (TypeSpec → Notion Event DB)
@@ -350,6 +351,7 @@ npm run sync:notion:events          # 실제 upsert (NOTION_TOKEN, NOTION_EVENT_
 | 2026-09-14 | OpenAPI → Notion 동기화 스크립트(`scripts/sync-notion-db.js`) 작성, `ci-wms-service.yml`에 `sync-notion` job 추가(별도 워크플로 파일은 만들지 않고 기존 CI 파일에 통합) | 완료 | 21개 엔드포인트 전부 `--dry-run`으로 파싱/블록 생성 검증 완료(실제 노션 호출은 미검증 — 토큰 없음). `@notionhq/client` v5가 Notion API 2025-09-03(data source 모델) 대상이라 `dataSources.query`로 구현, `databases.query`는 SDK에 없음 |
 | 2026-09-15 | `POST /internal/v1/wms/inventories/restore`, `POST /internal/v1/wms/outbounds/orders`를 비동기 이벤트(`order.inventory.confirm`, `order.canceled.inventory-restore`)로 전환. `events/` TypeSpec 스펙 + `scripts/sync-notion-events.js` 작성, 공통 로직은 `scripts/lib/notion-openapi.js`로 추출해 REST 스크립트와 공유 | 완료 | REST/이벤트 양쪽 `--dry-run` 검증 완료. order-service `PaymentCancellationEvent`가 실제 발행하는 routingKey(`order.canceled.inventory-restore`)와 product-service `InventoryMessagingProperties`의 restore 기본값(`order.inventory.restore`)이 서로 다른 걸 발견 — product-service 쪽 재고 복구 큐가 메시지를 못 받고 있을 가능성, 별도 확인 필요(이번 작업 범위 아님) |
 | 2026-09-15 | 이벤트 스펙을 별도 컴파일 단위(`api-spec/events/`)에서 `main.tsp` 하나로 통합 — `models/events.dto.tsp`(페이로드) + `routes/events/inventory.events.tsp`(이벤트 정의, `routes/{internal,client}`와 나란한 세 번째 카테고리)로 재배치, `build:events` 스크립트 제거 | 완료 | 분리해뒀던 이유(별도 emitter 필요할까 봐)가 실제로는 근거가 없었음 — `doc.paths`/`doc.components.schemas` 모양으로 구분하는 두 스크립트는 REST/이벤트가 한 파일에 섞여 있어도 문제없다는 걸 재확인. `npm run build` 한 번으로 REST 19개 경로 + 이벤트 2개 스키마 동시 생성, 양쪽 `--dry-run` 재검증 완료 |
+| 2026-09-15 | `ci-wms-service.yml`에 `build-and-test` job 추가(product-service와 동일 패턴: `./gradlew :common:build :wms-service:build`), trigger 경로에 `common/`·`build.gradle`·`settings.gradle`·`gradle/**`·`gradlew` 추가, `sync-notion`과 취소 정책이 달라 job별 `concurrency`로 분리 | 완료 | 기존엔 `sync-notion` job만 있어서 실제 빌드/컴파일 검증이 CI에 전혀 없었음. 로컬에서 `./gradlew :common:build :wms-service:build` 실행해 성공 확인. DB 서비스 컨테이너는 아직 리포지토리/테스트가 없어 미추가(product-service도 동일 상태) — 통합 테스트 생기면 auth-service의 MySQL 컨테이너 패턴 참고해 Postgres로 추가 |
 | - | Repository(2파일 구조)·Service·Controller 구현 | 계획 | 엔티티만 우선 반영, [erd-spec.md](./erd-spec.md)의 미결 사항(로케이션 주소 체계, 재고 예약 시점 등) 및 `api-spec/` 계약 먼저 확정 필요 |
 | - | `InboundOrder`에 `po_number` 컬럼 추가 검토 | 계획 | `api-spec/inbound.tsp`의 TODO 참고 — SCM 발주번호 연계에 필요 |
 | - | Postman 팀 워크스페이스 자동 동기화 스크립트 | 계획 | Postman API Key/컬렉션 UID 발급 후 진행 ([6.4](#64-postman-동기화) 참고) |
