@@ -10,5 +10,44 @@ on:
     paths:
       - 'services/wms-service/**'
   workflow_dispatch:
+    inputs:
+      reason:
+        description: '수동 실행 사유'
+        required: false
+        default: 'Notion Sync Manual Test'
 
-jobs: {}
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  # api-spec(TypeSpec)이 생성한 OpenAPI를 노션 API 명세 DB에 동기화한다.
+  # PR 단계에서는 돌리지 않는다 — develop에 실제로 merge된 것만 문서에 반영하기 위함.
+  sync-notion:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: services/wms-service/api-spec
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: services/wms-service/api-spec/package-lock.json
+
+      - run: npm ci
+
+      - run: npm run sync:notion
+        env:
+          NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
+          NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID }}
