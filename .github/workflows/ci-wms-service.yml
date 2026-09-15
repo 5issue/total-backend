@@ -47,12 +47,22 @@ jobs:
 
       - run: npm ci
 
-      - run: npm run sync:notion
+      # 서로 다른 노션 DB를 건드리는 독립적인 동기화라, 하나가 실패해도 나머지는 계속 돌려야 한다.
+      - name: Sync REST API spec to Notion
+        id: sync_notion
+        continue-on-error: true
+        run: npm run sync:notion
         env:
           NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
           NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID }}
 
-      - run: npm run sync:notion:events
+      - name: Sync async event spec to Notion
+        if: always()
+        run: npm run sync:notion:events
         env:
           NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
           NOTION_EVENT_DATABASE_ID: ${{ secrets.NOTION_EVENT_DATABASE_ID }}
+
+      - name: Fail job if REST sync failed
+        if: steps.sync_notion.outcome == 'failure'
+        run: exit 1

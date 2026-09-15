@@ -200,7 +200,8 @@ export async function withRetry(fn, { retries = 5, label = 'Notion API 호출' }
 
 // Notion API 2025-09-03부터 데이터베이스 아래에 "data source"가 생겼고, 행 조회/필터는
 // database_id가 아니라 data_source_id로 한다 (databases.query는 SDK에서 아예 사라졌다).
-// 지금 DB가 단일 data source(거의 모든 일반 DB가 여기 해당)라고 가정하고 첫 번째 것을 사용한다.
+// 이 스크립트는 단일 data source 데이터베이스만 지원한다 — 여러 개면 어느 쪽에 쓸지
+// 애매해서(잘못된 data source에 쓰면 엉뚱한 곳이 갱신된다) 첫 번째를 임의로 고르는 대신 멈춘다.
 export async function resolveDataSourceId(notion, databaseId) {
   const db = await withRetry(() => notion.databases.retrieve({ database_id: databaseId }), { label: '데이터베이스 조회' });
   const dataSource = db.data_sources?.[0];
@@ -208,8 +209,10 @@ export async function resolveDataSourceId(notion, databaseId) {
     fail(`데이터베이스(${databaseId})에서 data source를 찾을 수 없습니다. 대상 DATABASE_ID가 맞는지 확인하세요.`);
   }
   if (db.data_sources.length > 1) {
-    console.warn(
-      `⚠ 이 데이터베이스에 data source가 ${db.data_sources.length}개 있습니다. 첫 번째("${dataSource.name}")만 사용합니다.`,
+    fail(
+      `데이터베이스(${databaseId})에 data source가 ${db.data_sources.length}개 있어 어느 쪽을 쓸지 정할 수 없습니다: ` +
+        `${db.data_sources.map((ds) => `${ds.name}(${ds.id})`).join(', ')}. ` +
+        `이 스크립트는 단일 data source 데이터베이스만 지원합니다 — 잘못된 data source에 쓰는 걸 막기 위해 자동으로 고르지 않습니다.`,
     );
   }
   return dataSource.id;
@@ -246,7 +249,7 @@ export async function findExistingPage(notion, dataSourceId, filter, label) {
   return response.results[0] ?? null;
 }
 
-export async function clearPageChildren(notion, pageId) {
+export async function listPageChildrenIds(notion, pageId) {
   let cursor;
   const blockIds = [];
   do {
@@ -256,7 +259,10 @@ export async function clearPageChildren(notion, pageId) {
     blockIds.push(...response.results.map((b) => b.id));
     cursor = response.has_more ? response.next_cursor : undefined;
   } while (cursor);
+  return blockIds;
+}
 
+export async function deleteBlocks(notion, blockIds) {
   for (const blockId of blockIds) {
     await withRetry(() => notion.blocks.delete({ block_id: blockId }), { label: '기존 블록 삭제' });
     await sleep(120);
@@ -275,12 +281,16 @@ export async function appendChildrenInChunks(notion, pageId, children) {
 /**
  * find-or-create 후 속성 갱신, 본문은 통째로 비우고 다시 쓰는 공통 upsert 흐름.
  * `buildProperties(isNew)`/`buildChildren()`는 필요한 시점에만 호출되는 thunk다.
+ *
+ * 기존 페이지는 새 블록을 먼저 append하고 나서 옛 블록을 지운다 — 반대 순서로 하면
+ * append가 중간에 실패했을 때 페이지 본문이 통째로 비는 채로 남는다.
  */
 export async function upsertNotionPage(notion, dataSourceId, { filter, buildProperties, buildChildren, label }) {
   const existing = await findExistingPage(notion, dataSourceId, filter, label);
   const isNew = !existing;
 
   let pageId;
+  let oldBlockIds = [];
   if (isNew) {
     const created = await withRetry(
       () => notion.pages.create({ parent: { data_source_id: dataSourceId }, properties: buildProperties(true) }),
@@ -292,9 +302,12 @@ export async function upsertNotionPage(notion, dataSourceId, { filter, buildProp
     await withRetry(() => notion.pages.update({ page_id: pageId, properties: buildProperties(false) }), {
       label: `${label} 속성 갱신`,
     });
-    await clearPageChildren(notion, pageId);
+    oldBlockIds = await listPageChildrenIds(notion, pageId);
   }
 
   await appendChildrenInChunks(notion, pageId, buildChildren());
+  if (oldBlockIds.length) {
+    await deleteBlocks(notion, oldBlockIds);
+  }
   return isNew ? 'created' : 'updated';
 }
