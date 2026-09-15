@@ -5,10 +5,119 @@ on:
     branches: [develop]
     paths:
       - 'services/wms-service/**'
+      # common이 바뀌면 이 서비스도 깨질 수 있다. 공통 모듈과 빌드 스크립트를 함께 감시한다.
+      - 'common/**'
+      - 'build.gradle'
+      - 'settings.gradle'
+      - 'gradle/**'
+      - 'gradlew'
+      - '.github/workflows/ci-wms-service.yml'
   pull_request:
     branches: [develop]
     paths:
       - 'services/wms-service/**'
+      - 'common/**'
+      - 'build.gradle'
+      - 'settings.gradle'
+      - 'gradle/**'
+      - 'gradlew'
+      - '.github/workflows/ci-wms-service.yml'
   workflow_dispatch:
+    inputs:
+      reason:
+        description: '수동 실행 사유'
+        required: false
+        default: 'Notion Sync Manual Test'
 
-jobs: {}
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # 같은 브랜치에 새 커밋이 오면 진행 중이던 빌드는 취소한다. 어차피 결과를 쓰지 않는다.
+    concurrency:
+      group: ${{ github.workflow }}-build-${{ github.ref }}
+      cancel-in-progress: true
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '25'
+          distribution: temurin
+
+      - name: Gradle 설정
+        # 의존성·빌드 캐시를 알아서 복원하고 저장한다.
+        uses: gradle/actions/setup-gradle@v4
+
+      # common을 함께 빌드한다. :wms-service:build는 common의 jar만 필요로 해서
+      # common의 테스트를 돌리지 않는다. 공통 모듈이 깨진 채로 통과하면 안 된다.
+      #
+      # wms-service는 아직 리포지토리/서비스 레이어와 테스트가 없어 DB 서비스 컨테이너가
+      # 필요 없다(product-service도 테스트가 없어 마찬가지). Postgres를 실제로 쓰는 통합
+      # 테스트가 추가되면 auth-service처럼 여기에 postgres 서비스 컨테이너를 붙인다.
+      - name: 빌드·테스트
+        run: ./gradlew :common:build :wms-service:build
+
+      - name: 테스트 리포트 업로드
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-wms-service
+          path: |
+            common/build/reports/tests/
+            services/wms-service/build/reports/tests/
+          retention-days: 7
+
+  # api-spec(TypeSpec)이 생성한 OpenAPI를 노션 API 명세 DB에 동기화한다.
+  # PR 단계에서는 돌리지 않는다 — develop에 실제로 merge된 것만 문서에 반영하기 위함.
+  sync-notion:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Notion 페이지 본문을 지우고 다시 쓰는 도중 취소되면 본문이 빈 채로 남을 수 있어서,
+    # build-and-test와 달리 진행 중인 실행은 취소하지 않는다.
+    concurrency:
+      group: ${{ github.workflow }}-notion-${{ github.ref }}
+      cancel-in-progress: false
+    defaults:
+      run:
+        working-directory: services/wms-service/api-spec
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: services/wms-service/api-spec/package-lock.json
+
+      - run: npm ci
+
+      # 서로 다른 노션 DB를 건드리는 독립적인 동기화라, 하나가 실패해도 나머지는 계속 돌려야 한다.
+      - name: Sync REST API spec to Notion
+        id: sync_notion
+        continue-on-error: true
+        run: npm run sync:notion
+        env:
+          NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
+          NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID }}
+
+      - name: Sync async event spec to Notion
+        if: always()
+        run: npm run sync:notion:events
+        env:
+          NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
+          NOTION_EVENT_DATABASE_ID: ${{ secrets.NOTION_EVENT_DATABASE_ID }}
+
+      - name: Fail job if REST sync failed
+        if: steps.sync_notion.outcome == 'failure'
+        run: exit 1

@@ -1,0 +1,8 @@
+extends:
+  - recommended
+
+rules:
+  # 내부 서비스 API라 라이선스 개념이 없다.
+  info-license: off
+  # 로컬 개발 서버 주소를 의도적으로 문서화한다.
+  no-server-example.com: off
