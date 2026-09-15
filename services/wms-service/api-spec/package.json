@@ -12,7 +12,9 @@
     "swagger": "npm run build && swagger-ui-watcher tsp-output/schema/3.0.0/openapi.yaml -p 8090",
     "dev": "npm run build && concurrently -n tsp,swagger -c blue,green \"tsp compile . --watch\" \"swagger-ui-watcher tsp-output/schema/3.0.0/openapi.yaml -p 8090 --no-open\"",
     "sync:notion": "npm run build && node scripts/sync-notion-db.js",
-    "sync:notion:dry": "npm run build && node scripts/sync-notion-db.js --dry-run"
+    "sync:notion:dry": "npm run build && node scripts/sync-notion-db.js --dry-run",
+    "sync:notion:events": "npm run build && node scripts/sync-notion-events.js",
+    "sync:notion:events:dry": "npm run build && node scripts/sync-notion-events.js --dry-run"
   },
   "dependencies": {
     "@notionhq/client": "^5.26.0",

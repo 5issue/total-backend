@@ -202,7 +202,7 @@ API를 먼저 TypeSpec으로 설계하고(`api-spec/`), 거기서 OpenAPI를 생
 
 ### 6.1 폴더/파일 구조
 
-모델(DTO)과 라우트(엔드포인트)를 분리하고, 라우트는 다시 `internal`(서비스 간 통신, `/internal/v1/wms/...`)과 `client`(BO 어드민/PDA 현장 작업자, `/api/v1/wms/...`)로 나눕니다. 같은 도메인이라도 호출 주체가 다르면 별도 인터페이스로 분리하되, 모델은 `models/`에서 공유합니다.
+모델(DTO)과 라우트(엔드포인트/이벤트)를 분리하고, 라우트는 다시 `internal`(서비스 간 REST 통신, `/internal/v1/wms/...`), `client`(BO 어드민/PDA 현장 작업자, `/api/v1/wms/...`), `events`(비동기 RabbitMQ 이벤트, HTTP 아님)로 나눕니다. 셋 다 `main.tsp` 하나에서 컴파일되는 **같은 프로젝트**이고(`tsp compile .` 한 번으로 REST 스키마와 이벤트 스키마가 같은 `tsp-output/schema/*.yaml`에 함께 실린다), 모델은 `models/`에서 공유합니다.
 
 ```
 api-spec/
@@ -215,33 +215,34 @@ api-spec/
 │   ├── response.tsp                 # ApiResponse<T>/ErrorResponse — com.kurly.common.response.ApiResponse<T>와 1:1 대응
 │   └── types.tsp                     # StorageType, TaskStatus 등 여러 도메인이 공유하는 enum
 │
-├── models/                           # Request/Response DTO. 라우트 파일은 여기서 import만 한다.
+├── models/                           # Request/Response/이벤트 페이로드 DTO. 라우트 파일은 여기서 import만 한다.
 │   ├── products.dto.tsp                # 상품 동기화 DTO
 │   ├── inbound.dto.tsp                  # ASN/검수/적치 DTO
 │   ├── inventory.dto.tsp                 # 창고/로케이션 마스터, 재고 조회/선점/이동 DTO
 │   ├── outbound.dto.tsp                   # 출고 지시/피킹/패킹/송장 DTO
-│   └── workers.dto.tsp                     # 작업자 등록/상태 DTO
+│   ├── workers.dto.tsp                     # 작업자 등록/상태 DTO
+│   └── events.dto.tsp                       # 이벤트 페이로드(OrderEvent 등) — 6.6 참고
 │
 └── routes/
-    ├── internal/                      # 서비스 간 통신 (SCM/OMS/상품 서비스 → WMS)
+    ├── internal/                      # 서비스 간 REST 통신 (SCM/상품 서비스 → WMS)
     │   ├── products.internal.tsp        # POST .../products/sync
-    │   ├── inbound.internal.tsp          # POST .../inbounds/asn
-    │   ├── inventory.internal.tsp         # POST .../inventories/restore
-    │   └── outbound.internal.tsp           # POST .../outbounds/orders (수신 + FEFO 할당)
-    └── client/                          # BO 어드민 / PDA 현장 작업자
-        ├── inbound.api.tsp                # 검수, 적치 추천/확정
-        ├── inventory.api.tsp               # 가용 재고 조회, 선점(Soft-alloc), 이동 지시
-        │                                    #  + Locations interface: 구역/로케이션 마스터 (base path가 달라 별도 interface)
-        ├── outbound.api.tsp                 # 피킹 Task 조회/할당/결과 반영, 패킹·송장(placeholder)
-        ├── workers.api.tsp                   # 작업자 등록/상태 변경
-        └── monitoring.api.tsp                # 히트맵/작업자 UPH — 지표 정의 전 구조만 (placeholder)
+    │   └── inbound.internal.tsp          # POST .../inbounds/asn
+    ├── client/                          # BO 어드민 / PDA 현장 작업자
+    │   ├── inbound.api.tsp                # 검수, 적치 추천/확정
+    │   ├── inventory.api.tsp               # 가용 재고 조회, 선점(Soft-alloc), 이동 지시
+    │   │                                    #  + Locations interface: 구역/로케이션 마스터 (base path가 달라 별도 interface)
+    │   ├── outbound.api.tsp                 # 피킹 Task 조회/할당/결과 반영, 패킹·송장(placeholder)
+    │   ├── workers.api.tsp                   # 작업자 등록/상태 변경
+    │   └── monitoring.api.tsp                # 히트맵/작업자 UPH — 지표 정의 전 구조만 (placeholder)
+    └── events/                          # 비동기(RabbitMQ) 이벤트 정의. @route 대신 리터럴 타입 필드 — 6.6 참고
+        └── inventory.events.tsp           # order.inventory.confirm, order.canceled.inventory-restore
 ```
 
 - 응답은 반드시 `WmsService.Common.ApiResponse<T>`로 감싸서 선언합니다 (실제 Spring 쪽 `ApiResponse<T>` 래핑과 동일하게, [5.6](#56-controller--응답-포맷) 참고). 실패 시 형태는 `WmsService.Common.ErrorResponse`이며, 각 op 리턴 타입에 `| WmsService.Common.ErrorResponse`로 명시합니다.
-- 서비스/엔티티에 이미 있는 enum과 이름을 맞춥니다(`InboundUnit`, `OutboundOrderStatus`, `LocationType` 등 — `infrastructure/entity/*`의 nested enum과 1:1).
+- 서비스/엔티티에 이미 있는 enum과 이름을 맞춥니다(`InboundUnit`, `OutboundItemStatus`, `LocationType` 등 — `infrastructure/entity/*`의 nested enum과 1:1).
 - 인증은 전역 `@useAuth(BearerAuth)`로 선언되어 있습니다 (실제로는 `common`의 JWT `Authorization: Bearer` 검증과 대응, [5.6](#56-controller--응답-포맷)의 `@RequireRole`/`@PublicApi`). `internal`/`client`를 실제로 다른 인증 방식(서비스 키 vs 사용자 JWT)으로 분리할지는 아직 결정되지 않았다.
-- 재고 선점은 두 단계로 나뉜다: ① `POST /api/v1/wms/inventories/allocation` — 주문 접수 시점의 Soft-alloc, 아직 `OutboundOrder`가 없을 수 있어 호출측 `referenceId`로 식별. ② `POST /internal/v1/wms/outbounds/orders` — OMS 주문 확정 시 출고 지시 생성 + FEFO 하드 할당을 함께 수행. 취소되면 `POST /internal/v1/wms/inventories/restore`로 복구. 실제 연동 순서/책임 분리는 확정된 것이 아니라 계약상 가정이다.
-- `routes/internal/outbound.internal.tsp`, `models/workers.dto.tsp` + `routes/client/workers.api.tsp`는 논의된 파일 목록에 없었지만, 각각 "OMS의 출고 지시 생성 호출(서비스 간 통신)"과 "`/api/v1/wms/workers/**`라는 독립된 base path"라 새로 추가했다. `Worker`는 아직 Java 엔티티가 없어 구현 전 엔티티/마이그레이션 추가가 필요하다(모델 파일에 TODO로 표시).
+- 재고 선점/할당/복구는 REST와 비동기 이벤트로 나뉜다: ① `POST /api/v1/wms/inventories/allocation` — 주문 접수 시점의 Soft-alloc(REST, client), 아직 `OutboundOrder`가 없을 수 있어 호출측 `referenceId`로 식별. ② `order.inventory.confirm` 이벤트 — 결제 완료 시 출고 지시 생성 + FEFO 하드 할당(비동기, [6.6](#66-비동기-이벤트-명세-typespec--notion-event-db) 참고). ③ `order.canceled.inventory-restore` 이벤트 — 주문 취소 시 재고 복구(비동기). ②③은 원래 REST(`/internal/v1/wms/outbounds/orders`, `/internal/v1/wms/inventories/restore`)였다가 전환했다. 실제 연동 순서/책임 분리는 확정된 것이 아니라 계약상 가정이다.
+- `models/workers.dto.tsp` + `routes/client/workers.api.tsp`는 논의된 파일 목록에 없었지만 "`/api/v1/wms/workers/**`라는 독립된 base path"라 새로 추가했다. `Worker`는 아직 Java 엔티티가 없어 구현 전 엔티티/마이그레이션 추가가 필요하다(모델 파일에 TODO로 표시).
 - `routes/client/inventory.api.tsp`의 `Locations` interface(`/api/v1/wms/warehouses/**`, `/api/v1/wms/locations/**`)는 base path가 `/api/v1/wms/inventories`와 달라 같은 파일 안에서도 별도 `interface`로 분리했다. Warehouse/Location 마스터 관리가 커지면 그때 `warehouse.dto.tsp`/`warehouse.api.tsp`로 완전히 독립시킨다.
 - 아직 확정되지 않은 도메인 규칙(FEFO 할당, 패킹/송장, 모니터링 지표 등)에 걸린 모델·엔드포인트는 `[placeholder]` 표시 + `// TODO:`/`// 참고:` 주석으로 남기고, 계약은 최소 형태로만 작성합니다. 요구사항이 정해지면 그때 필드를 채웁니다.
 - 엔티티에 없는 필드가 요청/응답에 필요해지면(예: `InboundOrder.poNumber`) `// TODO:` 주석으로 남기고 엔티티/마이그레이션 작업과 별도로 추적합니다.
@@ -290,13 +291,39 @@ npm run sync:notion            # 실제 upsert
 ```
 
 - 매칭 키는 `PATH(endpoint)` + `METHOD`. 같은 조합이 있으면 속성 갱신 + 본문 전체 재작성, 없으면 새 행 생성.
-- `피드백/수정요청`, `검토 상태`는 업데이트 payload에 아예 포함하지 않아서 절대 덮어쓰지 않는다. `검토 상태`는 새 행을 만들 때만 기본값("🟢 정상")을 채운다. **`중요도`는 보호 대상이 아니라 매번 "중"으로 덮어쓴다** — 특정 엔드포인트의 중요도를 수동으로 올려놨다면 다음 sync에서 되돌아간다. 이것도 보존하고 싶으면 스크립트의 `PROTECTED_PROPERTIES`/`buildProperties`를 고치면 된다.
+- `피드백/수정요청`, `검토 상태`는 업데이트 payload에 아예 포함하지 않아서 절대 덮어쓰지 않는다(`buildProperties`가 이 두 키를 아예 만들지 않는 방식). `검토 상태`는 새 행을 만들 때만 기본값("🟢 정상")을 채운다. **`중요도`는 보호 대상이 아니라 매번 "중"으로 덮어쓴다** — 특정 엔드포인트의 중요도를 수동으로 올려놨다면 다음 sync에서 되돌아간다. 이것도 보존하고 싶으면 스크립트의 `buildProperties`를 고치면 된다.
 - 페이지 "속성"과 달리 페이지 "본문"(Request/Response 블록)은 매번 통째로 지우고 새로 쓴다. 팀원이 본문에 직접 적어둔 메모는 다음 sync에서 사라지니, 코멘트는 본문이 아니라 `피드백/수정요청` 속성에 남기도록 안내한다.
 - Request Body/Response 예시 JSON은 TypeSpec에 `@example`을 안 붙여놔서 스키마를 보고 자동 생성한 값이다 (문자열은 `"string"`, `*Id`류 정수는 `1`, `*quantity`류는 `10` 등 휴리스틱). 실제 값이 아니라 "필드가 이런 모양"이라는 뜻으로만 보면 된다.
 - "HTTP 에러 코드 정의" 표는 OpenAPI 스펙에 도메인별 에러 코드가 없어서(`default` → `ErrorResponse`만 정의됨) `common/exception/GlobalErrorCode.java`의 공통 코드(COMMON400~500)로 채운 기본값이다. 엔드포인트별 도메인 에러 코드는 이 스크립트가 알 방법이 없으니 팀원이 직접 보강해야 한다.
 - 노션 API 2025-09-03부터 데이터베이스 아래에 "data source" 개념이 생겨서, 행 조회는 `dataSources.query`로 한다(SDK에 `databases.query`가 아예 없어졌다). 스크립트가 `NOTION_DATABASE_ID`로 첫 번째 data source를 자동으로 찾아 쓰므로 평소 쓰는 단일 data source 데이터베이스라면 신경 쓸 필요 없다.
 - 실행 시작 시 데이터베이스에 9개 속성(이름/PATH(endpoint)/METHOD/Bearer/도메인/상세/중요도/피드백·수정요청/검토 상태)이 정확한 타입으로 있는지 먼저 검증하고, 하나라도 다르면 무엇이 문제인지 즉시 알려주고 종료한다.
-- GitHub Actions: `.github/workflows/ci-wms-service.yml`의 `sync-notion` job이 `services/wms-service/**` 변경을 `develop`에 push할 때(+ 수동 실행) 돌린다. PR에서는 돌지 않는다(`if: github.event_name != 'pull_request'`) — merge된 것만 문서에 반영하기 위함. 리포지토리 Settings → Secrets에 `NOTION_TOKEN`, `NOTION_DATABASE_ID`를 등록해야 동작한다.
+- GitHub Actions: `.github/workflows/ci-wms-service.yml`의 `sync-notion` job이 `services/wms-service/**` 변경을 `develop`에 push할 때(+ 수동 실행) 돌린다. PR에서는 돌지 않는다(`if: github.event_name != 'pull_request'`) — merge된 것만 문서에 반영하기 위함. 리포지토리 Settings → Secrets에 `NOTION_TOKEN`, `NOTION_DATABASE_ID`, `NOTION_EVENT_DATABASE_ID`를 등록해야 동작한다.
+- OpenAPI 파싱/예시 생성/노션 블록 빌더/노션 API 호출 같은 공통 로직은 `scripts/lib/notion-openapi.js`에 모아뒀다. [6.6](#66-비동기-이벤트-명세-typespec--notion-event-db)의 이벤트 동기화 스크립트도 이 파일을 그대로 가져다 쓴다.
+
+### 6.6 비동기 이벤트 명세 (TypeSpec → Notion Event DB)
+
+RabbitMQ/Kafka 이벤트도 REST와 같은 TypeSpec 프로젝트(`main.tsp`) 안에서 관리한다 — 별도 컴파일 단위로 뺄 이유가 없었다: 이벤트는 HTTP 오퍼레이션이 없어서 `doc.paths`에는 전혀 나타나지 않고, `sync-notion-events.js`는 애초에 `doc.components.schemas`에서 이벤트 메타데이터 필드(아래)를 가진 것만 골라 읽으므로 REST DTO와 한 파일에 섞여 있어도 서로 간섭하지 않는다. `routes/events/`는 `routes/internal/`, `routes/client/`와 나란한 세 번째 카테고리다 — 다만 `@route/@get/@post` 대신 리터럴 타입 필드로 계약을 표현한다는 점만 다르다.
+
+```
+models/events.dto.tsp            # 이벤트 페이로드 모델 (OrderEvent, OrderEventItem — REST의 Request/Response DTO와 같은 자리)
+routes/events/inventory.events.tsp # 이벤트 정의 (OrderInventoryConfirmEvent 등 — REST의 interface와 같은 자리)
+```
+
+이벤트 하나는 producer/consumer/topic/exchange/queue/dataFormat/payloadType을 **리터럴 타입 필드**로 박아 넣은 모델이다. TypeSpec에서 `producer: "order";`처럼 프로퍼티 타입 자체를 문자열 리터럴로 주면, OpenAPI로 컴파일됐을 때 `{ type: "string", enum: ["order"] }`가 되고, `scripts/sync-notion-events.js`가 `enum[0]`을 읽어 메타데이터로 파싱한다 — 별도 emitter나 커스텀 데코레이터 없이 기존 `@typespec/openapi3` 파이프라인을 그대로 재사용하는 트릭이다. HTTP 오퍼레이션이 하나도 없는 모델(orphan)도 `@service`가 선언된 프로젝트 안에 있으면 전부 `components.schemas`에 실린다는 걸 확인하고 이 방식으로 정했다. producer/consumer가 여럿이면 콤마로 구분한 문자열 하나로 둔다(예: `"product,wms"`) — 스크립트가 split해서 노션 Multi-select 배열로 바꾼다.
+
+```bash
+npm run build                     # main.tsp 전체 컴파일 → REST 경로 + 이벤트 스키마가 같은 tsp-output/schema/*.yaml에 함께 실림
+npm run sync:notion:events:dry     # 노션 호출 없이 tsp-output/notion-events-dry-run.json으로 미리보기
+npm run sync:notion:events          # 실제 upsert (NOTION_TOKEN, NOTION_EVENT_DATABASE_ID 필요)
+```
+
+- 매칭 키는 `Topic` **또는** `개요` — 둘 중 하나라도 같으면 같은 이벤트로 보고 갱신한다.
+- 노션 DB 속성: `개요`(Title), `Topic`(Text — 매칭용으로 추가. 사용자가 준 컬럼 목록엔 없었지만 매칭 키로 꼭 필요해서 넣었다), `송신`/`수신`(Multi-select), `통신 방식`(Select, 이 저장소에 RabbitMQ만 있어서 항상 `"rabbitmq"`로 채움), `피드백/수정요청`/`검토 상태`(REST와 동일하게 보호).
+- 페이지 본문: 📌 메타데이터 callout → 📖 통신 개요(모델의 `@doc`) → ⚙️ 라우팅 상세(bullet) → 🔹 Header 코드블록(`content_type`/`__TypeId__`) → 🔹 Body Payload 코드블록(payload 스키마 기반 자동 예시).
+- 2026-09-15: `POST /internal/v1/wms/inventories/restore`와 `POST /internal/v1/wms/outbounds/orders` REST 스펙을 비동기 이벤트로 전환하면서 삭제했다(`routes/internal/{inventory,outbound}.internal.tsp` 제거, 관련 orphan 모델도 정리). 이제 이 두 흐름은 아래 이벤트가 대체한다:
+  - `order.inventory.confirm` — 결제 완료 → WMS가 FEFO 재고 할당 + 출고 지시 생성 (기존 outbounds/orders를 대체)
+  - `order.canceled.inventory-restore` — 결제 후 주문 취소 → WMS가 재고 복구 (기존 inventories/restore를 대체)
+- ⚠️ **실제 코드에서 발견한 불일치**: `order.canceled.inventory-restore`는 order-service의 `PaymentCancellationEvent`가 실제로 발행하는 routingKey다. 그런데 product-service의 `InventoryMessagingProperties.restoreRoutingKey` 기본값은 `order.inventory.restore`로, 아무도 발행하지 않는 값이다(레포 전체에서 이 문자열을 publish하는 코드가 없다). 즉 product-service의 재고 복구 큐는 지금 아무 메시지도 못 받고 있을 가능성이 있다 — WMS는 실제로 발행되는 값(`order.canceled.inventory-restore`)을 기준으로 스펙을 작성했다. product-service 쪽은 이번 작업 범위가 아니라 손대지 않았으니 별도로 확인이 필요하다.
 
 ## 7. 참고 문서
 
@@ -321,6 +348,8 @@ npm run sync:notion            # 실제 upsert
 | 2026-09-14 | 전체 API 목록(18개 엔드포인트) 반영: 창고/로케이션 마스터(`Locations` interface), 작업자 관리(`workers.dto/api.tsp`, 신규), 재고 선점을 Soft-alloc(client)/FEFO 하드 할당(internal)/복구(internal) 3단계로 재설계 | 완료 | 21개 오퍼레이션(20개 경로) 생성, `redocly lint` 에러 0개. `Worker`는 Java 엔티티 아직 없음(TODO) |
 | 2026-09-14 | 로컬 Swagger 실시간 동기화 구성(`swagger-ui-watcher` + `tsp compile --watch`, `npm run dev`), `tspconfig.yaml`의 `kind: project` 제거(있으면 `--watch`가 에러로 죽는 버그), `openapi-versions`에 3.0.0 추가 | 완료 | 필드 추가 → 브라우저 자동 반영까지 실측 3초 내. springdoc(`:8085/swagger-ui`)과는 여전히 별개(컨트롤러 미구현이라 `paths: []`) |
 | 2026-09-14 | OpenAPI → Notion 동기화 스크립트(`scripts/sync-notion-db.js`) 작성, `ci-wms-service.yml`에 `sync-notion` job 추가(별도 워크플로 파일은 만들지 않고 기존 CI 파일에 통합) | 완료 | 21개 엔드포인트 전부 `--dry-run`으로 파싱/블록 생성 검증 완료(실제 노션 호출은 미검증 — 토큰 없음). `@notionhq/client` v5가 Notion API 2025-09-03(data source 모델) 대상이라 `dataSources.query`로 구현, `databases.query`는 SDK에 없음 |
+| 2026-09-15 | `POST /internal/v1/wms/inventories/restore`, `POST /internal/v1/wms/outbounds/orders`를 비동기 이벤트(`order.inventory.confirm`, `order.canceled.inventory-restore`)로 전환. `events/` TypeSpec 스펙 + `scripts/sync-notion-events.js` 작성, 공통 로직은 `scripts/lib/notion-openapi.js`로 추출해 REST 스크립트와 공유 | 완료 | REST/이벤트 양쪽 `--dry-run` 검증 완료. order-service `PaymentCancellationEvent`가 실제 발행하는 routingKey(`order.canceled.inventory-restore`)와 product-service `InventoryMessagingProperties`의 restore 기본값(`order.inventory.restore`)이 서로 다른 걸 발견 — product-service 쪽 재고 복구 큐가 메시지를 못 받고 있을 가능성, 별도 확인 필요(이번 작업 범위 아님) |
+| 2026-09-15 | 이벤트 스펙을 별도 컴파일 단위(`api-spec/events/`)에서 `main.tsp` 하나로 통합 — `models/events.dto.tsp`(페이로드) + `routes/events/inventory.events.tsp`(이벤트 정의, `routes/{internal,client}`와 나란한 세 번째 카테고리)로 재배치, `build:events` 스크립트 제거 | 완료 | 분리해뒀던 이유(별도 emitter 필요할까 봐)가 실제로는 근거가 없었음 — `doc.paths`/`doc.components.schemas` 모양으로 구분하는 두 스크립트는 REST/이벤트가 한 파일에 섞여 있어도 문제없다는 걸 재확인. `npm run build` 한 번으로 REST 19개 경로 + 이벤트 2개 스키마 동시 생성, 양쪽 `--dry-run` 재검증 완료 |
 | - | Repository(2파일 구조)·Service·Controller 구현 | 계획 | 엔티티만 우선 반영, [erd-spec.md](./erd-spec.md)의 미결 사항(로케이션 주소 체계, 재고 예약 시점 등) 및 `api-spec/` 계약 먼저 확정 필요 |
 | - | `InboundOrder`에 `po_number` 컬럼 추가 검토 | 계획 | `api-spec/inbound.tsp`의 TODO 참고 — SCM 발주번호 연계에 필요 |
 | - | Postman 팀 워크스페이스 자동 동기화 스크립트 | 계획 | Postman API Key/컬렉션 UID 발급 후 진행 ([6.4](#64-postman-동기화) 참고) |

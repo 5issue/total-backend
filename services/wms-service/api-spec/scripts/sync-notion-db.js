@@ -22,8 +22,23 @@ import 'dotenv/config';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { load as loadYaml } from 'js-yaml';
-import { Client, isNotionClientError, APIErrorCode } from '@notionhq/client';
+import { Client } from '@notionhq/client';
+import {
+  fail,
+  loadSpec,
+  resolveSchema,
+  describeType,
+  generateExample,
+  rt,
+  heading,
+  paragraph,
+  codeBlock,
+  table,
+  sleep,
+  resolveDataSourceId,
+  validateDatabaseSchema,
+  upsertNotionPage,
+} from './lib/notion-openapi.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = path.resolve(__dirname, '..');
@@ -32,7 +47,6 @@ const NOTION_TOKEN = process.env.NOTION_TOKEN;
 const NOTION_DATABASE_ID = process.env.NOTION_DATABASE_ID;
 const DRY_RUN = process.argv.includes('--dry-run') || process.env.DRY_RUN === 'true';
 
-const PROTECTED_PROPERTIES = ['피드백/수정요청', '검토 상태'];
 const DEFAULT_REVIEW_STATUS = '🟢 정상';
 const DEFAULT_DOMAIN = 'WMS';
 const DEFAULT_IMPORTANCE = '중';
@@ -49,17 +63,19 @@ const COMMON_ERROR_ROWS = [
   ['500', 'COMMON500', '서버 내부 오류', '서버 내부 오류가 발생했습니다.'],
 ];
 
-const STATUS_TEXT = {
-  200: 'OK',
-  201: 'Created',
-  202: 'Accepted',
-  204: 'No Content',
-};
+const STATUS_TEXT = { 200: 'OK', 201: 'Created', 202: 'Accepted', 204: 'No Content' };
 
-function fail(message) {
-  console.error(`✖ ${message}`);
-  process.exit(1);
-}
+const REQUIRED_PROPERTIES = {
+  이름: 'title',
+  'PATH(endpoint)': 'rich_text',
+  METHOD: 'select',
+  Bearer: 'checkbox',
+  도메인: 'select',
+  상세: 'select',
+  중요도: 'select',
+  '피드백/수정요청': 'rich_text',
+  '검토 상태': 'select',
+};
 
 function resolveSpecPath() {
   const cliArg = process.argv.slice(2).find((arg) => !arg.startsWith('--'));
@@ -80,113 +96,6 @@ function resolveSpecPath() {
     `OpenAPI 스펙 파일을 찾을 수 없습니다. 먼저 'npm run build'를 실행하거나, ` +
       `OPENAPI_SPEC_PATH 환경변수 / 첫 번째 인자로 경로를 지정하세요. (확인한 경로: ${candidates.join(', ')})`,
   );
-}
-
-function loadSpec(specPath) {
-  if (!fs.existsSync(specPath)) {
-    fail(`파일이 존재하지 않습니다: ${specPath}`);
-  }
-  const raw = fs.readFileSync(specPath, 'utf8');
-  return loadYaml(raw);
-}
-
-// ── OpenAPI 스키마 유틸 ──────────────────────────────────────────────────
-// TypeSpec의 openapi3 emitter는 `T | null`을 버전에 따라 다르게 표현한다:
-//   3.0: { allOf: [{ $ref }], nullable: true }  또는  { type, nullable: true }
-//   3.1: { anyOf: [{ $ref } | {...}, { type: 'null' }] }
-// unwrapNullable은 두 형태 모두에서 "null이 아닌 쪽" 스키마 노드를 꺼낸다.
-
-function refName(ref) {
-  return ref.replace('#/components/schemas/', '');
-}
-
-function unwrapNullable(schema) {
-  if (!schema) return schema;
-  if (Array.isArray(schema.allOf)) {
-    const withRef = schema.allOf.find((s) => s.$ref);
-    if (withRef) return withRef;
-  }
-  if (Array.isArray(schema.anyOf)) {
-    const notNull = schema.anyOf.find((s) => s.type !== 'null');
-    if (notNull) return notNull;
-  }
-  return schema;
-}
-
-function resolveSchema(doc, schema) {
-  const unwrapped = unwrapNullable(schema);
-  if (unwrapped?.$ref) {
-    return doc.components.schemas[refName(unwrapped.$ref)];
-  }
-  return unwrapped;
-}
-
-function describeType(doc, schema, depth = 0) {
-  if (!schema || depth > 5) return 'unknown';
-  const unwrapped = unwrapNullable(schema);
-
-  if (unwrapped.$ref) {
-    const name = refName(unwrapped.$ref);
-    const target = doc.components.schemas[name];
-    if (target?.enum) return `${name} (enum: ${target.enum.join('|')})`;
-    return name;
-  }
-  if (unwrapped.type === 'array') {
-    return `array<${describeType(doc, unwrapped.items, depth + 1)}>`;
-  }
-  if (unwrapped.enum) {
-    return `enum: ${unwrapped.enum.join('|')}`;
-  }
-  if (unwrapped.type === 'integer' || unwrapped.type === 'number') {
-    return unwrapped.format ? `${unwrapped.type}(${unwrapped.format})` : unwrapped.type;
-  }
-  if (unwrapped.type === 'string') {
-    return unwrapped.format ? `string(${unwrapped.format})` : 'string';
-  }
-  return unwrapped.type || 'object';
-}
-
-function generateExample(doc, schema, { seen = new Set(), depth = 0, keyHint = '' } = {}) {
-  if (!schema || depth > 8) return null;
-  const unwrapped = unwrapNullable(schema);
-
-  let resolved = unwrapped;
-  let name = null;
-  if (unwrapped.$ref) {
-    name = refName(unwrapped.$ref);
-    if (seen.has(name)) return {}; // 순환 참조 가드
-    resolved = doc.components.schemas[name];
-    seen = new Set(seen).add(name);
-  }
-  if (!resolved) return null;
-
-  if (resolved.enum) return resolved.enum[0];
-
-  if (resolved.type === 'array') {
-    return [generateExample(doc, resolved.items, { seen, depth: depth + 1, keyHint })];
-  }
-  if (resolved.type === 'object' || resolved.properties) {
-    const obj = {};
-    for (const [key, propSchema] of Object.entries(resolved.properties || {})) {
-      obj[key] = generateExample(doc, propSchema, { seen, depth: depth + 1, keyHint: key });
-    }
-    return obj;
-  }
-  switch (resolved.type) {
-    case 'integer':
-    case 'number':
-      if (keyHint === 'id' || /Id$/.test(keyHint)) return 1;
-      if (/quantity/i.test(keyHint)) return 10;
-      return 0;
-    case 'boolean':
-      return true;
-    case 'string':
-      if (resolved.format === 'date-time') return '2026-09-14T00:00:00Z';
-      if (resolved.format === 'date') return '2026-09-14';
-      return 'string';
-    default:
-      return null;
-  }
 }
 
 // ── OpenAPI 문서 → 엔드포인트 목록 ─────────────────────────────────────────
@@ -228,53 +137,6 @@ function extractEndpoints(doc) {
   return endpoints;
 }
 
-// ── 노션 블록 빌더 ─────────────────────────────────────────────────────
-
-const RICH_TEXT_LIMIT = 2000;
-
-function chunkText(text) {
-  const chunks = [];
-  for (let i = 0; i < text.length; i += RICH_TEXT_LIMIT) {
-    chunks.push(text.slice(i, i + RICH_TEXT_LIMIT));
-  }
-  return chunks.length ? chunks : [''];
-}
-
-function rt(text) {
-  return chunkText(String(text ?? '')).map((chunk) => ({ type: 'text', text: { content: chunk } }));
-}
-
-function heading(text, level = 2) {
-  const type = level === 2 ? 'heading_2' : 'heading_3';
-  return { object: 'block', type, [type]: { rich_text: rt(text) } };
-}
-
-function paragraph(text) {
-  return { object: 'block', type: 'paragraph', paragraph: { rich_text: rt(text) } };
-}
-
-function codeBlock(value) {
-  const json = JSON.stringify(value, null, 2);
-  return { object: 'block', type: 'code', code: { language: 'json', rich_text: rt(json) } };
-}
-
-function tableRow(cells) {
-  return { object: 'block', type: 'table_row', table_row: { cells: cells.map((c) => rt(c)) } };
-}
-
-function table(headers, rows) {
-  return {
-    object: 'block',
-    type: 'table',
-    table: {
-      table_width: headers.length,
-      has_column_header: true,
-      has_row_header: false,
-      children: [tableRow(headers), ...rows.map(tableRow)],
-    },
-  };
-}
-
 // ── 페이지 본문 조립 ─────────────────────────────────────────────────────
 
 function buildFieldRows(doc, schema) {
@@ -300,13 +162,7 @@ function buildSuccessExample(doc, dataSchema) {
 }
 
 function buildErrorExample() {
-  return {
-    status: 'ERROR',
-    message: '잘못된 요청입니다.',
-    data: null,
-    error: 'COMMON400',
-    timestamp: '2026-09-14T00:00:00Z',
-  };
+  return { status: 'ERROR', message: '잘못된 요청입니다.', data: null, error: 'COMMON400', timestamp: '2026-09-14T00:00:00Z' };
 }
 
 function buildPageChildren(doc, ep) {
@@ -372,29 +228,7 @@ function buildPageChildren(doc, ep) {
   return blocks;
 }
 
-// ── 노션 API 연동 ─────────────────────────────────────────────────────
-
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-async function withRetry(fn, { retries = 5, label = 'Notion API 호출' } = {}) {
-  for (let attempt = 1; attempt <= retries; attempt += 1) {
-    try {
-      return await fn();
-    } catch (err) {
-      const retryable =
-        isNotionClientError(err) &&
-        (err.code === APIErrorCode.RateLimited || err.code === APIErrorCode.InternalServerError || err.code === APIErrorCode.ServiceUnavailable);
-      if (!retryable || attempt === retries) throw err;
-      const waitMs = 1000 * 2 ** (attempt - 1);
-      console.warn(`  ↳ ${label} 재시도 (${attempt}/${retries}) — ${waitMs}ms 대기 (${err.code})`);
-      await sleep(waitMs);
-    }
-  }
-}
-
-function buildProperties(ep, { isNew }) {
+function buildProperties(ep, isNew) {
   const properties = {
     이름: { title: rt(ep.summary) },
     'PATH(endpoint)': { rich_text: rt(ep.path) },
@@ -410,129 +244,13 @@ function buildProperties(ep, { isNew }) {
   return properties;
 }
 
-// Notion API 2025-09-03부터 데이터베이스 아래에 "data source"가 생겼고, 행 조회/필터는
-// database_id가 아니라 data_source_id로 한다 (databases.query는 SDK에서 아예 사라졌다).
-// 지금 DB가 단일 data source(거의 모든 일반 DB가 여기 해당)라고 가정하고 첫 번째 것을 사용한다.
-async function resolveDataSourceId(notion, databaseId) {
-  const db = await withRetry(() => notion.databases.retrieve({ database_id: databaseId }), { label: '데이터베이스 조회' });
-  const dataSource = db.data_sources?.[0];
-  if (!dataSource) {
-    fail(`데이터베이스(${databaseId})에서 data source를 찾을 수 없습니다. NOTION_DATABASE_ID가 맞는지 확인하세요.`);
-  }
-  if (db.data_sources.length > 1) {
-    console.warn(
-      `⚠ 이 데이터베이스에 data source가 ${db.data_sources.length}개 있습니다. 첫 번째("${dataSource.name}")만 사용합니다.`,
-    );
-  }
-  return dataSource.id;
-}
-
-const REQUIRED_PROPERTIES = {
-  이름: 'title',
-  'PATH(endpoint)': 'rich_text',
-  METHOD: 'select',
-  Bearer: 'checkbox',
-  도메인: 'select',
-  상세: 'select',
-  중요도: 'select',
-  '피드백/수정요청': 'rich_text',
-  '검토 상태': 'select',
-};
-
-// 속성 이름이 하나라도 다르면 매 엔드포인트마다 알아보기 힘든 에러가 반복되므로,
-// 루프 시작 전에 한 번에 검증해서 무엇이 문제인지 바로 알려준다.
-async function validateDatabaseSchema(notion, dataSourceId) {
-  const dataSource = await withRetry(() => notion.dataSources.retrieve({ data_source_id: dataSourceId }), {
-    label: '데이터베이스 스키마 조회',
-  });
-  const missing = [];
-  const wrongType = [];
-  for (const [name, expectedType] of Object.entries(REQUIRED_PROPERTIES)) {
-    const prop = dataSource.properties[name];
-    if (!prop) {
-      missing.push(name);
-    } else if (prop.type !== expectedType) {
-      wrongType.push(`${name} (기대: ${expectedType}, 실제: ${prop.type})`);
-    }
-  }
-  if (missing.length || wrongType.length) {
-    const lines = [];
-    if (missing.length) lines.push(`누락된 속성: ${missing.join(', ')}`);
-    if (wrongType.length) lines.push(`타입이 다른 속성: ${wrongType.join(', ')}`);
-    fail(`노션 데이터베이스 속성이 예상과 다릅니다.\n  ${lines.join('\n  ')}`);
-  }
-}
-
-async function findExistingPage(notion, dataSourceId, ep) {
-  const response = await withRetry(
-    () =>
-      notion.dataSources.query({
-        data_source_id: dataSourceId,
-        filter: {
-          and: [
-            { property: 'PATH(endpoint)', rich_text: { equals: ep.path } },
-            { property: 'METHOD', select: { equals: ep.method } },
-          ],
-        },
-      }),
-    { label: `${ep.method} ${ep.path} 조회` },
-  );
-  return response.results[0] ?? null;
-}
-
-async function clearPageChildren(notion, pageId) {
-  let cursor;
-  const blockIds = [];
-  do {
-    const response = await withRetry(() => notion.blocks.children.list({ block_id: pageId, start_cursor: cursor, page_size: 100 }), {
-      label: '기존 블록 목록 조회',
-    });
-    blockIds.push(...response.results.map((b) => b.id));
-    cursor = response.has_more ? response.next_cursor : undefined;
-  } while (cursor);
-
-  for (const blockId of blockIds) {
-    await withRetry(() => notion.blocks.delete({ block_id: blockId }), { label: '기존 블록 삭제' });
-    await sleep(120);
-  }
-}
-
-async function appendChildrenInChunks(notion, pageId, children) {
-  const CHUNK_SIZE = 90;
-  for (let i = 0; i < children.length; i += CHUNK_SIZE) {
-    const chunk = children.slice(i, i + CHUNK_SIZE);
-    await withRetry(() => notion.blocks.children.append({ block_id: pageId, children: chunk }), { label: '본문 블록 추가' });
-    await sleep(150);
-  }
-}
-
-async function upsertEndpoint(notion, dataSourceId, doc, ep) {
-  const existing = await findExistingPage(notion, dataSourceId, ep);
-  const isNew = !existing;
-
-  let pageId;
-  if (isNew) {
-    const created = await withRetry(
-      () =>
-        notion.pages.create({
-          parent: { data_source_id: dataSourceId },
-          properties: buildProperties(ep, { isNew: true }),
-        }),
-      { label: `${ep.method} ${ep.path} 생성` },
-    );
-    pageId = created.id;
-  } else {
-    pageId = existing.id;
-    await withRetry(() => notion.pages.update({ page_id: pageId, properties: buildProperties(ep, { isNew: false }) }), {
-      label: `${ep.method} ${ep.path} 속성 갱신`,
-    });
-    await clearPageChildren(notion, pageId);
-  }
-
-  const children = buildPageChildren(doc, ep);
-  await appendChildrenInChunks(notion, pageId, children);
-
-  return isNew ? 'created' : 'updated';
+function endpointFilter(ep) {
+  return {
+    and: [
+      { property: 'PATH(endpoint)', rich_text: { equals: ep.path } },
+      { property: 'METHOD', select: { equals: ep.method } },
+    ],
+  };
 }
 
 // ── 메인 ─────────────────────────────────────────────────────────────
@@ -549,7 +267,7 @@ async function main() {
     const preview = endpoints.map((ep) => ({
       method: ep.method,
       path: ep.path,
-      properties: buildProperties(ep, { isNew: true }),
+      properties: buildProperties(ep, true),
       children: buildPageChildren(doc, ep),
     }));
     const outPath = path.join(PROJECT_ROOT, 'tsp-output', 'notion-dry-run.json');
@@ -568,13 +286,19 @@ async function main() {
 
   const notion = new Client({ auth: NOTION_TOKEN });
   const dataSourceId = await resolveDataSourceId(notion, NOTION_DATABASE_ID);
-  await validateDatabaseSchema(notion, dataSourceId);
+  await validateDatabaseSchema(notion, dataSourceId, REQUIRED_PROPERTIES);
 
   const results = { created: 0, updated: 0, failed: [] };
   for (const ep of endpoints) {
-    process.stdout.write(`- ${ep.method.padEnd(6)} ${ep.path} ... `);
+    const label = `${ep.method} ${ep.path}`;
+    process.stdout.write(`- ${label.padEnd(45)} ... `);
     try {
-      const outcome = await upsertEndpoint(notion, dataSourceId, doc, ep);
+      const outcome = await upsertNotionPage(notion, dataSourceId, {
+        filter: endpointFilter(ep),
+        buildProperties: (isNew) => buildProperties(ep, isNew),
+        buildChildren: () => buildPageChildren(doc, ep),
+        label,
+      });
       results[outcome] += 1;
       console.log(outcome === 'created' ? '생성됨' : '갱신됨');
     } catch (err) {

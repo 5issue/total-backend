@@ -10,17 +10,18 @@ import "./models/inbound.dto.tsp";
 import "./models/inventory.dto.tsp";
 import "./models/outbound.dto.tsp";
 import "./models/workers.dto.tsp";
+import "./models/events.dto.tsp";
 
 import "./routes/internal/products.internal.tsp";
 import "./routes/internal/inbound.internal.tsp";
-import "./routes/internal/inventory.internal.tsp";
-import "./routes/internal/outbound.internal.tsp";
 
 import "./routes/client/inbound.api.tsp";
 import "./routes/client/inventory.api.tsp";
 import "./routes/client/outbound.api.tsp";
 import "./routes/client/monitoring.api.tsp";
 import "./routes/client/workers.api.tsp";
+
+import "./routes/events/inventory.events.tsp";
 
 using TypeSpec.Http;
 using TypeSpec.OpenAPI;
@@ -33,8 +34,8 @@ using TypeSpec.OpenAPI;
 @tagMetadata("Products", #{ description: "상품 서비스 → WMS 상품 스냅샷(WmsProduct) 동기화" })
 @tagMetadata("Warehouse", #{ description: "창고 구역/로케이션 마스터 관리" })
 @tagMetadata("Inbound", #{ description: "입고 예정(ASN) 생성, 검수, 적치" })
-@tagMetadata("Inventory", #{ description: "재고 조회, 로케이션 이동, 재고 선점/복구" })
-@tagMetadata("Outbound", #{ description: "출고 지시 생성, 피킹, 패킹, 송장" })
+@tagMetadata("Inventory", #{ description: "재고 조회, 로케이션 이동, 재고 선점(Soft-alloc). 하드 할당/복구는 비동기 이벤트로 처리(routes/events/)" })
+@tagMetadata("Outbound", #{ description: "피킹, 패킹, 송장. 출고 지시 생성은 비동기 이벤트로 처리(routes/events/)" })
 @tagMetadata("Workers", #{ description: "창고 작업자 등록 및 상태 관리" })
 @tagMetadata("Monitoring", #{ description: "로케이션 히트맵, 작업자 생산성(UPH) 등 운영 모니터링" })
 namespace WmsService;

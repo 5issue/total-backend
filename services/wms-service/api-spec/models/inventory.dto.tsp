@@ -109,8 +109,8 @@ model ProductInventorySummaryResponse {
 // ── client: 재고 선점(Soft-alloc) ──────────────────────────────────────
 // 참고: 이 시점에는 아직 WMS에 OutboundOrder가 없을 수 있어(주문 접수 시점),
 // outboundOrderId 대신 호출자가 넘기는 referenceId로 선점 건을 식별한다.
-// 이후 /internal/v1/wms/outbounds/orders에서 FEFO 하드 할당으로 전환되고,
-// 주문이 취소되면 /internal/v1/wms/inventories/restore로 복구한다.
+// 이후 order.inventory.confirm 이벤트(events/inventory.events.tsp)에서 FEFO 하드 할당으로
+// 전환되고, 주문이 취소되면 order.canceled.inventory-restore 이벤트로 복구한다.
 
 model StockAllocationItemRequest {
   productId: int64;
@@ -169,17 +169,5 @@ model StockMovementResponse {
   status: MovementStatus;
 }
 
-// ── internal: 주문 취소로 인한 재고 복구 ──────────────────────────────────
-
-model StockRestoreRequest {
-  @doc("StockAllocationRequest.referenceId와 동일한 값.")
-  referenceId: string;
-
-  @doc("결제 실패/주문 취소 등 복구 사유.")
-  reason: string;
-}
-
-model StockRestoreResponse {
-  referenceId: string;
-  restored: boolean;
-}
+// 참고: "주문 취소로 인한 재고 복구"는 예전에 REST(POST /internal/v1/wms/inventories/restore)였지만,
+// 비동기 이벤트(order.canceled.inventory-restore)로 전환했다 — events/inventory.events.tsp 참고.

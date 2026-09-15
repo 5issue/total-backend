@@ -3,15 +3,6 @@ import "../common/types.tsp";
 
 namespace WmsService.Outbound;
 
-/** `OutboundOrder.OutboundOrderStatus`와 1:1로 대응한다. */
-enum OutboundOrderStatus {
-  ALLOCATED,
-  PICKING,
-  PACKING,
-  COMPLETED,
-  CANCELED,
-}
-
 /** `OutboundItem.OutboundItemStatus`와 1:1로 대응한다. */
 enum OutboundItemStatus {
   PENDING,
@@ -19,27 +10,9 @@ enum OutboundItemStatus {
   SHORTAGE,
 }
 
-// ── internal: OMS 주문 수신 + FEFO 재고 할당 ──────────────────────────────
-// 이 호출 하나로 출고 지시(OutboundOrder) 생성과 FEFO 기준 하드 할당(LOT/로케이션 배정)을
-// 함께 수행한다. 클라이언트 쪽 Soft-alloc(inventory.internal.tsp 참고)과는 별개의, 확정 단계다.
-// 참고: FEFO 할당 로직 자체는 docs/erd-spec.md 논의 필요 사항이라 결과 필드는 최소로 둔다.
-
-model OutboundItemRequest {
-  productId: int64;
-
-  @minValue(1)
-  orderedQuantity: int32;
-}
-
-model OutboundOrderCreateRequest {
-  @doc("프론트오피스 주문 ID (OMS/주문 도메인 연계).")
-  orderId: int64;
-
-  warehouseId: int64;
-
-  @minItems(1)
-  items: OutboundItemRequest[];
-}
+// 참고: 예전에는 여기 "OMS 주문 수신 + FEFO 재고 할당"을 REST(POST /internal/v1/wms/outbounds/orders)로
+// 받았지만, 비동기 이벤트(order.inventory.confirm)로 전환했다 — events/inventory.events.tsp 참고.
+// 출고 지시(OutboundOrder) 생성과 FEFO 하드 할당은 이제 그 이벤트 컨슈머 안에서 일어난다.
 
 model OutboundItemResponse {
   id: int64;
@@ -52,14 +25,6 @@ model OutboundItemResponse {
   allocatedLocationId: int64 | null;
   allocatedLotNo: string | null;
   allocatedExpiredDate: plainDate | null;
-}
-
-model OutboundOrderResponse {
-  id: int64;
-  orderId: int64;
-  warehouseId: int64;
-  status: OutboundOrderStatus;
-  items: OutboundItemResponse[];
 }
 
 // ── client: 피킹 ──────────────────────────────────────────
