@@ -1,5 +1,6 @@
 package com.kurly.wms.application;
 
+<<<<<<< HEAD
 import com.kurly.common.exception.BusinessException;
 import com.kurly.common.exception.EntityNotFoundException;
 import com.kurly.wms.domain.enums.StorageType;
@@ -24,23 +25,40 @@ import com.kurly.wms.infrastructure.jpa.InboundItemJpaRepository;
 import com.kurly.wms.infrastructure.jpa.InventoryJpaRepository;
 import com.kurly.wms.infrastructure.jpa.LocationJpaRepository;
 import com.kurly.wms.infrastructure.jpa.StockMovementJpaRepository;
+=======
+import com.kurly.common.exception.EntityNotFoundException;
+import com.kurly.wms.domain.repository.InboundOrderRepository;
+import com.kurly.wms.infrastructure.entity.InboundItem;
+import com.kurly.wms.infrastructure.entity.InboundItem.InboundItemStatus;
+import com.kurly.wms.infrastructure.entity.InboundOrder;
+import com.kurly.wms.infrastructure.entity.InboundOrder.InboundOrderStatus;
+import com.kurly.wms.infrastructure.entity.Warehouse;
+import com.kurly.wms.infrastructure.entity.WmsProduct;
+import com.kurly.wms.infrastructure.jpa.InboundItemJpaRepository;
+>>>>>>> 40e0939e (feat: 입고 예정(입고 전표) 생성)
 import com.kurly.wms.infrastructure.jpa.WarehouseJpaRepository;
 import com.kurly.wms.infrastructure.jpa.WmsProductJpaRepository;
 import com.kurly.wms.presentation.dto.InboundAsnCreateRequest;
 import com.kurly.wms.presentation.dto.InboundAsnItemRequest;
 import com.kurly.wms.presentation.dto.InboundItemResponse;
 import com.kurly.wms.presentation.dto.InboundOrderResponse;
+<<<<<<< HEAD
 import com.kurly.wms.presentation.dto.InspectItemRequest;
 import com.kurly.wms.presentation.dto.PutAwayConfirmRequest;
 import com.kurly.wms.presentation.dto.PutAwayRecommendationRequest;
 import com.kurly.wms.presentation.dto.PutAwayRecommendationResponse;
 import java.time.LocalDate;
 import java.util.EnumSet;
+=======
+>>>>>>> 40e0939e (feat: 입고 예정(입고 전표) 생성)
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
+<<<<<<< HEAD
 import org.springframework.data.domain.PageRequest;
+=======
+>>>>>>> 40e0939e (feat: 입고 예정(입고 전표) 생성)
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -48,16 +66,22 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class InboundOrderService {
 
+<<<<<<< HEAD
     private static final String RECOMMENDATION_REASON = "동선 최적화(aisle/rack/level/bin 오름차순) 기준 최전방 빈 로케이션";
 
+=======
+>>>>>>> 40e0939e (feat: 입고 예정(입고 전표) 생성)
     private final InboundOrderRepository inboundOrderRepository;
     private final InboundItemJpaRepository inboundItemJpaRepository;
     private final WarehouseJpaRepository warehouseJpaRepository;
     private final WmsProductJpaRepository wmsProductJpaRepository;
+<<<<<<< HEAD
     private final LocationJpaRepository locationJpaRepository;
     private final InventoryJpaRepository inventoryJpaRepository;
     private final StockMovementJpaRepository stockMovementJpaRepository;
     private final OutboxService outboxService;
+=======
+>>>>>>> 40e0939e (feat: 입고 예정(입고 전표) 생성)
 
     @Transactional
     public InboundOrderResponse createAsn(InboundAsnCreateRequest request) {
@@ -97,6 +121,7 @@ public class InboundOrderService {
 
         return InboundOrderResponse.of(inboundOrder, itemResponses);
     }
+<<<<<<< HEAD
 
     /**
      * 검수 완료 처리 + 버퍼 로케이션 재고 증가 + 적치 작업 지시(StockMovement) 생성 + 입고 완료
@@ -299,4 +324,6 @@ public class InboundOrderService {
                         .build()));
         target.receive(quantity);
     }
+=======
+>>>>>>> 40e0939e (feat: 입고 예정(입고 전표) 생성)
 }
