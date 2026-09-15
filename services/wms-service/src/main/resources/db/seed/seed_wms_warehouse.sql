@@ -56,23 +56,22 @@ ON CONFLICT (code) DO NOTHING;
 
 -- 2-1. 버퍼(임시 하차 도크) 2개
 INSERT INTO location (warehouse_id, location_type, storage_type, zone, aisle, rack, level, bin, status)
-SELECT w.id, 'BUFFER', 'ROOM_TEMPERATURE', 'BUFFER', 'DOCK', lpad(n::text, 2, '0'), 1, '01', 'ACTIVE'
+SELECT w.id, 'BUFFER', 'ROOM_TEMPERATURE', NULL, 'DOCK', lpad(n::text, 2, '0'), 1, '01', 'ACTIVE'
 FROM warehouse w
 CROSS JOIN generate_series(1, 2) AS n
 WHERE w.code = 'GIMPO_DC'
 ON CONFLICT (warehouse_id, aisle, rack, level, bin) DO NOTHING;
 
 -- 2-2. 보관존(PALLET_RACK) — storage_type별 2랙 x 2단 x 2빈 = 8개 x 3종 = 24개
--- zone은 location_type과 1:1(PALLET_RACK=STORAGE)이라 항상 'STORAGE' 고정값이다.
 INSERT INTO location (warehouse_id, location_type, storage_type, zone, aisle, rack, level, bin, status)
-SELECT w.id, 'PALLET_RACK', st.storage_type, 'STORAGE',
+SELECT w.id, 'PALLET_RACK', st.storage_type, st.zone_word || '_STORAGE',
        st.aisle_prefix || 'S01', lpad(rack::text, 2, '0'), level, lpad(bin::text, 2, '0'), 'ACTIVE'
 FROM warehouse w
 CROSS JOIN (VALUES
-    ('ROOM_TEMPERATURE', 'A'),
-    ('REFRIGERATED',     'B'),
-    ('FROZEN',           'C')
-) AS st(storage_type, aisle_prefix)
+    ('ROOM_TEMPERATURE', 'ROOM', 'A'),
+    ('REFRIGERATED',     'REFRI', 'B'),
+    ('FROZEN',           'FROZEN', 'C')
+) AS st(storage_type, zone_word, aisle_prefix)
 CROSS JOIN generate_series(1, 2) AS rack
 CROSS JOIN generate_series(1, 2) AS level
 CROSS JOIN generate_series(1, 2) AS bin
@@ -80,16 +79,15 @@ WHERE w.code = 'GIMPO_DC'
 ON CONFLICT (warehouse_id, aisle, rack, level, bin) DO NOTHING;
 
 -- 2-3. 피킹존(SHELF_BIN) — storage_type별 3x3 격자(F01~F09) = 9개 x 3종 = 27개
--- zone은 location_type과 1:1(SHELF_BIN=PICKING)이라 항상 'PICKING' 고정값이다.
 INSERT INTO location (warehouse_id, location_type, storage_type, zone, aisle, rack, level, bin, status)
-SELECT w.id, 'SHELF_BIN', st.storage_type, 'PICKING',
+SELECT w.id, 'SHELF_BIN', st.storage_type, st.zone_word || '_PICKING',
        st.aisle_prefix || 'P01', '01', 1, 'F' || lpad(n::text, 2, '0'), 'ACTIVE'
 FROM warehouse w
 CROSS JOIN (VALUES
-    ('ROOM_TEMPERATURE', 'A'),
-    ('REFRIGERATED',     'B'),
-    ('FROZEN',           'C')
-) AS st(storage_type, aisle_prefix)
+    ('ROOM_TEMPERATURE', 'ROOM', 'A'),
+    ('REFRIGERATED',     'REFRI', 'B'),
+    ('FROZEN',           'FROZEN', 'C')
+) AS st(storage_type, zone_word, aisle_prefix)
 CROSS JOIN generate_series(1, 9) AS n
 WHERE w.code = 'GIMPO_DC'
 ON CONFLICT (warehouse_id, aisle, rack, level, bin) DO NOTHING;
