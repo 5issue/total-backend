@@ -91,7 +91,7 @@ jobs:
           SPRING_RABBITMQ_USERNAME: oms-service
           SPRING_RABBITMQ_PASSWORD: oms1234
           SPRING_RABBITMQ_VIRTUAL_HOST: msa
-        run: ./gradlew :services:oms-service:clean :services:oms-service:build :services:oms-service:jacocoTestReport --stacktrace
+        run: ./gradlew :oms-service:clean :oms-service:build :oms-service:jacocoTestReport --stacktrace
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
