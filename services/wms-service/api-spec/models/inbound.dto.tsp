@@ -36,12 +36,10 @@ model InboundAsnItemRequest {
   orderedQuantity: int32;
 }
 
-// TODO: 현재 InboundOrder 엔티티(services/wms-service .../infrastructure/entity/InboundOrder.java)에는
-// poNumber 컬럼이 없다. SCM 연계 시 PO 단위 조회/추적이 필요하면 엔티티·마이그레이션에 반영해야 한다.
 model InboundAsnCreateRequest {
   warehouseId: int64;
 
-  @doc("SCM 발주 번호. WMS 쪽 엔티티에는 아직 컬럼이 없어 반영 전이다 (위 TODO 참고).")
+  @doc("SCM 발주 번호. InboundOrder.po_number(V2 마이그레이션, 2026-09-15)로 반영되어 있다.")
   poNumber: string;
 
   supplierName: string;

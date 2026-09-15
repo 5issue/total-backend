@@ -68,6 +68,7 @@ erDiagram
     INBOUND_ORDER {
         Long     id PK
         Long     warehouse_id FK
+        String   po_number
         String   supplier_name
         Enum     status
         DateTime expected_date
@@ -219,6 +220,7 @@ SCM 서비스로부터 전달받는 발주 및 입고 예정 정보.
 | --- | --- | --- | --- |
 | `id` | Long | PK | 입고 전표 식별자 |
 | `warehouse_id` | Long | FK → Warehouse | 입고될 물류 센터 ID |
+| `po_number` | String(50) | NOT NULL | SCM 발주 번호 (PO 단위 조회·추적용, `V2` 마이그레이션에서 추가) |
 | `supplier_name` | String | | 공급사/벤더명 (SCM 연계) |
 | `status` | Enum | | 전표 상태 (`EXPECTED` 입고예정 / `INSPECTING` 검수중 / `COMPLETED` 입고완료 / `CANCELED` 취소) |
 | `expected_date` | DateTime | | 입고 예정 일시 |

@@ -65,6 +65,34 @@ product-service와 동일한 3분할 구조 + 동일 환경변수 이름을 사�
 - 실제 시크릿(운영 JWT 키, 소셜 client secret 등)은 `application-secret.yml`에 두고 Git에 커밋하지 않습니다(`.gitignore`에 이미 등록됨).
 - 새 외부 연동이 필요해지면 `application-local.yml`에는 기본값 포함, `application-prod.yml`에는 기본값 없이 필수값으로 추가합니다.
 
+### 3.1 로컬 시드 데이터
+
+`db/seed/seed_wms_product.sql`이 product-service의 시드 데이터(UNIT 타입만)를 가져와 `wms_product`를 채웁니다. product-service와 wms-service는 완전히 분리된 Postgres 컨테이너(포트 5436/5437, 별도 docker-compose 프로젝트)라 SQL 하나로 조인할 수 없어서, wms DB 쪽에서 `dblink` 확장으로 product 컨테이너에 직접 접속해 가져옵니다.
+
+```bash
+# 1) product-service 시드가 먼저 실행되어 있어야 한다 (UNIT 상품이 존재해야 함)
+# 2) 그다음 wms-service에서:
+docker exec -i kurly-postgres-wms psql -U postgres -d wms \
+  < src/main/resources/db/seed/seed_wms_product.sql
+```
+
+- 매핑: `id`/`sku_code`/`name`은 product-service 값을 그대로 쓰고(`WmsProduct.id`는 자체 채번하지 않고 Product UNIT ID와 같아야 함), `storage_type`은 `product_spec.storage_type`을 그대로 씁니다(enum 값이 이미 동일). `barcode`, `box_unit_qty`, `pallet_box_qty`, `safety_stock`은 상품 서비스에 없는 WMS 전용 값이라 임의 기본값을 둡니다.
+- `host.docker.internal:5436`으로 접속합니다. Docker Desktop(macOS/Windows)은 기본 동작하고, Linux에서는 `docker-compose.yml`의 `postgres-wms`에 붙여둔 `extra_hosts: ["host.docker.internal:host-gateway"]`가 있어야 풀립니다(루트 `docker-compose.yml`의 swagger-ui와 동일 패턴).
+- 멱등하지 않습니다(`id`/`sku_code` 제약). `ON CONFLICT (id) DO NOTHING`으로 재실행 시 에러 없이 건너뛰지만, 값을 최신화하려면 `TRUNCATE wms_product;`(FK로 물린 다른 테이블도 먼저 정리) 후 재실행합니다.
+- 2026-09-15 기준 UNIT 213건 전량 정상 삽입 확인(REFRIGERATED 103 / ROOM_TEMPERATURE 97 / FROZEN 13), 재실행 시 중복 삽입 없음 확인.
+
+`db/seed/seed_wms_warehouse.sql`은 실제 컬리 물류센터/컬리나우 매장 8곳으로 `warehouse`를 채웁니다(product 쪽 의존이 없어 dblink 불필요, 단독 실행 가능). `code`/`is_active`는 원본에 없어 임의로 채웠습니다(물류센터는 `<지명>_DC`, 컬리나우는 `CNOW_<지점명>`).
+
+```bash
+docker exec -i kurly-postgres-wms psql -U postgres -d wms \
+  < src/main/resources/db/seed/seed_wms_warehouse.sql
+```
+
+- `location`은 8곳 중 **김포물류센터(`GIMPO_DC`)에 대해서만** 예시로 채웁니다 — 실제 물류센터는 로케이션이 수천 단위라 8곳 전부를 지금 채우는 건 의미가 없고, 구조를 보여주는 샘플 하나면 충분하다고 판단했습니다. 다른 창고도 필요해지면 이 파일의 "2. Location" 블록에서 `code` 조건만 바꿔 재사용합니다.
+- 구성(53건): 버퍼(BUFFER) 2개 + storage_type(냉장/냉동/상온)별 보관존(PALLET_RACK) 8개 × 3 + 피킹존(SHELF_BIN) 3×3 격자(F01~F09) × 3. `docs/erd-spec.md`의 로케이션 설계 원칙을 그대로 따른 예시 레이아웃이며 실제 김포물류센터 구조와는 무관합니다.
+- storage_type마다 물리적 통로(aisle)를 분리했습니다(상온=A, 냉장=B, 냉동=C 접두사) — 같은 주소에 냉장/냉동 파레트가 같이 있을 수 없어서, `UNIQUE(warehouse_id, aisle, rack, level, bin)` 제약과도 자연히 맞습니다.
+- `warehouse.code`/`location`의 복합 UNIQUE 제약 덕분에 `ON CONFLICT DO NOTHING`으로 재실행해도 안전합니다. 2026-09-15 기준 창고 8건 + 로케이션 53건 삽입, 재실행 시 중복 없음 확인.
+
 ## 4. 패키지 구조 (Layered Architecture)
 
 product-service를 기준으로 한 4계층 구조입니다. 하위 도메인이 늘어나면 각 계층 안에서 도메인별 폴더로 분리합니다(팀컨벤션 문서 2번 항목).
@@ -246,7 +274,7 @@ api-spec/
 - `models/workers.dto.tsp` + `routes/client/workers.api.tsp`는 논의된 파일 목록에 없었지만 "`/api/v1/wms/workers/**`라는 독립된 base path"라 새로 추가했다. `Worker`는 아직 Java 엔티티가 없어 구현 전 엔티티/마이그레이션 추가가 필요하다(모델 파일에 TODO로 표시).
 - `routes/client/inventory.api.tsp`의 `Locations` interface(`/api/v1/wms/warehouses/**`, `/api/v1/wms/locations/**`)는 base path가 `/api/v1/wms/inventories`와 달라 같은 파일 안에서도 별도 `interface`로 분리했다. Warehouse/Location 마스터 관리가 커지면 그때 `warehouse.dto.tsp`/`warehouse.api.tsp`로 완전히 독립시킨다.
 - 아직 확정되지 않은 도메인 규칙(FEFO 할당, 패킹/송장, 모니터링 지표 등)에 걸린 모델·엔드포인트는 `[placeholder]` 표시 + `// TODO:`/`// 참고:` 주석으로 남기고, 계약은 최소 형태로만 작성합니다. 요구사항이 정해지면 그때 필드를 채웁니다.
-- 엔티티에 없는 필드가 요청/응답에 필요해지면(예: `InboundOrder.poNumber`) `// TODO:` 주석으로 남기고 엔티티/마이그레이션 작업과 별도로 추적합니다.
+- 엔티티에 없는 필드가 요청/응답에 필요해지면 `// TODO:` 주석으로 남기고 엔티티/마이그레이션 작업과 별도로 추적합니다 (실제 사례: `InboundOrder.poNumber`는 계약에만 있다가 `POST /internal/v1/wms/inbounds/asn` 구현 시점에 `V2` 마이그레이션으로 반영했다).
 - 도메인 하나의 모델/라우트가 파일 하나로 감당이 안 될 만큼 커지면 그때 더 세분화합니다(YAGNI) — 예: `monitoring.api.tsp`는 아직 모델이 적어 `models/monitoring.dto.tsp`로 분리하지 않고 파일 내부에 둡니다.
 
 ### 6.2 명령어
@@ -352,6 +380,8 @@ npm run sync:notion:events          # 실제 upsert (NOTION_TOKEN, NOTION_EVENT_
 | 2026-09-15 | `POST /internal/v1/wms/inventories/restore`, `POST /internal/v1/wms/outbounds/orders`를 비동기 이벤트(`order.inventory.confirm`, `order.canceled.inventory-restore`)로 전환. `events/` TypeSpec 스펙 + `scripts/sync-notion-events.js` 작성, 공통 로직은 `scripts/lib/notion-openapi.js`로 추출해 REST 스크립트와 공유 | 완료 | REST/이벤트 양쪽 `--dry-run` 검증 완료. order-service `PaymentCancellationEvent`가 실제 발행하는 routingKey(`order.canceled.inventory-restore`)와 product-service `InventoryMessagingProperties`의 restore 기본값(`order.inventory.restore`)이 서로 다른 걸 발견 — product-service 쪽 재고 복구 큐가 메시지를 못 받고 있을 가능성, 별도 확인 필요(이번 작업 범위 아님) |
 | 2026-09-15 | 이벤트 스펙을 별도 컴파일 단위(`api-spec/events/`)에서 `main.tsp` 하나로 통합 — `models/events.dto.tsp`(페이로드) + `routes/events/inventory.events.tsp`(이벤트 정의, `routes/{internal,client}`와 나란한 세 번째 카테고리)로 재배치, `build:events` 스크립트 제거 | 완료 | 분리해뒀던 이유(별도 emitter 필요할까 봐)가 실제로는 근거가 없었음 — `doc.paths`/`doc.components.schemas` 모양으로 구분하는 두 스크립트는 REST/이벤트가 한 파일에 섞여 있어도 문제없다는 걸 재확인. `npm run build` 한 번으로 REST 19개 경로 + 이벤트 2개 스키마 동시 생성, 양쪽 `--dry-run` 재검증 완료 |
 | 2026-09-15 | `ci-wms-service.yml`에 `build-and-test` job 추가(product-service와 동일 패턴: `./gradlew :common:build :wms-service:build`), trigger 경로에 `common/`·`build.gradle`·`settings.gradle`·`gradle/**`·`gradlew` 추가, `sync-notion`과 취소 정책이 달라 job별 `concurrency`로 분리 | 완료 | 기존엔 `sync-notion` job만 있어서 실제 빌드/컴파일 검증이 CI에 전혀 없었음. 로컬에서 `./gradlew :common:build :wms-service:build` 실행해 성공 확인. DB 서비스 컨테이너는 아직 리포지토리/테스트가 없어 미추가(product-service도 동일 상태) — 통합 테스트 생기면 auth-service의 MySQL 컨테이너 패턴 참고해 Postgres로 추가 |
+| 2026-09-15 | product-service 시드(UNIT 213건)를 `dblink`로 가져와 `wms_product`를 채우는 `db/seed/seed_wms_product.sql` 작성, `docker-compose.yml`에 `extra_hosts` 추가 | 완료 | 실제 컨테이너 대상으로 실행해 213건 삽입(REFRIGERATED 103/ROOM_TEMPERATURE 97/FROZEN 13) 및 id·sku_code·name 일치 확인, 재실행 시 `ON CONFLICT`로 중복 없음도 확인. `barcode`/`box_unit_qty`/`pallet_box_qty`/`safety_stock`은 원본에 없어 임의 기본값 |
+| 2026-09-15 | `db/seed/seed_wms_warehouse.sql` 작성 — 실제 컬리 물류센터/컬리나우 매장 8곳 warehouse 시드 + 김포물류센터(GIMPO_DC) location 예시 53건 | 완료 | 실제 컨테이너에 실행해 창고 8/로케이션 53건 삽입 확인, storage_type별 보관존(24)·피킹존(27)·버퍼(2) 구성, 재실행 시 `ON CONFLICT`로 중복 없음 확인. `code`/`is_active`/로케이션 레이아웃은 원본에 없어 임의로 채움 |
 | - | Repository(2파일 구조)·Service·Controller 구현 | 계획 | 엔티티만 우선 반영, [erd-spec.md](./erd-spec.md)의 미결 사항(로케이션 주소 체계, 재고 예약 시점 등) 및 `api-spec/` 계약 먼저 확정 필요 |
-| - | `InboundOrder`에 `po_number` 컬럼 추가 검토 | 계획 | `api-spec/inbound.tsp`의 TODO 참고 — SCM 발주번호 연계에 필요 |
+| 2026-09-15 | `POST /internal/v1/wms/inbounds/asn` 구현 — `InboundOrderService`/`InboundInternalController`/DTO/Repository(2파일 구조: `InboundOrderRepository`+`InboundOrderJpaRepository`, `InboundItem`/`Warehouse`/`WmsProduct`는 plain JPA repo). `InboundOrder`에 누락됐던 `po_number` 컬럼도 추가(`V2` 마이그레이션) | 완료 | 실제 서버 기동 후 curl로 성공/창고없음/상품없음/유효성검증 4가지 케이스 검증, 트랜잭션 롤백(상품 못 찾으면 InboundOrder도 안 남음) 확인. `/internal/**`이라 order/user-service 패턴대로 `@PublicApi` 사용(사용자 JWT 컨텍스트 없는 서비스 간 호출) |
 | - | Postman 팀 워크스페이스 자동 동기화 스크립트 | 계획 | Postman API Key/컬렉션 UID 발급 후 진행 ([6.4](#64-postman-동기화) 참고) |
