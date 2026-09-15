@@ -7,6 +7,12 @@ spring:
   jpa:
     hibernate:
       ddl-auto: validate
+  ssl:
+    bundle:
+      pem:
+        rabbitmq-ssl:
+          truststore:
+            certificate: ${RABBITMQ_SSL_CERT_PATH}
   rabbitmq:
     host: ${RABBITMQ_HOST}
     port: ${RABBITMQ_PORT}
@@ -16,6 +22,7 @@ spring:
     ssl:
       enabled: true
       verify-hostname: true
+      bundle: rabbitmq-ssl
   data:
     redis:
       host: ${REDIS_HOST}
