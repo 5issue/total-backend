@@ -5,3 +5,15 @@ spring:
     default: local
   jpa:
     open-in-view: false
+  rabbitmq:
+    publisher-confirm-type: correlated
+    publisher-returns: true
+    template:
+      mandatory: true
+
+wms:
+  outbox:
+    # 입고 완료(wms.inbound.completed) 등 발행 이벤트. 큐/바인딩은 소비하는 서비스가 선언한다.
+    exchange: wms.topic.exchange
+    batch-size: 100
+    publish-delay-ms: 5000
