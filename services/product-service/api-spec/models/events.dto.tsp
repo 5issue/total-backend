@@ -22,7 +22,7 @@ model ProductInventoryConfirmedEventPayload {
   routingKey: string;
   orderId: int64;
   status: InventoryConfirmedStatus;
-  failedItems?: FailedItemInfo[];
+  failedItems: FailedItemInfo[];
   confirmedAt: utcDateTime;
 }
 
