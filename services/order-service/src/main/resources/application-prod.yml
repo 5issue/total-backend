@@ -29,6 +29,8 @@ spring:
       password: ${REDIS_PASSWORD}
 
 kurly:
+  cors:
+    allowed-origins: ${CORS_ALLOWED_ORIGINS}
   security:
     enabled: true
     issuer: ${JWT_ISSUER}

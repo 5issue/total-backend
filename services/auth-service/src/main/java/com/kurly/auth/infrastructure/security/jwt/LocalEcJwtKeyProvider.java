@@ -10,6 +10,7 @@ import com.nimbusds.jose.jwk.JWKSet;
 import com.nimbusds.jose.jwk.gen.ECKeyGenerator;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.env.Environment;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
@@ -17,8 +18,10 @@ import java.text.ParseException;
 import java.util.UUID;
 
 /**
- * EC P-256 서명키 공급자.
- * 운영에서는 KMS 기반 구현으로 교체한다(인증인가_설계서 1.3.2 — 개인키 외부 반출 금지).
+ * EC P-256 서명키 공급자. <b>개인키를 프로세스가 직접 들고 있는 방식이다.</b>
+ *
+ * <p>운영에서는 {@code jwt.key-provider=kms}로 {@link KmsJwtKeyProvider}를 쓴다
+ * (인증인가_설계서 1.3.2 — 개인키 외부 반출 금지).
  *
  * <p>운영에서도 이 빈이 등록되지만, 그때는 주입된 {@code jwt.private-jwk}를 쓸 뿐
  * <b>키를 생성하지 않는다.</b> 임시 키 생성은 local 프로파일에서만 허용하며,
@@ -26,6 +29,7 @@ import java.util.UUID;
  */
 @Slf4j
 @Component
+@ConditionalOnProperty(name = "jwt.key-provider", havingValue = "local", matchIfMissing = true)
 public class LocalEcJwtKeyProvider implements JwtKeyProvider {
 
     /** 해석되지 않은 플레이스홀더의 흔적. Boot의 Binder는 이를 예외로 만들지 않고 리터럴로 남긴다. */
