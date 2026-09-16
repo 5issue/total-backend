@@ -1,0 +1,27 @@
+{
+  "name": "__SERVICE_NAME__",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "build": "tsp compile .",
+    "watch": "tsp compile . --watch",
+    "lint": "redocly lint tsp-output/schema/3.1.0/openapi.yaml",
+    "docs": "npm run build && redocly build-docs tsp-output/schema/3.1.0/openapi.yaml -o tsp-output/docs.html",
+    "sync:notion": "npm run build && sync-notion-db",
+    "sync:notion:dry": "npm run build && sync-notion-db --dry-run",
+    "sync:notion:events": "npm run build && sync-notion-events",
+    "sync:notion:events:dry": "npm run build && sync-notion-events --dry-run"
+  },
+  "dependencies": {
+    "@total-backend/notion-sync-kit": "file:../../../tools/notion-sync-kit",
+    "@typespec/compiler": "^1.16.0",
+    "@typespec/http": "^1.16.0",
+    "@typespec/openapi": "^1.16.0",
+    "@typespec/openapi3": "^1.16.0",
+    "@typespec/rest": "^0.86.0"
+  },
+  "devDependencies": {
+    "@redocly/cli": "^2.52.1"
+  }
+}

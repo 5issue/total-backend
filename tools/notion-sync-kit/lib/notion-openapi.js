@@ -1,5 +1,5 @@
 /**
- * scripts/sync-notion-db.js와 scripts/sync-notion-events.js가 공유하는 유틸리티.
+ * bin/sync-notion-db.js와 bin/sync-notion-events.js가 공유하는 유틸리티.
  * - TypeSpec이 생성한 OpenAPI(YAML) 스키마 파싱/예시 생성
  * - 노션 블록 빌더
  * - 노션 API 호출(재시도, data source 해석, 페이지 upsert 공통 흐름)
