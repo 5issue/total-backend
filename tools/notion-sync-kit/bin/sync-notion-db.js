@@ -170,6 +170,9 @@ function buildErrorExample() {
 function buildPageChildren(doc, ep) {
   const blocks = [];
 
+  blocks.push(heading('📖 API 개요', 2));
+  blocks.push(paragraph(ep.description || '(작성 필요)'));
+
   blocks.push(heading('🔹 Request', 2));
 
   blocks.push(heading('Headers', 3));
