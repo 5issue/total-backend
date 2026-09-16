@@ -182,8 +182,8 @@ model ProductDetailResponse {
   likeCount: int32;
   totalSalesCount: int64;
 
-  @doc("Java LocalDateTime — UTC가 아니라 서버 로컬 타임존의 naive datetime이다. 예시는 utcDateTime으로 근사한다.")
-  createdAt: utcDateTime;
+  @doc("생성 일시 (서버 로컬 타임존 기준 LocalDateTime, Format: YYYY-MM-DDTHH:mm:ss)")
+  createdAt: string;
 
   spec: ProductSpecResponse | null;
   media: ProductMediaResponse[];
