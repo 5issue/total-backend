@@ -80,6 +80,7 @@ jobs:
   # working-directory/domain만 바꿔 같은 워크플로우를 호출한다.
   sync-notion:
     if: github.event_name != 'pull_request'
+    needs: [build-and-test]
     uses: ./.github/workflows/reusable-notion-sync.yml
     with:
       working-directory: services/wms-service/api-spec

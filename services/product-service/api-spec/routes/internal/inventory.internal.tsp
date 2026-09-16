@@ -18,9 +18,7 @@ interface InventoryInternal {
 
   @summary("재고 HOLD 해제")
   @doc("""
-    HOLD했던 예약을 취소한다. CONFIRM/RESTORE는 이 REST API가 아니라 비동기 이벤트로
-    처리된다 — routes/events/inventory.events.tsp의 `order.inventory.release` 이벤트를 봐도
-    같은 처리 경로다(order-service가 REST 대신 이벤트로도 이 흐름을 태울 수 있음).
+    HOLD했던 예약을 취소한다. CONFIRM/RESTORE는 이 REST API가 아니라 비동기 이벤트로 처리된다.
     """)
   @post
   @route("/release")

@@ -1,5 +1,6 @@
 package com.kurly.product.infrastructure.messaging.dto;
 
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.UUID;
 
@@ -14,7 +15,7 @@ public record ProductInventoryRestoredEvent(
         String routingKey,
         Long orderId,
         Status status,
-        LocalDateTime restoredAt
+        Instant restoredAt
 ) {
     public enum Status {
         RESTORED,

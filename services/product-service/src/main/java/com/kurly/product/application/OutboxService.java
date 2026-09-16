@@ -7,6 +7,7 @@ import com.kurly.product.infrastructure.messaging.ProductOutboxProperties;
 import com.kurly.product.infrastructure.messaging.dto.ProductInventoryConfirmedEvent;
 import com.kurly.product.infrastructure.messaging.dto.ProductInventoryConfirmedEvent.FailedItemInfo;
 import com.kurly.product.infrastructure.messaging.dto.ProductInventoryRestoredEvent;
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
@@ -56,7 +57,7 @@ public class OutboxService {
     private void saveConfirmedOutbox(Long orderId, ProductInventoryConfirmedEvent.Status status, List<FailedItemInfo> failedItems) {
         UUID eventId = UUID.randomUUID();
         ProductInventoryConfirmedEvent payload = new ProductInventoryConfirmedEvent(
-                eventId, CONFIRMED_ROUTING_KEY, orderId, status, failedItems, LocalDateTime.now());
+                eventId, CONFIRMED_ROUTING_KEY, orderId, status, failedItems, Instant.now());
 
         persist(eventId, CONFIRMED_ROUTING_KEY, CONFIRMED_TYPE_ID, payload);
     }
@@ -64,7 +65,7 @@ public class OutboxService {
     private void saveRestoredOutbox(Long orderId, ProductInventoryRestoredEvent.Status status) {
         UUID eventId = UUID.randomUUID();
         ProductInventoryRestoredEvent payload = new ProductInventoryRestoredEvent(
-                eventId, RESTORED_ROUTING_KEY, orderId, status, LocalDateTime.now());
+                eventId, RESTORED_ROUTING_KEY, orderId, status, Instant.now());
 
         persist(eventId, RESTORED_ROUTING_KEY, RESTORED_TYPE_ID, payload);
     }
