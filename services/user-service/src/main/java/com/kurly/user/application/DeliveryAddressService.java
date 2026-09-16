@@ -32,6 +32,18 @@ public class DeliveryAddressService {
         return deliveryAddressRepository.findAllByUserIdOrderByDefaultAddressDescIdDesc(userId);
     }
 
+    /**
+     * 소유자 범위를 좁힌 단건 조회.
+     *
+     * <p>{@code userId}를 조건에 함께 걸어 <b>타인의 배송지는 조회 단계에서 비어 있는 결과</b>가
+     * 되게 한다. 없는 것과 남의 것을 구분해 노출하지 않으면 id를 훑어 존재 여부를 알아낼 수 없다.
+     */
+    @Transactional(readOnly = true)
+    public DeliveryAddress findOwned(Long userId, Long addressId) {
+        return deliveryAddressRepository.findByIdAndUserId(addressId, userId)
+                .orElseThrow(AddressNotFoundException::new);
+    }
+
     @Transactional(readOnly = true)
     public Optional<DeliveryAddress> findDefault(Long userId) {
         return deliveryAddressRepository.findAllByUserIdAndDefaultAddressTrue(userId).stream().findFirst();
