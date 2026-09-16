@@ -11,9 +11,14 @@ public record InboundItemResponse(
         Integer orderedQuantity,
         Integer inspectQuantity,
         Integer totalBaseQuantity,
-        InboundItemStatus status
+        InboundItemStatus status,
+        Long stockMovementId
 ) {
     public static InboundItemResponse from(InboundItem item) {
+        return from(item, null);
+    }
+
+    public static InboundItemResponse from(InboundItem item, Long stockMovementId) {
         return new InboundItemResponse(
                 item.getId(),
                 item.getProduct().getId(),
@@ -21,7 +26,8 @@ public record InboundItemResponse(
                 item.getOrderedQuantity(),
                 item.getInspectQuantity(),
                 item.getTotalBaseQuantity(),
-                item.getStatus()
+                item.getStatus(),
+                stockMovementId
         );
     }
 }
