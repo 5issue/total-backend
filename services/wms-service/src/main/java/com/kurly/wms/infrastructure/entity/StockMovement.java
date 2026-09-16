@@ -38,6 +38,11 @@ public class StockMovement {
     @JoinColumn(name = "product_id", nullable = false)
     private WmsProduct product;
 
+    /** PUT_AWAY가 입고 검수 건에서 비롯된 경우에만 채워진다. REPLENISHMENT/RELOCATION은 null. */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "inbound_item_id")
+    private InboundItem inboundItem;
+
     @Column(name = "lpn_code", length = 50)
     private String lpnCode;
 
@@ -81,12 +86,13 @@ public class StockMovement {
     private LocalDateTime completedAt;
 
     @Builder
-    private StockMovement(Warehouse warehouse, WmsProduct product, String lpnCode, String lotNo,
+    private StockMovement(Warehouse warehouse, WmsProduct product, InboundItem inboundItem, String lpnCode, String lotNo,
                            LocalDate expiredDate, Location fromLocation, Location toLocation,
                            MovementUnit movementUnit, Integer unitQuantity, Integer quantity,
                            MovementType movementType) {
         this.warehouse = warehouse;
         this.product = product;
+        this.inboundItem = inboundItem;
         this.lpnCode = lpnCode;
         this.lotNo = lotNo;
         this.expiredDate = expiredDate;
@@ -101,6 +107,11 @@ public class StockMovement {
 
     public void start() {
         this.status = MovementStatus.IN_PROGRESS;
+    }
+
+    /** 작업자가 추천과 다른 로케이션에 실제로 적치를 확정한 경우, 완료 처리 전에 목적지를 실제 위치로 갱신한다. */
+    public void reassignTarget(Location toLocation) {
+        this.toLocation = toLocation;
     }
 
     public void complete() {

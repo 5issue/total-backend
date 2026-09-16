@@ -5,4 +5,5 @@ import java.util.List;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface InboundItemJpaRepository extends JpaRepository<InboundItem, Long> {
+    List<InboundItem> findByInboundOrderId(Long inboundOrderId);
 }

@@ -80,6 +80,16 @@ public class Inventory {
         return quantity - reservedQuantity;
     }
 
+    /** 입고 검수 완료 등으로 실물 재고가 늘어날 때 사용한다. */
+    public void receive(int amount) {
+        this.quantity += amount;
+    }
+
+    /** put-away 등 로케이션 간 실물 이동으로 이 로케이션의 재고가 빠져나갈 때 사용한다. */
+    public void remove(int amount) {
+        this.quantity -= amount;
+    }
+
     public void reserve(int amount) {
         this.reservedQuantity += amount;
     }

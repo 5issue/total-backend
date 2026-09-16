@@ -44,8 +44,9 @@ public class Location {
     @Column(name = "storage_type", length = 20, nullable = false)
     private StorageType storageType;
 
-    @Column(name = "zone", length = 20)
-    private String zone;
+    @Enumerated(EnumType.STRING)
+    @Column(name = "zone", length = 20, nullable = false)
+    private Zone zone;
 
     @Column(name = "aisle", length = 20, nullable = false)
     private String aisle;
@@ -64,7 +65,7 @@ public class Location {
     private LocationStatus status;
 
     @Builder
-    private Location(Warehouse warehouse, LocationType locationType, StorageType storageType, String zone,
+    private Location(Warehouse warehouse, LocationType locationType, StorageType storageType, Zone zone,
                       String aisle, String rack, Integer level, String bin, LocationStatus status) {
         this.warehouse = warehouse;
         this.locationType = locationType;
@@ -94,5 +95,16 @@ public class Location {
     public enum LocationStatus {
         ACTIVE,
         LOCKED
+    }
+
+    /**
+     * 로케이션의 기능적 구역. locationType(PALLET_RACK/SHELF_BIN/BUFFER)과 지금은 사실상
+     * 1:1로 겹친다(STORAGE=PALLET_RACK, PICKING=SHELF_BIN, BUFFER=BUFFER) — 나중에 한
+     * 구역(zone) 안에 여러 locationType이 섞이는 시점부터 별도 컬럼의 의미가 생긴다.
+     */
+    public enum Zone {
+        BUFFER,
+        PICKING,
+        STORAGE
     }
 }
