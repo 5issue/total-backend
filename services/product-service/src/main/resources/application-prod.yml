@@ -33,6 +33,8 @@ spring:
     baseline-on-migrate: false
 
 kurly:
+  cors:
+    allowed-origins: ${CORS_ALLOWED_ORIGINS}
   security:
     issuer: ${JWT_ISSUER}
     audience: ${JWT_AUDIENCE}
