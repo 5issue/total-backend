@@ -6,6 +6,7 @@ import com.kurly.oms.application.OmsFulfillmentService;
 import com.kurly.oms.application.OmsOrderService;
 import com.kurly.oms.application.OmsReturnService;
 import com.kurly.oms.presentation.api.OmsInternalApi;
+import com.kurly.oms.presentation.dto.CancelEligibilityResponseDto;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
@@ -27,7 +28,7 @@ public class OmsInternalController implements OmsInternalApi {
 
     @Override
     @GetMapping("/orders/{orderId}/cancel-eligibility")
-    public ApiResponse<Boolean> checkCancelEligibility(@PathVariable Long orderId) {
+    public ApiResponse<CancelEligibilityResponseDto> checkCancelEligibility(@PathVariable Long orderId) {
         return ApiResponse.success(orderService.checkCancelEligibility(orderId));
     }
 

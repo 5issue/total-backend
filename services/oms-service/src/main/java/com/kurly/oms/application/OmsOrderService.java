@@ -1,6 +1,10 @@
 package com.kurly.oms.application;
 
+import com.kurly.common.exception.BusinessException;
+import com.kurly.oms.domain.common.OmsErrorCode;
+import com.kurly.oms.domain.order.OmsOrder;
 import com.kurly.oms.domain.order.OmsOrderRepository;
+import com.kurly.oms.presentation.dto.CancelEligibilityResponseDto;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -26,7 +30,10 @@ public class OmsOrderService {
     }
 
     @Transactional(readOnly = true)
-    public boolean checkCancelEligibility(Long orderId) {
-        return false;
+    public CancelEligibilityResponseDto checkCancelEligibility(Long orderId) {
+        OmsOrder omsOrder = omsOrderRepository.findById(orderId)
+                .orElseThrow(() -> new BusinessException(OmsErrorCode.OMS_ORDER_NOT_FOUND));
+
+        return CancelEligibilityResponseDto.from(omsOrder);
     }
 }

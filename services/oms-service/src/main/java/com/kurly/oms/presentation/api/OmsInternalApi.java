@@ -1,6 +1,7 @@
 package com.kurly.oms.presentation.api;
 
 import com.kurly.common.response.ApiResponse;
+import com.kurly.oms.presentation.dto.CancelEligibilityResponseDto;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 
@@ -11,7 +12,7 @@ public interface OmsInternalApi {
     ApiResponse<Object> getDeliveryPromises();
 
     @Operation(summary = "주문 취소 가능 여부 확인")
-    ApiResponse<Boolean> checkCancelEligibility(Long orderId);
+    ApiResponse<CancelEligibilityResponseDto> checkCancelEligibility(Long orderId);
 
     @Operation(summary = "WMS 반품 입고/검수 결과 수신")
     ApiResponse<Void> receiveInspectionResult(Long returnId);
