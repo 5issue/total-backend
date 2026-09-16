@@ -27,6 +27,8 @@ spring:
       password: ${REDIS_PASSWORD:}
 
 jwt:
+  # 로컬은 AWS 없이 기동한다. 프로세스가 임시 키를 만들어 서명한다.
+  key-provider: local
   issuer: ${JWT_ISSUER:https://auth.kurly.local}
   audience: ${JWT_AUDIENCE:kurly-api}
   # 비우면 기동 시 임시 키를 생성한다. 로컬에서만 허용되는 동작이다.
