@@ -24,11 +24,6 @@ on:
       - '.github/workflows/ci-product-service.yml'
   workflow_dispatch:
 
-# 같은 브랜치에 새 커밋이 오면 진행 중이던 실행은 취소한다. 어차피 결과를 쓰지 않는다.
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
-
 permissions:
   contents: read
 
@@ -36,6 +31,12 @@ jobs:
   build-and-test:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # 같은 브랜치에 새 커밋이 오면 진행 중이던 빌드는 취소한다. 어차피 결과를 쓰지 않는다.
+    # sync-notion과 취소 정책이 달라(노션 sync 도중 취소하면 페이지가 반쯤 갱신된 채 남을 수
+    # 있음) workflow 레벨이 아니라 job 레벨로 건다.
+    concurrency:
+      group: ${{ github.workflow }}-build-${{ github.ref }}
+      cancel-in-progress: true
 
     steps:
       - uses: actions/checkout@v4
@@ -62,3 +63,13 @@ jobs:
             common/build/reports/tests/
             services/product-service/build/reports/tests/
           retention-days: 7
+  sync-notion:
+    name: Sync API Spec to Notion
+    # develop에 merge되었을 때만 동작 (PR에서는 동작 X)
+    if: github.event_name != 'pull_request'
+    needs: [ build-and-test ] # 서비스 빌드 완료 후
+    uses: ./.github/workflows/reusable-notion-sync.yml
+    with:
+      working-directory: services/product-service/api-spec
+      domain: PRODUCT
+    secrets: inherit
