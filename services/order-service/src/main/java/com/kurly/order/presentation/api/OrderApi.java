@@ -68,7 +68,7 @@ public interface OrderApi {
     @Operation(summary = "주문 결제 진행 요청", description = "주문을 결제 대기 상태(PAYMENT_PENDING)로 전이합니다.")
     @ApiErrorCodeExample(status = GlobalErrorCode.class, code = "FORBIDDEN")
     @ApiErrorCodeExample(status = OrderErrorCode.class, code = "ORD_NOT_FOUND_ORDER")
-    @ApiErrorCodeExample(status = OrderErrorCode.class, code = "ORD_CONFLICT_ALREADY_PAID")
+    @ApiErrorCodeExample(status = OrderErrorCode.class, code = "ORD_CONFLICT_ALREADY_PROCESSED")
     @ApiErrorCodeExample(status = OrderErrorCode.class, code = "ORD_INVALID_STATUS")
     ApiResponse<PlaceOrderResponseDto> placeOrder(
             @Parameter(hidden = true) AuthenticatedPrincipal me,

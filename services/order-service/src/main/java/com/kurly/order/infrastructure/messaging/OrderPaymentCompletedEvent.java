@@ -1,32 +1,33 @@
-package com.kurly.order.domain.order;
+package com.kurly.order.infrastructure.messaging;
 
 import com.kurly.order.domain.common.StorageType;
+import com.kurly.order.domain.order.Order;
+import com.kurly.order.domain.order.OrderDeliveryInfo;
 
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
 
-public record SalesOrderCreatedEvent(
+public record OrderPaymentCompletedEvent(
         UUID eventId,
-        String routingKey,
         Long orderId,
         String orderNo,
         Long memberId,
-        String reservationToken,
         Long paymentId,
+        Long regionId,
         Long paidAmount,
         LocalDateTime paidAt,
         DeliveryAddress deliveryAddress,
-        List<Item> items
+        List<Item> items,
+        LocalDateTime occurredAt
 ) {
-    public static SalesOrderCreatedEvent of(Order order, OrderDeliveryInfo deliveryInfo) {
-        return new SalesOrderCreatedEvent(
+    public static OrderPaymentCompletedEvent of(Order order, OrderDeliveryInfo deliveryInfo) {
+        return new OrderPaymentCompletedEvent(
                 UUID.randomUUID(),
-                "sales.order.created",
                 order.getId(),
                 order.getOrderNo(),
                 order.getMemberId(),
-                order.getInventoryReservationToken(),
+                deliveryInfo.getRegionId(),
                 order.getPaymentId(),
                 order.getPaymentAmount(),
                 order.getPaidAt(),
@@ -39,12 +40,14 @@ public record SalesOrderCreatedEvent(
                 ),
                 order.getItems().stream()
                         .map(item -> new Item(
+                                item.getId(),
                                 item.getProductId(),
                                 item.getSkuId(),
                                 item.getQuantity(),
                                 item.getStorageType()
                         ))
-                        .toList()
+                        .toList(),
+                LocalDateTime.now()
         );
     }
 
@@ -58,6 +61,7 @@ public record SalesOrderCreatedEvent(
     }
 
     public record Item(
+            Long orderItemId,
             Long productId,
             Long skuId,
             Integer quantity,

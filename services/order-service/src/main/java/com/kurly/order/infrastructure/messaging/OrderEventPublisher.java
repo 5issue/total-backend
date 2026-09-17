@@ -14,12 +14,11 @@ public class OrderEventPublisher {
     private final RabbitTemplate rabbitTemplate;
 
     @ApplicationModuleListener
-    public void publish(OrderEvent event) {
-        rabbitTemplate.convertAndSend(OrderRabbitMqConfig.EXCHANGE, event.routingKey(), event);
-    }
-
-    @ApplicationModuleListener
-    public void publishSalesOrderCreated(SalesOrderCreatedEvent event) {
-        rabbitTemplate.convertAndSend(OrderRabbitMqConfig.EXCHANGE, event.routingKey(), event);
+    public void publishOrderPaymentCompleted(OrderPaymentCompletedEvent event) {
+        rabbitTemplate.convertAndSend(
+                OrderRabbitMqConfig.EXCHANGE_ORDER,
+                OrderRabbitMqConfig.ROUTING_KEY_ORDER_PAYMENT_COMPLETED,
+                event
+        );
     }
 }

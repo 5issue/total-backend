@@ -28,7 +28,7 @@ public enum OrderErrorCode implements ErrorCode {
 
     // 409 CONFLICT
     ORD_INSUFFICIENT_STOCK(HttpStatus.CONFLICT, "주문 상품의 재고가 부족합니다."),
-    ORD_CONFLICT_ALREADY_PAID(HttpStatus.CONFLICT, "이미 결제가 완료된 주문입니다."),
+    ORD_CONFLICT_ALREADY_PROCESSED(HttpStatus.CONFLICT, "이미 처리된 주문입니다."),
     ORD_CONFLICT_ALREADY_CLAIMED(HttpStatus.CONFLICT, "이미 접수된 취소 또는 반품 신청이 있습니다."),
     ORD_CONFLICT_RELEASE_STARTED(HttpStatus.CONFLICT, "이미 출고 처리가 시작되어 취소할 수 없습니다."),
     ORD_EXPIRED_PAYMENT_TIMEOUT(HttpStatus.CONFLICT, "결제 유효시간 초과로 이미 만료된 주문입니다."),
@@ -40,7 +40,7 @@ public enum OrderErrorCode implements ErrorCode {
 
     // 502 BAD_GATEWAY
     ORD_INCOMPLETE_PRODUCT_RESPONSE(HttpStatus.BAD_GATEWAY, "상품 정보를 완전하게 조회하지 못했습니다.");
-    
+
     private final HttpStatus status;
     private final String message;
 

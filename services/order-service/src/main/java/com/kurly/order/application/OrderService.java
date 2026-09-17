@@ -10,6 +10,8 @@ import com.kurly.order.domain.claim.*;
 import com.kurly.order.domain.common.OrderErrorCode;
 import com.kurly.order.domain.common.StorageType;
 import com.kurly.order.domain.order.*;
+import com.kurly.order.infrastructure.messaging.OrderPaymentCompletedEvent;
+import com.kurly.order.infrastructure.messaging.OrderReturnRequestedEvent;
 import com.kurly.order.presentation.dto.*;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
@@ -250,7 +252,7 @@ public class OrderService {
         Order order = getOwnedOrderForUpdate(me, orderId);
 
         if (order.getStatus() == OrderStatus.PAID) {
-            throw new BusinessException(OrderErrorCode.ORD_CONFLICT_ALREADY_PAID);
+            throw new BusinessException(OrderErrorCode.ORD_CONFLICT_ALREADY_PROCESSED, order.getStatus().name());
         }
         if (order.getStatus() != OrderStatus.CHECKOUT_CREATED) {
             throw new BusinessException(OrderErrorCode.ORD_INVALID_STATUS);
@@ -273,28 +275,26 @@ public class OrderService {
 
     @Transactional
     public CompletePayResponseDto completePay(Long orderId, CompletePayRequestDto request) {
-        Order before = getOrder(orderId);
+        Order order = getOrder(orderId);
 
-        if (before.getStatus() == OrderStatus.PAID) {
-            throw new BusinessException(OrderErrorCode.ORD_CONFLICT_ALREADY_PAID);
+        if (order.getStatus() != OrderStatus.PENDING_PAYMENT) {
+            throw new BusinessException(OrderErrorCode.ORD_CONFLICT_ALREADY_PROCESSED, order.getStatus().name());
         }
-        if (!before.getPaymentAmount().equals(request.paymentAmount())) {
+        if (!order.getPaymentAmount().equals(request.paymentAmount())) {
             throw new BusinessException(OrderErrorCode.ORD_INVALID_PAYMENT_AMOUNT);
         }
-
-        if (orderRepository.completePayment(orderId, request.paymentId(), request.paidAt(), LocalDateTime.now()) == 0) {
+        if (order.getInventoryReservedUntil().isBefore(request.paidAt())) {
             throw new BusinessException(OrderErrorCode.ORD_EXPIRED_PAYMENT_TIMEOUT);
         }
 
-        Order paidOrder = getOrder(orderId);
-
-        eventPublisher.publishEvent(OrderEvent.of("order.inventory.confirm", paidOrder));
+        order.markPaid(request.paymentId(), request.paidAt());
 
         OrderDeliveryInfo deliveryInfo = orderDeliveryInfoRepository.findById(orderId)
                 .orElseThrow(() -> new BusinessException(OrderErrorCode.ORD_NOT_FOUND_ORDER));
-        eventPublisher.publishEvent(SalesOrderCreatedEvent.of(paidOrder, deliveryInfo));
 
-        return CompletePayResponseDto.from(paidOrder);
+        eventPublisher.publishEvent(OrderPaymentCompletedEvent.of(order, deliveryInfo));
+
+        return CompletePayResponseDto.from(order);
     }
 
     @Transactional
@@ -463,9 +463,6 @@ public class OrderService {
         return requestedItems.equals(receivedItems);
     }
 
-    private record InventoryItemKey(Long productId, Integer quantity) {
-    }
-
     private ClaimType parseClaimType(String value) {
         if (value == null || value.isBlank()) {
             return null;
@@ -486,5 +483,8 @@ public class OrderService {
         } catch (IllegalArgumentException exception) {
             throw new BusinessException(OrderErrorCode.ORD_INVALID_REQUEST_STATUS);
         }
+    }
+
+    private record InventoryItemKey(Long productId, Integer quantity) {
     }
 }
