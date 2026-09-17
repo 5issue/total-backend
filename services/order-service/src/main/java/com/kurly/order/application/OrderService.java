@@ -74,16 +74,16 @@ public class OrderService {
 
         CartResponseDto.Address address = externalService.getAddress(memberId, cart.getAddressId());
         if (address == null || address.recipientName() == null || address.recipientName().isBlank()
-                || address.recipientPhone() == null || address.recipientPhone().isBlank()
-                || address.zipCode() == null || address.zipCode().isBlank()
-                || address.address() == null || address.address().isBlank()) {
+            || address.recipientPhone() == null || address.recipientPhone().isBlank()
+            || address.zipCode() == null || address.zipCode().isBlank()
+            || address.address() == null || address.address().isBlank()) {
             throw new BusinessException(OrderErrorCode.ORD_NOT_FOUND_ADDRESS);
         }
 
         orderRepository.findActiveCheckoutForUpdate(memberId).ifPresent(existing -> {
             if (existing.getInventoryReservationToken() != null &&
-                    existing.getInventoryReservedUntil() != null &&
-                    existing.getInventoryReservedUntil().isAfter(LocalDateTime.now())) {
+                existing.getInventoryReservedUntil() != null &&
+                existing.getInventoryReservedUntil().isAfter(LocalDateTime.now())) {
                 externalService.releaseInventory(existing.getInventoryReservationToken());
             }
             existing.markExpired();
@@ -130,6 +130,7 @@ public class OrderService {
 
         OrderDeliveryInfo deliveryInfo = OrderDeliveryInfo.createSnapshot(
                 order,
+                cart.getRegionId(),
                 address.addressId(),
                 address.recipientName(),
                 address.recipientPhone(),
@@ -343,7 +344,7 @@ public class OrderService {
 
         String objectKeyPrefix = "returns/%d/".formatted(me.userId());
         if (attachments.stream().anyMatch(attachment -> !attachment.objectKey().startsWith(objectKeyPrefix)
-                || attachment.objectKey().contains(".."))) {
+                                                        || attachment.objectKey().contains(".."))) {
             throw new BusinessException(OrderErrorCode.ORD_INVALID_RETURN_EVIDENCE);
         }
 
