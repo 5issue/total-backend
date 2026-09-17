@@ -5,9 +5,19 @@ import com.kurly.common.security.RequireRole;
 import com.kurly.common.security.Role;
 import com.kurly.oms.application.OmsOrderService;
 import com.kurly.oms.application.OmsReturnService;
+import com.kurly.oms.domain.common.StorageType;
+import com.kurly.oms.domain.returnorder.OmsReturnStatus;
 import com.kurly.oms.presentation.api.OmsAdminOrderApi;
+import com.kurly.oms.presentation.dto.OmsOrderListResponse;
+import com.kurly.oms.presentation.dto.OmsOrderSearchCondition;
+import com.kurly.oms.presentation.dto.ReturnProcessDto;
+import com.kurly.oms.presentation.dto.ReturnProcessListDto;
+import io.swagger.v3.oas.annotations.Operation;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Pageable;
 import org.springframework.web.bind.annotation.*;
+
+import java.time.LocalDateTime;
 
 @RestController
 @RequestMapping("/api/v1/admin/oms")
@@ -20,8 +30,19 @@ public class OmsAdminOrderController implements OmsAdminOrderApi {
 
     @Override
     @GetMapping("/orders")
-    public ApiResponse<Object> listOrders() {
-        return ApiResponse.success(orderService.listOrders());
+    public ApiResponse<OmsOrderListResponse> listOrders(
+            @RequestParam(required = false) String orderNo,
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) Long regionId,
+            @RequestParam(required = false) Long centerId,
+            @RequestParam(required = false) LocalDateTime startAt,
+            @RequestParam(required = false) LocalDateTime endAt,
+            Pageable pageable
+    ) {
+        return ApiResponse.success(orderService.listOrders(
+                new OmsOrderSearchCondition(orderNo, status, regionId, centerId, startAt, endAt),
+                pageable
+        ));
     }
 
     @Override
@@ -37,15 +58,20 @@ public class OmsAdminOrderController implements OmsAdminOrderApi {
         return ApiResponse.success();
     }
 
+    @Operation(summary = "반품 신청 내역 목록 조회 (Admin/BO)")
     @Override
     @GetMapping("/returns")
-    public ApiResponse<Object> listReturns() {
-        return ApiResponse.success(returnService.listReturns());
+    public ApiResponse<ReturnProcessListDto> listReturns(
+            @RequestParam(required = false) OmsReturnStatus status,
+            @RequestParam(required = false) StorageType storageType,
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        return ApiResponse.success(returnService.listReturns(status, storageType, page, size));
     }
 
     @Override
     @GetMapping("/returns/{returnId}")
-    public ApiResponse<Object> getReturnDetail(@PathVariable Long returnId) {
+    public ApiResponse<ReturnProcessDto> getReturnDetail(@PathVariable Long returnId) {
         return ApiResponse.success(returnService.getReturnDetail(returnId));
     }
 
