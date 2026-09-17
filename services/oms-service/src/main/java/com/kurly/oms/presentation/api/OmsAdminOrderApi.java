@@ -1,12 +1,8 @@
 package com.kurly.oms.presentation.api;
 
 import com.kurly.common.response.ApiResponse;
-import com.kurly.oms.domain.common.StorageType;
-import com.kurly.oms.domain.returnorder.OmsReturnStatus;
 import com.kurly.oms.presentation.dto.OmsOrderDetailResponse;
 import com.kurly.oms.presentation.dto.OmsOrderListResponse;
-import com.kurly.oms.presentation.dto.ReturnProcessDto;
-import com.kurly.oms.presentation.dto.ReturnProcessListDto;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -37,11 +33,11 @@ public interface OmsAdminOrderApi {
     @Operation(summary = "CS 관리자 주문 직권 취소")
     ApiResponse<Void> cancelOrder(Long orderId);
 
-    @Operation(summary = "반품 신청 내역 목록 조회 (Admin/BO)")
-    ApiResponse<ReturnProcessListDto> listReturns(OmsReturnStatus status, StorageType storageType, int page, int size);
+//    @Operation(summary = "반품 신청 내역 목록 조회 (Admin/BO)")
+//    ApiResponse<ReturnProcessListDto> listReturns(OmsReturnStatus status, StorageType storageType, int page, int size);
 
-    @Operation(summary = "반품 신청 상세 내역 조회 (Admin/BO)")
-    ApiResponse<ReturnProcessDto> getReturnDetail(Long returnId);
+//    @Operation(summary = "반품 신청 상세 내역 조회 (Admin/BO)")
+//    ApiResponse<ReturnProcessDto> getReturnDetail(Long returnId);
 
     @Operation(summary = "[냉동/냉장] 반품 승인 및 자체폐기 확정")
     ApiResponse<Void> approveColdChainReturn(Long returnId);

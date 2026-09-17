@@ -122,4 +122,16 @@ public class OmsOrder extends BaseEntity {
     public boolean isReleaseRequired() {
         return RELEASE_REQUIRED_STATUSES.contains(this.status);
     }
+
+    public void markReturnRequested() {
+        Assert.isTrue(this.status == OmsOrderStatus.FULFILLED,
+                "FULFILLED 상태에서만 반품 요청이 가능합니다.");
+        this.status = OmsOrderStatus.RETURN_REQUESTED;
+    }
+
+    public void markRefundApproved() {
+        Assert.isTrue(this.status == OmsOrderStatus.RETURN_REQUESTED,
+                "RETURN_REQUESTED 상태에서만 환불 승인이 가능합니다.");
+        this.status = OmsOrderStatus.REFUND_APPROVED;
+    }
 }

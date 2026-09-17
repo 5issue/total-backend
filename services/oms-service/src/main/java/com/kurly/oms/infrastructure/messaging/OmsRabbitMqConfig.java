@@ -84,7 +84,7 @@ public class OmsRabbitMqConfig {
         return new Binding(
                 QUEUE_RETURN_REQUESTED,
                 Binding.DestinationType.QUEUE,
-                EXCHANGE_ORDER,
+                "order.topic.exchange",
                 ROUTING_KEY_ORDER_RETURN_REQUESTED,
                 null
         );
