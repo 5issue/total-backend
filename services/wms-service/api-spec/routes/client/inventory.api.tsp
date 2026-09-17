@@ -25,6 +25,25 @@ interface InventoryClient {
   @post
   @route("/movement")
   createMovement(@body body: StockMovementCreateRequest): WmsService.Common.ApiResponse<StockMovementResponse> | WmsService.Common.ErrorResponse;
+
+  @summary("적치/보충/이동 작업 지시 목록 조회")
+  @doc("""
+    창고/이동 유형/상태 조건으로 StockMovement 목록을 조회한다. PDA 작업자가 자신이 처리해야
+    할 대기 중인 작업(예: warehouseId + movementType=PUT_AWAY + status=PENDING)을 확인하는
+    용도로 쓴다. put-away/recommendation(inbound.api.tsp)이 입고 상세 1건에 대한 추천
+    로케이션을 미리 보여주는 것과 달리, 이 API는 이미 생성된 작업 지시를 창고 단위로 훑어보는
+    용도라 도메인상 inbound가 아니라 inventory(재고 이동)에 속한다.
+
+    createdAt 오름차순(오래된 순, FIFO)으로 정렬한다. limit 기본값은 50, 최대 200이다.
+    """)
+  @get
+  @route("/movement")
+  listStockMovements(
+    @query warehouseId?: int64,
+    @query movementType?: MovementType,
+    @query status?: MovementStatus,
+    @query limit?: int32
+  ): WmsService.Common.ApiResponse<StockMovementResponse[]> | WmsService.Common.ErrorResponse;
 }
 
 // 창고 구역/로케이션 마스터 관리. base path가 /api/v1/wms/inventories가 아니라

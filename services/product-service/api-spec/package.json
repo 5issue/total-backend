@@ -1,0 +1,32 @@
+{
+  "name": "product-service",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "build": "tsp compile .",
+    "watch": "tsp compile . --watch",
+    "lint": "redocly lint tsp-output/schema/3.1.0/openapi.yaml",
+    "docs": "npm run build && redocly build-docs tsp-output/schema/3.1.0/openapi.yaml -o tsp-output/docs.html",
+    "swagger": "npm run build && swagger-ui-watcher tsp-output/schema/3.0.0/openapi.yaml -p 8094",
+    "dev": "npm run build && concurrently -n tsp,swagger -c blue,green \"tsp compile . --watch\" \"swagger-ui-watcher tsp-output/schema/3.0.0/openapi.yaml -p 8094 --no-open\"",
+    "sync:notion": "npm run build && sync-notion-db",
+    "sync:notion:dry": "npm run build && sync-notion-db --dry-run",
+    "sync:notion:events": "npm run build && sync-notion-events",
+    "sync:notion:events:dry": "npm run build && sync-notion-events --dry-run"
+  },
+  "dependencies": {
+    "@total-backend/notion-sync-kit": "file:../../../tools/notion-sync-kit",
+    "@typespec/compiler": "^1.16.0",
+    "@typespec/http": "^1.16.0",
+    "@typespec/openapi": "^1.16.0",
+    "@typespec/openapi3": "^1.16.0",
+    "@typespec/rest": "^0.86.0"
+  },
+  "devDependencies": {
+    "@redocly/cli": "^2.52.1",
+    "concurrently": "^10.0.5",
+    "openapi-to-postmanv2": "^6.3.3",
+    "swagger-ui-watcher": "^2.1.14"
+  }
+}

@@ -7,6 +7,8 @@ import com.kurly.common.response.ApiResponse;
 import jakarta.validation.ConstraintViolationException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -106,6 +108,30 @@ public class GlobalExceptionHandler {
         log.debug("매핑되지 않은 경로 요청: {}", e.getMessage());
         return ResponseEntity.status(GlobalErrorCode.RESOURCE_NOT_FOUND.getStatus())
                 .body(ApiResponse.error(GlobalErrorCode.RESOURCE_NOT_FOUND));
+    }
+
+    /**
+     * JPA {@code @Version} 낙관적 락이 커밋 시점에 충돌을 감지했을 때(Hibernate의
+     * ObjectOptimisticLockingFailureException 등). 같은 행을 동시에 수정하려던 요청이라
+     * 서버 결함이 아니라 클라이언트가 재시도할 수 있는 409로 응답한다.
+     */
+    @ExceptionHandler(OptimisticLockingFailureException.class)
+    public ResponseEntity<ApiResponse<Void>> handleOptimisticLockingFailureException(OptimisticLockingFailureException e) {
+        log.warn("낙관적 락 충돌: {}", e.getMessage());
+        return ResponseEntity.status(GlobalErrorCode.CONFLICT.getStatus())
+                .body(ApiResponse.error(GlobalErrorCode.CONFLICT, "다른 요청이 먼저 처리되었습니다. 최신 상태를 다시 조회한 뒤 재시도하세요."));
+    }
+
+    /**
+     * DB 유니크/체크 제약 위반. 동시에 같은 자연키 행을 처음 만들려던 두 트랜잭션이 경합하는
+     * 경우(find-or-create race) 등이 여기로 온다 — 서버 결함이 아니라 재시도하면 보통 해결되는
+     * 상황이라 409로 응답한다.
+     */
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    public ResponseEntity<ApiResponse<Void>> handleDataIntegrityViolationException(DataIntegrityViolationException e) {
+        log.warn("데이터 제약 위반: {}", e.getMessage());
+        return ResponseEntity.status(GlobalErrorCode.CONFLICT.getStatus())
+                .body(ApiResponse.error(GlobalErrorCode.CONFLICT, "다른 요청과 충돌했습니다. 잠시 후 다시 시도하세요."));
     }
 
     @ExceptionHandler(HttpRequestMethodNotSupportedException.class)

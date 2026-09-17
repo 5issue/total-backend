@@ -3,7 +3,7 @@
 창고 관리 시스템(WMS)의 데이터 모델 정의서입니다. 입고(Inbound) → 적치/보충(StockMovement) → 재고 현행화(Inventory) → 출고(Outbound)의 물류 흐름을 LOT/유통기한(FEFO) 기준으로 관리합니다.
 
 - DBMS: PostgreSQL (로컬 포트 `5437`, service number `5`)
-- 이벤트 발행: Transactional Outbox → Kafka
+- 이벤트 발행: Transactional Outbox → RabbitMQ (이 저장소의 다른 서비스들과 동일하게 Kafka가 아니라 RabbitMQ만 쓴다 — `common` 모듈이 `spring-boot-starter-amqp`를 제공)
 - 재고 정합성: 낱개(EA) 단위로 현행화, 현장 작업은 파레트/박스 단위로 수행 후 환산
 
 ## 설계 원칙
@@ -58,7 +58,7 @@ erDiagram
         Long    warehouse_id FK
         Enum    location_type
         Enum    storage_type
-        String  zone
+        Enum    zone
         String  aisle
         String  rack
         Integer level
@@ -68,6 +68,7 @@ erDiagram
     INBOUND_ORDER {
         Long     id PK
         Long     warehouse_id FK
+        String   po_number
         String   supplier_name
         Enum     status
         DateTime expected_date
@@ -86,6 +87,7 @@ erDiagram
         Date    expired_date
         Long    target_location_id FK
         Enum    status
+        Long    version
     }
     INVENTORY {
         Long     id PK
@@ -103,6 +105,7 @@ erDiagram
         Long     id PK
         Long     warehouse_id FK
         Long     product_id FK
+        Long     inbound_item_id FK
         String   lpn_code
         String   lot_no
         Date     expired_date
@@ -135,14 +138,16 @@ erDiagram
         Integer picked_quantity
         Enum    status
     }
-    OUTBOX {
+    WMS_OUTBOX {
         Long     id PK
-        String   aggregate_type
-        String   aggregate_id
-        String   event_type
-        JSONB    payload
+        String   event_id UK
+        String   exchange
+        String   routing_key
+        String   type_id
+        Text     payload
         Enum     status
         DateTime created_at
+        DateTime published_at
     }
 ```
 
@@ -194,7 +199,7 @@ erDiagram
 | `warehouse_id` | Long | FK → Warehouse | 물류 센터 ID |
 | `location_type` | Enum | | 로케이션 유형 (`PALLET_RACK` / `SHELF_BIN` / `BUFFER`) |
 | `storage_type` | Enum | | 보관 유형 (`REFRIGERATED` / `FROZEN` / `ROOM_TEMPERATURE`) |
-| `zone` | String(20) | | 존 구분 (`REFRI_STORAGE` 냉장 보관존 / `REFRI_PICKING` 냉장 피킹존 / `FROZEN_STORAGE` 냉동 보관존 / `FROZEN_PICKING` 냉동 피킹존) |
+| `zone` | Enum | | 기능적 구역 (`BUFFER` / `PICKING` / `STORAGE`). `location_type`과 지금은 1:1로 겹치지만(STORAGE=PALLET_RACK, PICKING=SHELF_BIN, BUFFER=BUFFER), 한 구역에 여러 location_type이 섞이는 시점부터 별도 컬럼의 의미가 생겨 지금부터 분리해 둠 |
 | `aisle` | String(20) | | 통로 번호 (기존 `rack` 보완). 예: `A01`(A01 열), `B02`(B02 열) |
 | `rack` | String(20) | | 베이 번호 (기둥 사이 연 번호). 예: `03`(3번째 기둥 구역), `01`(1번째 기둥 구역) |
 | `level` | Integer | | 층수 (파레트 랙 단수 관리용) |
@@ -219,6 +224,7 @@ SCM 서비스로부터 전달받는 발주 및 입고 예정 정보.
 | --- | --- | --- | --- |
 | `id` | Long | PK | 입고 전표 식별자 |
 | `warehouse_id` | Long | FK → Warehouse | 입고될 물류 센터 ID |
+| `po_number` | String(50) | NOT NULL | SCM 발주 번호 (PO 단위 조회·추적용, `V2` 마이그레이션에서 추가) |
 | `supplier_name` | String | | 공급사/벤더명 (SCM 연계) |
 | `status` | Enum | | 전표 상태 (`EXPECTED` 입고예정 / `INSPECTING` 검수중 / `COMPLETED` 입고완료 / `CANCELED` 취소) |
 | `expected_date` | DateTime | | 입고 예정 일시 |
@@ -246,6 +252,7 @@ SCM 서비스로부터 전달받는 발주 및 입고 예정 정보.
 | `expired_date` | Date | | 유통기한 (FEFO의 핵심 기준) |
 | `target_location_id` | Long | FK → Location | 적치할 목표 로케이션 ID |
 | `status` | Enum | | 상세 상태 (`PENDING` / `INSPECTED` 검수완료 / `PUT_AWAY` 적치완료) |
+| `version` | Long | NOT NULL, DEFAULT 0 (V6) | JPA `@Version` 낙관적 락. 검수/적치처럼 같은 행을 읽어 상태를 전이시키는 흐름에서 동시 요청(중복 클릭, 재시도)이 서로 덮어쓰는 걸 막는다 |
 
 > `unit_per_quantity`(단위당 낱개 수) 컬럼은 제거. 환산 계수는 `WmsProduct`에서 조회한다.
 > - `inbound_unit = PALLET` → `× pallet_box_qty × box_unit_qty`
@@ -270,7 +277,9 @@ SCM 서비스로부터 전달받는 발주 및 입고 예정 정보.
 | `reserved_quantity` | Integer | `CHECK (reserved_quantity >= 0)` | 주문 선점 예약 수량 |
 | `updated_at` | DateTime | | 최종 재고 변동 일시 |
 
-**UK 제약**: `(warehouse_id, location_id, product_id, lot_no, expired_date, lpn_code)`
+**UK 제약**: `(warehouse_id, location_id, product_id, lot_no, expired_date, lpn_code)`, `NULLS NOT DISTINCT`(V7) — 표준 유니크 제약은 `lpn_code`가 NULL인 행끼리 서로 다른 값으로 취급해 유일성이 보장되지 않았다(LPN 없이 관리하는 게 기본값이라 실질적으로 이 조합의 유일성이 전혀 없었던 셈). 동시에 같은 조합을 "없음"으로 보고 각자 새 행을 만드는 find-or-create 경합의 마지막 방어선이다.
+
+**동시성**: `receiveIntoBuffer`/`moveInventory`가 이 조합으로 조회할 때 `PESSIMISTIC_WRITE`로 잠가 lost update를 막는다. `remove()`는 재고보다 큰 수량을 빼려 하면 `BusinessException(INSUFFICIENT_INVENTORY)`으로 막는다(DB의 `chk_inventory_quantity`가 마지막 방어선).
 
 **조회 시**: 상품 전체 가용 재고 = `SUM(quantity - reserved_quantity)` (해당 상품의 전 로케이션 합산).
 
@@ -285,6 +294,7 @@ SCM 서비스로부터 전달받는 발주 및 입고 예정 정보.
 | `id` | Long | PK | 이동/작업 지시 식별자 |
 | `warehouse_id` | Long | FK → Warehouse | 물류 센터 ID |
 | `product_id` | Long | FK → WmsProduct | 상품 ID |
+| `inbound_item_id` | Long | FK → InboundItem, NULL 허용 (V4) | PUT_AWAY가 입고 검수 건에서 비롯된 경우에만 채워짐. put-away/confirm이 "이 검수 건의 대기 중인 작업 지시"를 로케이션 매칭 없이 직접 찾기 위한 참조 — 작업자가 추천과 다른 로케이션에 실제로 적치할 수 있어 location 기준 매칭은 신뢰할 수 없다. REPLENISHMENT/RELOCATION은 NULL |
 | `lpn_code` | String(50) | | 물류용 바코드 |
 | `lot_no` | String(50) | | 대상 LOT 번호 (FEFO 고려) |
 | `expired_date` | Date | | 유통기한 (FEFO 정렬/조회 기준) |
@@ -297,6 +307,8 @@ SCM 서비스로부터 전달받는 발주 및 입고 예정 정보.
 | `status` | Enum | | 작업 상태 (`PENDING` 지시생성 / `IN_PROGRESS` 작업중 / `COMPLETED` 완료 / `CANCELED` 취소) |
 | `created_at` | DateTime | | 작업 지시 생성 일시 |
 | `completed_at` | DateTime | | 작업 완료 일시 |
+
+**동시성**: put-away/confirm과 put-away/recommendation이 stockMovementId로 이 행을 조회할 때 `PESSIMISTIC_WRITE`로 잠근다 — 같은 작업 지시를 동시에 완료/재배정하려는 요청은 먼저 락을 쥔 쪽이 끝날 때까지 대기했다가, 이미 바뀐 status를 보고 재고 이동 전에 즉시 실패한다.
 
 ---
 
@@ -333,19 +345,25 @@ OMS(주문 관리 시스템)로부터 전달받은 출고 지시 전표.
 
 ---
 
-## 10. Outbox — Transactional Outbox 패턴
+## 10. WmsOutbox — Transactional Outbox 패턴
 
-비즈니스 로직과 Kafka 이벤트 발행의 원자성(Atomicity) 보장.
+비즈니스 로직과 RabbitMQ 이벤트 발행의 원자성(Atomicity) 보장. 원래 erd-spec에는 범용
+`aggregate_type`/`aggregate_id`/`event_type` 설계(Kafka 전제)로 있었으나 실제 발행자가
+하나도 없었고, 이 저장소는 RabbitMQ만 쓰기 때문에 product-service가 이미 검증한
+RabbitMQ 발행용 스키마(`product_outbox`)를 그대로 재사용하는 편이 낫다고 보고 교체했다
+(`V5__replace_outbox_with_wms_outbox.sql`, 2026-09-16). 테이블명도 `wms_outbox`로 바뀌었다.
 
 | 컬럼 | 타입 | 제약 | 설명 |
 | --- | --- | --- | --- |
-| `id` | UUID or Long | PK | 이벤트 식별자 |
-| `aggregate_type` | String(50) | | 도메인 유형 (예: `INVENTORY`) |
-| `aggregate_id` | String(50) | | 대상 식별자 |
-| `event_type` | String(100) | | 이벤트 이름 (예: `InventoryDepleted`, `StockDecreased`) |
-| `payload` | JSONB | | 이벤트 상세 데이터 |
-| `status` | Enum | | 발행 상태 (`INIT` / `PUBLISHED`) |
+| `id` | Long | PK | 이벤트 식별자 |
+| `event_id` | String(36) | UK | 이벤트 UUID (페이로드에도 같은 값이 실림) |
+| `exchange` | String(100) | | 발행 대상 익스체인지 (예: `wms.topic.exchange`) |
+| `routing_key` | String(200) | | 라우팅 키 (예: `wms.inbound.completed`) |
+| `type_id` | String(300) | | 페이로드 클래스의 FQCN. RabbitMQ `__TypeId__` 헤더 값으로 그대로 실린다 |
+| `payload` | Text | | 이벤트 JSON 문자열 |
+| `status` | Enum | | 발행 상태 (`PENDING` / `PUBLISHED`) |
 | `created_at` | DateTime | | 생성 일시 |
+| `published_at` | DateTime | | 발행 완료 일시 (브로커 ACK 수신 시점) |
 
 ---
 
@@ -356,6 +374,7 @@ OMS(주문 관리 시스템)로부터 전달받은 출고 지시 전표.
 | `StorageType` | `REFRIGERATED`, `FROZEN`, `ROOM_TEMPERATURE` | WmsProduct, Location |
 | `LocationType` | `PALLET_RACK`, `SHELF_BIN`, `BUFFER` | Location |
 | `LocationStatus` | `ACTIVE`, `LOCKED` | Location |
+| `Zone` | `BUFFER`, `PICKING`, `STORAGE` | Location |
 | `InboundOrderStatus` | `EXPECTED`, `INSPECTING`, `COMPLETED`, `CANCELED` | InboundOrder |
 | `InboundUnit` | `PALLET`, `CARTON`, `BOX` | InboundItem |
 | `InboundItemStatus` | `PENDING`, `INSPECTED`, `PUT_AWAY` | InboundItem |
@@ -364,7 +383,7 @@ OMS(주문 관리 시스템)로부터 전달받은 출고 지시 전표.
 | `MovementStatus` | `PENDING`, `IN_PROGRESS`, `COMPLETED`, `CANCELED` | StockMovement |
 | `OutboundOrderStatus` | `ALLOCATED`, `PICKING`, `PACKING`, `COMPLETED`, `CANCELED` | OutboundOrder |
 | `OutboundItemStatus` | `PENDING`, `PICKED`, `SHORTAGE` | OutboundItem |
-| `OutboxStatus` | `INIT`, `PUBLISHED` | Outbox |
+| `OutboxStatus` | `PENDING`, `PUBLISHED` | WmsOutbox |
 
 ---
 
@@ -373,5 +392,5 @@ OMS(주문 관리 시스템)로부터 전달받은 출고 지시 전표.
 1. **전체 재고 집계**: 동일 상품 재고가 로케이션별로 분산 관리됨. 전체 재고 조회 시 로케이션별 재고를 합산(`SUM(quantity - reserved_quantity)`)해서 응답하는 방식으로 확정 필요. 별도 상품 단위 집계 테이블/캐시를 둘지 여부 검토.
 2. **재고 선점(예약) 시점과 대상**: 특정 마감 시각까지 주문을 모았다가 피킹을 시작하는 구조. 마감 전에는 실물 재고가 확정되지 않는데 `reserved_quantity`를 언제 증가시킬지 확정 필요. 선점 시 보관존 재고까지 포함해 차감 대상으로 볼지, 피킹존 가용 재고만 대상으로 볼지 결정 필요.
 3. **마감 전 주문 보관 위치**: 마감 전 주문을 MQ(Kafka)에 적재해 두는지, WMS 내부 임시 테이블에 쌓는지 결정 필요. (재처리·조회 요구사항에 따라 달라짐)
-4. **로케이션 배정 전략**: 상품별 지정 로케이션(고정 로케이션)을 미리 정해두는지, 입고 시점마다 빈 로케이션을 동적으로 채우는지 결정 필요. 보관존은 동적, 피킹존은 고정 슬롯 방식의 하이브리드도 후보.
+4. **로케이션 배정 전략**: 보관존(STORAGE) 입고 적치는 동적 배정으로 1차 구현 완료 — `InboundOrderService.recommendStorageLocation()`이 같은 warehouse/storageType의 PALLET_RACK 중 유효 재고 없음 + 진행 중인 이동 지시 미선점인 로케이션을 aisle/rack/level/bin 오름차순으로 1건 추천하고, 없으면 `WMS409`(`NO_AVAILABLE_LOCATION`)를 던진다. 상품별 지정 로케이션(고정 슬롯) 방식과의 하이브리드 여부, 그리고 피킹존(PICKING) 보충(REPLENISHMENT) 배정 전략은 여전히 미결.
 5. **InboundOrder 상태 확장**: 버퍼 하차 완료 상태를 별도 상태로 추가할지.

@@ -9,22 +9,20 @@
     "lint": "redocly lint tsp-output/schema/3.1.0/openapi.yaml",
     "docs": "npm run build && redocly build-docs tsp-output/schema/3.1.0/openapi.yaml -o tsp-output/docs.html",
     "postman:generate": "npm run build && mkdir -p postman && openapi2postmanv2 -s tsp-output/schema/3.1.0/openapi.yaml -o postman/wms-service.postman_collection.json -p",
-    "swagger": "npm run build && swagger-ui-watcher tsp-output/schema/3.0.0/openapi.yaml -p 8090",
-    "dev": "npm run build && concurrently -n tsp,swagger -c blue,green \"tsp compile . --watch\" \"swagger-ui-watcher tsp-output/schema/3.0.0/openapi.yaml -p 8090 --no-open\"",
-    "sync:notion": "npm run build && node scripts/sync-notion-db.js",
-    "sync:notion:dry": "npm run build && node scripts/sync-notion-db.js --dry-run",
-    "sync:notion:events": "npm run build && node scripts/sync-notion-events.js",
-    "sync:notion:events:dry": "npm run build && node scripts/sync-notion-events.js --dry-run"
+    "swagger": "npm run build && swagger-ui-watcher tsp-output/schema/3.0.0/openapi.yaml -p 8095",
+    "dev": "npm run build && concurrently -n tsp,swagger -c blue,green \"tsp compile . --watch\" \"swagger-ui-watcher tsp-output/schema/3.0.0/openapi.yaml -p 8095 --no-open\"",
+    "sync:notion": "npm run build && sync-notion-db",
+    "sync:notion:dry": "npm run build && sync-notion-db --dry-run",
+    "sync:notion:events": "npm run build && sync-notion-events",
+    "sync:notion:events:dry": "npm run build && sync-notion-events --dry-run"
   },
   "dependencies": {
-    "@notionhq/client": "^5.26.0",
+    "@total-backend/notion-sync-kit": "file:../../../tools/notion-sync-kit",
     "@typespec/compiler": "^1.16.0",
     "@typespec/http": "^1.16.0",
     "@typespec/openapi": "^1.16.0",
     "@typespec/openapi3": "^1.16.0",
-    "@typespec/rest": "^0.86.0",
-    "dotenv": "^17.4.2",
-    "js-yaml": "^5.4.2"
+    "@typespec/rest": "^0.86.0"
   },
   "packageManager": "npm@12.0.2+sha512.b885e890b9418fa1693544d05f53e64f9a73ec194837d4258b15fecdd692347b1dd2a517b1b0cbaf9d31cd8e92c3b70956bd2ecc72833a57b4b3098f5bfa7943",
   "devDependencies": {

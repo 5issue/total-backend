@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 /**
  * TypeSpec이 생성한 OpenAPI(tsp-output/schema/{3.0.0,3.1.0}/openapi.yaml)를 파싱해서
- * 노션 데이터베이스에 API 명세를 upsert(생성/갱신)한다.
+ * 공용 노션 데이터베이스에 API 명세를 upsert(생성/갱신)한다. 여러 서비스가 같은 데이터베이스를
+ * 공유하며 `도메인` 속성(SERVICE_DOMAIN)으로 서비스별 행을 구분한다.
  *
  * - 매칭 키: `PATH(endpoint)` + `METHOD`. 같은 조합의 행이 있으면 갱신, 없으면 새로 만든다.
  * - `피드백/수정요청`, `검토 상태`는 절대 덮어쓰지 않는다 (업데이트 payload에 아예 포함하지 않음).
@@ -9,19 +10,18 @@
  * - 페이지 본문(Request/Response 블록)은 매번 통째로 비우고 새로 씁니다 — 팀원이 페이지 "속성"에
  *   적어둔 피드백/검토 상태는 보존되지만, 본문에 직접 적어둔 메모는 다음 sync에서 사라집니다.
  *
- * 사용법:
- *   cd services/wms-service/api-spec
+ * 사용법 (각 서비스의 api-spec/ 디렉터리에서):
  *   npm run sync:notion
- *   # 또는: node scripts/sync-notion-db.js [path/to/openapi.yaml]
+ *   # 또는: sync-notion-db [path/to/openapi.yaml]
+ * 필수 환경변수: NOTION_TOKEN, NOTION_DATABASE_ID, SERVICE_DOMAIN(예: WMS)
  *
  * 드라이런(노션 호출 없이 결과만 로컬 파일로 확인):
- *   node scripts/sync-notion-db.js --dry-run
+ *   sync-notion-db --dry-run
  */
 
 import 'dotenv/config';
 import fs from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { Client } from '@notionhq/client';
 import {
   fail,
@@ -38,21 +38,23 @@ import {
   resolveDataSourceId,
   validateDatabaseSchema,
   upsertNotionPage,
-} from './lib/notion-openapi.js';
+} from '../lib/notion-openapi.js';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const PROJECT_ROOT = path.resolve(__dirname, '..');
+// npm이 스크립트를 실행할 때 cwd를 그 package.json이 있는 디렉터리(각 서비스의 api-spec/)로
+// 맞춰주는 것에 의존한다. 이 파일 자신의 위치(공용 패키지 설치 경로)를 기준으로 잡으면 안 된다.
+const PROJECT_ROOT = process.cwd();
 
 const NOTION_TOKEN = process.env.NOTION_TOKEN;
 const NOTION_DATABASE_ID = process.env.NOTION_DATABASE_ID;
+const SERVICE_DOMAIN = process.env.SERVICE_DOMAIN;
 const DRY_RUN = process.argv.includes('--dry-run') || process.env.DRY_RUN === 'true';
 
 const DEFAULT_REVIEW_STATUS = '🟢 정상';
-const DEFAULT_DOMAIN = 'WMS';
 const DEFAULT_IMPORTANCE = '중';
 
-// common/exception/GlobalErrorCode.java 기준. 도메인별 에러 코드는 이 스크립트가 알 수 없으므로
-// 팀원이 각 페이지의 이 표를 직접 보강해야 한다 (그래서 매번 새로 그려도 되는 정보다).
+// common/exception/GlobalErrorCode.java 기준(모든 서비스 공용). 도메인별 에러 코드는 이
+// 스크립트가 알 수 없으므로 팀원이 각 페이지의 이 표를 직접 보강해야 한다(그래서 매번 새로
+// 그려도 되는 정보다).
 const COMMON_ERROR_ROWS = [
   ['400', 'COMMON400', '잘못된 요청 파라미터/바디', '잘못된 요청입니다.'],
   ['401', 'COMMON401', '인증 토큰 없음/만료', '인증이 필요합니다.'],
@@ -168,6 +170,9 @@ function buildErrorExample() {
 function buildPageChildren(doc, ep) {
   const blocks = [];
 
+  blocks.push(heading('📖 API 개요', 2));
+  blocks.push(paragraph(ep.description || '(작성 필요)'));
+
   blocks.push(heading('🔹 Request', 2));
 
   blocks.push(heading('Headers', 3));
@@ -236,7 +241,7 @@ function buildProperties(ep, isNew) {
     'PATH(endpoint)': { rich_text: rt(ep.path) },
     METHOD: { select: { name: ep.method } },
     Bearer: { checkbox: ep.bearer },
-    도메인: { select: { name: DEFAULT_DOMAIN } },
+    도메인: { select: { name: SERVICE_DOMAIN } },
     상세: { select: { name: ep.tag } },
   };
   if (isNew) {
@@ -258,6 +263,10 @@ function endpointFilter(ep) {
 // ── 메인 ─────────────────────────────────────────────────────────────
 
 async function main() {
+  if (!SERVICE_DOMAIN) {
+    fail('환경변수 SERVICE_DOMAIN이 설정되어 있지 않습니다 (예: SERVICE_DOMAIN=WMS). .env 또는 CI env에서 설정하세요.');
+  }
+
   const specPath = resolveSpecPath();
   console.log(`OpenAPI 스펙 로드: ${path.relative(PROJECT_ROOT, specPath)}`);
   const doc = loadSpec(specPath);

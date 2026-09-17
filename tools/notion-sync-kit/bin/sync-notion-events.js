@@ -1,18 +1,20 @@
 #!/usr/bin/env node
 /**
  * TypeSpec으로 정의한 비동기 이벤트 명세(routes/events/*.events.tsp → main.tsp에 포함되어
- * REST와 같은 tsp-output/schema/*에 함께 컴파일됨)를 파싱해서 노션 "이벤트" 데이터베이스에
+ * REST와 같은 tsp-output/schema/*에 함께 컴파일됨)를 파싱해서 공용 노션 "이벤트" 데이터베이스에
  * upsert(생성/갱신)한다.
  *
  * 이벤트는 routes/events/*.events.tsp에 HTTP 라우트 없이 순수 모델로만 정의한다(REST 쪽
  * routes/{internal,client}와 같은 자리지만 @route/@get/@post 대신 리터럴 타입 필드를 쓴다).
  * 하나의 이벤트는 producer/consumer/topic/exchange/queue/dataFormat/payloadType을 리터럴
- * 타입 필드로, 실제 메시지 바디는 payload 필드(models/events.dto.tsp 모델 참조)로 표현한다 —
- * 자세한 컨벤션은 routes/events/inventory.events.tsp 상단 주석 참고.
+ * 타입 필드로, 실제 메시지 바디는 payload 필드(모델 참조)로 표현한다.
  *
  * REST용 스펙과 같은 openapi.yaml을 읽지만, 이 스크립트는 doc.paths가 아니라
  * doc.components.schemas 중 이벤트 메타데이터 필드를 전부 가진 것만 골라내므로
  * 일반 DTO와 섞여 있어도 문제없다 (extractEvents 참고).
+ *
+ * 여러 서비스가 producer/consumer로 같은 이벤트 데이터베이스에 함께 기록되며, 서비스(도메인)
+ * 구분은 이 스크립트가 아니라 TypeSpec 이벤트 모델 자체의 producer/consumer 필드로 이뤄진다.
  *
  * - 매칭 키: `Topic` 또는 `개요` 중 하나라도 같으면 같은 행으로 보고 갱신, 없으면 새로 만든다.
  * - `피드백/수정요청`, `검토 상태`는 절대 덮어쓰지 않는다 (업데이트 payload에 아예 포함하지 않음).
@@ -21,24 +23,22 @@
  *   Kafka 등을 쓰는 이벤트가 생기면 이벤트 모델에 `protocol` 리터럴 필드를 추가하고
  *   이 스크립트에서 읽어오도록 바꿔야 한다.
  *
- * 사용법:
- *   cd services/wms-service/api-spec
+ * 사용법 (각 서비스의 api-spec/ 디렉터리에서):
  *   npm run sync:notion:events
- *   # 또는: node scripts/sync-notion-events.js [path/to/openapi.yaml]
+ *   # 또는: sync-notion-events [path/to/openapi.yaml]
+ * 필수 환경변수: NOTION_TOKEN, NOTION_EVENT_DATABASE_ID
  *
  * 드라이런(노션 호출 없이 결과만 로컬 파일로 확인):
- *   node scripts/sync-notion-events.js --dry-run
+ *   sync-notion-events --dry-run
  */
 
 import 'dotenv/config';
 import fs from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { Client } from '@notionhq/client';
 import {
   fail,
   loadSpec,
-  resolveSchema,
   generateExample,
   rt,
   heading,
@@ -50,10 +50,11 @@ import {
   resolveDataSourceId,
   validateDatabaseSchema,
   upsertNotionPage,
-} from './lib/notion-openapi.js';
+} from '../lib/notion-openapi.js';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const PROJECT_ROOT = path.resolve(__dirname, '..');
+// npm이 스크립트를 실행할 때 cwd를 그 package.json이 있는 디렉터리(각 서비스의 api-spec/)로
+// 맞춰주는 것에 의존한다. 이 파일 자신의 위치(공용 패키지 설치 경로)를 기준으로 잡으면 안 된다.
+const PROJECT_ROOT = process.cwd();
 
 const NOTION_TOKEN = process.env.NOTION_TOKEN;
 const NOTION_EVENT_DATABASE_ID = process.env.NOTION_EVENT_DATABASE_ID;

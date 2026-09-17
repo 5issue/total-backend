@@ -32,6 +32,9 @@ public class InboundOrder {
     @JoinColumn(name = "warehouse_id", nullable = false)
     private Warehouse warehouse;
 
+    @Column(name = "po_number", length = 50, nullable = false)
+    private String poNumber;
+
     @Column(name = "supplier_name")
     private String supplierName;
 
@@ -46,8 +49,9 @@ public class InboundOrder {
     private LocalDateTime completedDate;
 
     @Builder
-    private InboundOrder(Warehouse warehouse, String supplierName, LocalDateTime expectedDate) {
+    private InboundOrder(Warehouse warehouse, String poNumber, String supplierName, LocalDateTime expectedDate) {
         this.warehouse = warehouse;
+        this.poNumber = poNumber;
         this.supplierName = supplierName;
         this.expectedDate = expectedDate;
         this.status = InboundOrderStatus.EXPECTED;

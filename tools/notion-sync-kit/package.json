@@ -1,0 +1,16 @@
+{
+  "name": "@total-backend/notion-sync-kit",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "description": "TypeSpec이 생성한 OpenAPI 스펙을 공용 Notion 데이터베이스에 동기화하는 공용 스크립트. services/*/api-spec에서 file: 의존성으로 참조한다.",
+  "bin": {
+    "sync-notion-db": "./bin/sync-notion-db.js",
+    "sync-notion-events": "./bin/sync-notion-events.js"
+  },
+  "dependencies": {
+    "@notionhq/client": "^5.26.0",
+    "dotenv": "^17.4.2",
+    "js-yaml": "^5.4.2"
+  }
+}

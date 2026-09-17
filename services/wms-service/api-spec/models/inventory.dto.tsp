@@ -39,13 +39,14 @@ enum LocationStatus {
 }
 
 // ── client: 창고 구역/로케이션 마스터 ──────────────────────────────────────
-// 참고: 로케이션 배정 전략(고정/동적)이 docs/erd-spec.md 미결 사항이라, 등록/수정 계약은
-// 현재 Location 엔티티 컬럼을 그대로 노출하는 최소 형태로 정의한다.
+// 참고: 자동 로케이션 배정(동적 우선순위 방식)은 [InspectItemRequest]에서 1차 구현했다.
+// 상품별 지정 로케이션(고정 슬롯) 방식과의 하이브리드 여부는 여전히 docs/erd-spec.md
+// 미결 사항 4번으로 남아 있다.
 
 model LocationCreateItem {
   locationType: LocationType;
   storageType: WmsService.Common.StorageType;
-  zone: string | null;
+  zone: WmsService.Common.Zone;
   aisle: string;
   rack: string;
   level: int32;
@@ -63,7 +64,7 @@ model LocationResponse {
   warehouseId: int64;
   locationType: LocationType;
   storageType: WmsService.Common.StorageType;
-  zone: string | null;
+  zone: WmsService.Common.Zone;
   aisle: string;
   rack: string;
   level: int32;
@@ -74,7 +75,7 @@ model LocationResponse {
 @doc("전달된 필드만 갱신한다. 상태 변경(ACTIVE/LOCKED)도 이 요청으로 처리한다.")
 model LocationUpdateRequest {
   status?: LocationStatus;
-  zone?: string;
+  zone?: WmsService.Common.Zone;
   aisle?: string;
   rack?: string;
   level?: int32;
@@ -162,11 +163,22 @@ model StockMovementResponse {
   id: int64;
   warehouseId: int64;
   productId: int64;
-  fromLocationId: int64;
-  toLocationId: int64;
+
+  @doc("PUT_AWAY가 입고 검수 건에서 비롯된 경우에만 채워진다. REPLENISHMENT/RELOCATION은 null.")
+  inboundItemId: int64 | null;
+
+  lotNo: string | null;
+  expiredDate: plainDate | null;
+
+  fromLocationId: int64 | null;
+  toLocationId: int64 | null;
   movementUnit: MovementUnit;
+  unitQuantity: int32;
+  quantity: int32;
   movementType: MovementType;
   status: MovementStatus;
+  createdAt: utcDateTime;
+  completedAt: utcDateTime | null;
 }
 
 // 참고: "주문 취소로 인한 재고 복구"는 예전에 REST(POST /internal/v1/wms/inventories/restore)였지만,

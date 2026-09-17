@@ -65,6 +65,34 @@ product-service와 동일한 3분할 구조 + 동일 환경변수 이름을 사�
 - 실제 시크릿(운영 JWT 키, 소셜 client secret 등)은 `application-secret.yml`에 두고 Git에 커밋하지 않습니다(`.gitignore`에 이미 등록됨).
 - 새 외부 연동이 필요해지면 `application-local.yml`에는 기본값 포함, `application-prod.yml`에는 기본값 없이 필수값으로 추가합니다.
 
+### 3.1 로컬 시드 데이터
+
+`db/seed/seed_wms_product.sql`이 product-service의 시드 데이터(UNIT 타입만)를 가져와 `wms_product`를 채웁니다. product-service와 wms-service는 완전히 분리된 Postgres 컨테이너(포트 5436/5437, 별도 docker-compose 프로젝트)라 SQL 하나로 조인할 수 없어서, wms DB 쪽에서 `dblink` 확장으로 product 컨테이너에 직접 접속해 가져옵니다.
+
+```bash
+# 1) product-service 시드가 먼저 실행되어 있어야 한다 (UNIT 상품이 존재해야 함)
+# 2) 그다음 wms-service에서:
+docker exec -i kurly-postgres-wms psql -U postgres -d wms \
+  < src/main/resources/db/seed/seed_wms_product.sql
+```
+
+- 매핑: `id`/`sku_code`/`name`은 product-service 값을 그대로 쓰고(`WmsProduct.id`는 자체 채번하지 않고 Product UNIT ID와 같아야 함), `storage_type`은 `product_spec.storage_type`을 그대로 씁니다(enum 값이 이미 동일). `barcode`, `box_unit_qty`, `pallet_box_qty`, `safety_stock`은 상품 서비스에 없는 WMS 전용 값이라 임의 기본값을 둡니다.
+- `host.docker.internal:5436`으로 접속합니다. Docker Desktop(macOS/Windows)은 기본 동작하고, Linux에서는 `docker-compose.yml`의 `postgres-wms`에 붙여둔 `extra_hosts: ["host.docker.internal:host-gateway"]`가 있어야 풀립니다(루트 `docker-compose.yml`의 swagger-ui와 동일 패턴).
+- 멱등하지 않습니다(`id`/`sku_code` 제약). `ON CONFLICT (id) DO NOTHING`으로 재실행 시 에러 없이 건너뛰지만, 값을 최신화하려면 `TRUNCATE wms_product;`(FK로 물린 다른 테이블도 먼저 정리) 후 재실행합니다.
+- 2026-09-15 기준 UNIT 213건 전량 정상 삽입 확인(REFRIGERATED 103 / ROOM_TEMPERATURE 97 / FROZEN 13), 재실행 시 중복 삽입 없음 확인.
+
+`db/seed/seed_wms_warehouse.sql`은 실제 컬리 물류센터/컬리나우 매장 8곳으로 `warehouse`를 채웁니다(product 쪽 의존이 없어 dblink 불필요, 단독 실행 가능). `code`/`is_active`는 원본에 없어 임의로 채웠습니다(물류센터는 `<지명>_DC`, 컬리나우는 `CNOW_<지점명>`).
+
+```bash
+docker exec -i kurly-postgres-wms psql -U postgres -d wms \
+  < src/main/resources/db/seed/seed_wms_warehouse.sql
+```
+
+- `location`은 8곳 중 **김포물류센터(`GIMPO_DC`)에 대해서만** 예시로 채웁니다 — 실제 물류센터는 로케이션이 수천 단위라 8곳 전부를 지금 채우는 건 의미가 없고, 구조를 보여주는 샘플 하나면 충분하다고 판단했습니다. 다른 창고도 필요해지면 이 파일의 "2. Location" 블록에서 `code` 조건만 바꿔 재사용합니다.
+- 구성(53건): 버퍼(BUFFER) 2개 + storage_type(냉장/냉동/상온)별 보관존(PALLET_RACK) 8개 × 3 + 피킹존(SHELF_BIN) 3×3 격자(F01~F09) × 3. `docs/erd-spec.md`의 로케이션 설계 원칙을 그대로 따른 예시 레이아웃이며 실제 김포물류센터 구조와는 무관합니다. `zone`은 `location_type`과 1:1(BUFFER=BUFFER/PALLET_RACK=STORAGE/SHELF_BIN=PICKING)이라 항상 고정값입니다.
+- storage_type마다 물리적 통로(aisle)를 분리했습니다(상온=A, 냉장=B, 냉동=C 접두사) — 같은 주소에 냉장/냉동 파레트가 같이 있을 수 없어서, `UNIQUE(warehouse_id, aisle, rack, level, bin)` 제약과도 자연히 맞습니다.
+- `warehouse.code`/`location`의 복합 UNIQUE 제약 덕분에 `ON CONFLICT DO NOTHING`으로 재실행해도 안전합니다. 2026-09-15 기준 창고 8건 + 로케이션 53건 삽입, 재실행 시 중복 없음 확인.
+
 ## 4. 패키지 구조 (Layered Architecture)
 
 product-service를 기준으로 한 4계층 구조입니다. 하위 도메인이 늘어나면 각 계층 안에서 도메인별 폴더로 분리합니다(팀컨벤션 문서 2번 항목).
@@ -138,6 +166,7 @@ Querydsl 동적 쿼리나 JdbcTemplate 벌크 연산처럼 복잡한 기술 요�
 - `@NoArgsConstructor(access = AccessLevel.PROTECTED)` + `@Builder`가 붙은 private 생성자 조합 (product-service `Product` 참고)
 - 상태 변경은 의미 있는 메서드로 노출 (`inventory.reserve(quantity)` 등), 필드를 외부에서 직접 set하지 않음
 - 하위 Enum은 엔티티 내부에 nested enum으로 선언 (`Product.ProductStatus`처럼)
+- 같은 행을 읽어서 상태를 전이시키는 서비스 메서드가 있는 엔티티(사용자 액션 기반 상태 머신 등, `InboundItem`처럼)에는 `@Version` 낙관적 락을 추가한다. 그 행을 읽는 repository 메서드는 `@Lock(LockModeType.OPTIMISTIC)`로 선언해 커밋 시점 충돌을 명시적으로 검증하고(`InboundItemJpaRepository.findWithOptimisticLockById` 참고), 실패 시 `ObjectOptimisticLockingFailureException`은 `common`의 `GlobalExceptionHandler`가 409(`GlobalErrorCode.CONFLICT`)로 변환해준다 — 서비스 코드에서 따로 잡을 필요 없다.
 
 ### 5.5 DTO / Record
 
@@ -236,7 +265,9 @@ api-spec/
     │   ├── workers.api.tsp                   # 작업자 등록/상태 변경
     │   └── monitoring.api.tsp                # 히트맵/작업자 UPH — 지표 정의 전 구조만 (placeholder)
     └── events/                          # 비동기(RabbitMQ) 이벤트 정의. @route 대신 리터럴 타입 필드 — 6.6 참고
-        └── inventory.events.tsp           # order.inventory.confirm, order.canceled.inventory-restore
+        ├── inventory.events.tsp           # order.inventory.confirm, order.canceled.inventory-restore (order → wms/product 소비)
+        ├── inbound.events.tsp              # wms.inbound.completed (wms → product 발행)
+        └── return.events.tsp                # wms.return.inspected (wms → product,order 발행)
 ```
 
 - 응답은 반드시 `WmsService.Common.ApiResponse<T>`로 감싸서 선언합니다 (실제 Spring 쪽 `ApiResponse<T>` 래핑과 동일하게, [5.6](#56-controller--응답-포맷) 참고). 실패 시 형태는 `WmsService.Common.ErrorResponse`이며, 각 op 리턴 타입에 `| WmsService.Common.ErrorResponse`로 명시합니다.
@@ -246,7 +277,7 @@ api-spec/
 - `models/workers.dto.tsp` + `routes/client/workers.api.tsp`는 논의된 파일 목록에 없었지만 "`/api/v1/wms/workers/**`라는 독립된 base path"라 새로 추가했다. `Worker`는 아직 Java 엔티티가 없어 구현 전 엔티티/마이그레이션 추가가 필요하다(모델 파일에 TODO로 표시).
 - `routes/client/inventory.api.tsp`의 `Locations` interface(`/api/v1/wms/warehouses/**`, `/api/v1/wms/locations/**`)는 base path가 `/api/v1/wms/inventories`와 달라 같은 파일 안에서도 별도 `interface`로 분리했다. Warehouse/Location 마스터 관리가 커지면 그때 `warehouse.dto.tsp`/`warehouse.api.tsp`로 완전히 독립시킨다.
 - 아직 확정되지 않은 도메인 규칙(FEFO 할당, 패킹/송장, 모니터링 지표 등)에 걸린 모델·엔드포인트는 `[placeholder]` 표시 + `// TODO:`/`// 참고:` 주석으로 남기고, 계약은 최소 형태로만 작성합니다. 요구사항이 정해지면 그때 필드를 채웁니다.
-- 엔티티에 없는 필드가 요청/응답에 필요해지면(예: `InboundOrder.poNumber`) `// TODO:` 주석으로 남기고 엔티티/마이그레이션 작업과 별도로 추적합니다.
+- 엔티티에 없는 필드가 요청/응답에 필요해지면 `// TODO:` 주석으로 남기고 엔티티/마이그레이션 작업과 별도로 추적합니다 (실제 사례: `InboundOrder.poNumber`는 계약에만 있다가 `POST /internal/v1/wms/inbounds/asn` 구현 시점에 `V2` 마이그레이션으로 반영했다).
 - 도메인 하나의 모델/라우트가 파일 하나로 감당이 안 될 만큼 커지면 그때 더 세분화합니다(YAGNI) — 예: `monitoring.api.tsp`는 아직 모델이 적어 `models/monitoring.dto.tsp`로 분리하지 않고 파일 내부에 둡니다.
 
 ### 6.2 명령어
@@ -283,10 +314,10 @@ npm run postman:generate           # OpenAPI → Postman 컬렉션 생성 (postm
 
 ### 6.5 Notion 동기화
 
-`scripts/sync-notion-db.js`가 OpenAPI를 파싱해서 노션 데이터베이스에 API 명세를 upsert한다.
+동기화 로직은 리포 공용 패키지 `tools/notion-sync-kit`(`bin/sync-notion-db.js`)에 있고, wms-service는 `file:` 의존성(`@total-backend/notion-sync-kit`)으로 가져다 쓴다 — 여러 서비스가 같은 로직을 공유하며, 로직을 고치려면 이 공용 패키지 하나만 수정하면 된다. wms-service의 `package.json` `sync:notion*` 스크립트는 그 패키지가 노출하는 `sync-notion-db`/`sync-notion-events` 커맨드를 호출하는 얇은 래퍼다.
 
 ```bash
-cp .env.example .env        # NOTION_TOKEN, NOTION_DATABASE_ID 채워넣기
+cp .env.example .env        # NOTION_TOKEN, NOTION_DATABASE_ID, SERVICE_DOMAIN(=WMS) 채워넣기
 npm run sync:notion:dry       # 노션 호출 없이 결과만 tsp-output/notion-dry-run.json에 저장 (실제 실행 전 항상 먼저 이걸로 확인)
 npm run sync:notion            # 실제 upsert
 ```
@@ -294,23 +325,25 @@ npm run sync:notion            # 실제 upsert
 - 매칭 키는 `PATH(endpoint)` + `METHOD`. 같은 조합이 있으면 속성 갱신 + 본문 전체 재작성, 없으면 새 행 생성.
 - `피드백/수정요청`, `검토 상태`, `중요도`는 업데이트 payload에 아예 포함하지 않아서 절대 덮어쓰지 않는다(`buildProperties`가 기존 행에는 이 키들을 아예 만들지 않는 방식). 셋 다 새 행을 만들 때만 기본값(중요도 "중", 검토 상태 "🟢 정상")을 채우고, 그 이후로는 팀원이 노션에서 바꾼 값을 그대로 유지한다.
 - 페이지 "속성"과 달리 페이지 "본문"(Request/Response 블록)은 매번 통째로 지우고 새로 쓴다. 팀원이 본문에 직접 적어둔 메모는 다음 sync에서 사라지니, 코멘트는 본문이 아니라 `피드백/수정요청` 속성에 남기도록 안내한다.
+- 페이지 본문 순서: 📖 API 개요(오퍼레이션의 `@doc`, 없으면 "(작성 필요)") → 🔹 Request(Headers/Path/Query/Body) → 🔹 Response(성공/실패 예시) → HTTP 에러 코드 정의. `@doc`이 맨 위에 오는 건 events(6.6)의 "📖 통신 개요"와 같은 자리를 REST에도 맞춘 것(2026-09-16 추가 — 그 전엔 `op.description`을 파싱만 하고 본문에 렌더링하지 않는 채로 남아 있었다).
 - Request Body/Response 예시 JSON은 TypeSpec에 `@example`을 안 붙여놔서 스키마를 보고 자동 생성한 값이다 (문자열은 `"string"`, `*Id`류 정수는 `1`, `*quantity`류는 `10` 등 휴리스틱). 실제 값이 아니라 "필드가 이런 모양"이라는 뜻으로만 보면 된다.
 - "HTTP 에러 코드 정의" 표는 OpenAPI 스펙에 도메인별 에러 코드가 없어서(`default` → `ErrorResponse`만 정의됨) `common/exception/GlobalErrorCode.java`의 공통 코드(COMMON400~500)로 채운 기본값이다. 엔드포인트별 도메인 에러 코드는 이 스크립트가 알 방법이 없으니 팀원이 직접 보강해야 한다.
 - 노션 API 2025-09-03부터 데이터베이스 아래에 "data source" 개념이 생겨서, 행 조회는 `dataSources.query`로 한다(SDK에 `databases.query`가 아예 없어졌다). 스크립트가 `NOTION_DATABASE_ID`로 첫 번째 data source를 자동으로 찾아 쓰므로 평소 쓰는 단일 data source 데이터베이스라면 신경 쓸 필요 없다.
 - 실행 시작 시 데이터베이스에 9개 속성(이름/PATH(endpoint)/METHOD/Bearer/도메인/상세/중요도/피드백·수정요청/검토 상태)이 정확한 타입으로 있는지 먼저 검증하고, 하나라도 다르면 무엇이 문제인지 즉시 알려주고 종료한다.
-- GitHub Actions: `.github/workflows/ci-wms-service.yml`에 job이 두 개다. `build-and-test`는 push/PR 둘 다에서 돌며 다른 서비스와 동일한 컴파일/테스트 검사를 한다. `sync-notion`은 `services/wms-service/**` 변경을 `develop`에 push할 때(+ 수동 실행)만 돌고 PR에서는 돌지 않는다(`if: github.event_name != 'pull_request'`) — merge된 것만 문서에 반영하기 위함. 두 job은 진행 중 실행 취소 정책이 달라서(빌드는 취소해도 되지만 노션 sync는 취소하면 페이지가 반쯤 갱신된 채 남을 수 있음) workflow 레벨이 아니라 job 레벨로 각각 `concurrency`를 건다. `sync-notion`은 리포지토리 Settings → Secrets에 `NOTION_TOKEN`, `NOTION_DATABASE_ID`, `NOTION_EVENT_DATABASE_ID`를 등록해야 동작한다.
-- OpenAPI 파싱/예시 생성/노션 블록 빌더/노션 API 호출 같은 공통 로직은 `scripts/lib/notion-openapi.js`에 모아뒀다. [6.6](#66-비동기-이벤트-명세-typespec--notion-event-db)의 이벤트 동기화 스크립트도 이 파일을 그대로 가져다 쓴다.
+- **REST/이벤트 명세 DB는 서비스별로 따로 두지 않고 리포 전체가 공유한다.** 각 행의 `도메인`(REST) 또는 `송신`/`수신`(이벤트) 속성으로 어느 서비스 것인지 구분한다. wms-service는 `SERVICE_DOMAIN=WMS`로 이 값을 넘긴다. 다른 서비스가 같은 패턴을 쓰려면 `tools/notion-sync-kit/template/`을 참고해서 자기 `api-spec/`을 부트스트랩하면 된다.
+- GitHub Actions: `.github/workflows/ci-wms-service.yml`에 job이 두 개다. `build-and-test`는 push/PR 둘 다에서 돌며 다른 서비스와 동일한 컴파일/테스트 검사를 한다. `sync-notion`은 `services/wms-service/**` 변경을 `develop`에 push할 때(+ 수동 실행)만 돌고 PR에서는 돌지 않는다(`if: github.event_name != 'pull_request'`) — merge된 것만 문서에 반영하기 위함. 실제 단계(체크아웃/`npm ci`/두 DB 동기화/실패 격리)는 `.github/workflows/reusable-notion-sync.yml`이라는 `workflow_call` 재사용 워크플로우 하나로 관리되고, `ci-wms-service.yml`은 `working-directory: services/wms-service/api-spec`, `domain: WMS`만 넘겨 호출한다 — 다른 서비스도 이 두 값만 바꿔 같은 워크플로우를 호출하면 된다. `sync-notion`(정확히는 `reusable-notion-sync.yml`의 job)은 진행 중인 실행을 취소하지 않는다(빌드는 취소해도 되지만 노션 sync는 취소하면 페이지가 반쯤 갱신된 채 남을 수 있음). 리포지토리 Settings → Secrets에 `NOTION_TOKEN`, `NOTION_DATABASE_ID`, `NOTION_EVENT_DATABASE_ID`를 등록해야 동작하며, 이 시크릿들은 모든 서비스가 공유한다(`secrets: inherit`).
+- OpenAPI 파싱/예시 생성/노션 블록 빌더/노션 API 호출 같은 공통 로직은 공용 패키지의 `lib/notion-openapi.js`(`tools/notion-sync-kit/lib/notion-openapi.js`)에 모아뒀다. [6.6](#66-비동기-이벤트-명세-typespec--notion-event-db)의 이벤트 동기화 스크립트도 이 파일을 그대로 가져다 쓴다.
 
 ### 6.6 비동기 이벤트 명세 (TypeSpec → Notion Event DB)
 
-RabbitMQ/Kafka 이벤트도 REST와 같은 TypeSpec 프로젝트(`main.tsp`) 안에서 관리한다 — 별도 컴파일 단위로 뺄 이유가 없었다: 이벤트는 HTTP 오퍼레이션이 없어서 `doc.paths`에는 전혀 나타나지 않고, `sync-notion-events.js`는 애초에 `doc.components.schemas`에서 이벤트 메타데이터 필드(아래)를 가진 것만 골라 읽으므로 REST DTO와 한 파일에 섞여 있어도 서로 간섭하지 않는다. `routes/events/`는 `routes/internal/`, `routes/client/`와 나란한 세 번째 카테고리다 — 다만 `@route/@get/@post` 대신 리터럴 타입 필드로 계약을 표현한다는 점만 다르다.
+RabbitMQ/Kafka 이벤트도 REST와 같은 TypeSpec 프로젝트(`main.tsp`) 안에서 관리한다 — 별도 컴파일 단위로 뺄 이유가 없었다: 이벤트는 HTTP 오퍼레이션이 없어서 `doc.paths`에는 전혀 나타나지 않고, `sync-notion-events`(공용 패키지 `tools/notion-sync-kit/bin/sync-notion-events.js`)는 애초에 `doc.components.schemas`에서 이벤트 메타데이터 필드(아래)를 가진 것만 골라 읽으므로 REST DTO와 한 파일에 섞여 있어도 서로 간섭하지 않는다. `routes/events/`는 `routes/internal/`, `routes/client/`와 나란한 세 번째 카테고리다 — 다만 `@route/@get/@post` 대신 리터럴 타입 필드로 계약을 표현한다는 점만 다르다.
 
 ```
 models/events.dto.tsp            # 이벤트 페이로드 모델 (OrderEvent, OrderEventItem — REST의 Request/Response DTO와 같은 자리)
 routes/events/inventory.events.tsp # 이벤트 정의 (OrderInventoryConfirmEvent 등 — REST의 interface와 같은 자리)
 ```
 
-이벤트 하나는 producer/consumer/topic/exchange/queue/dataFormat/payloadType을 **리터럴 타입 필드**로 박아 넣은 모델이다. TypeSpec에서 `producer: "order";`처럼 프로퍼티 타입 자체를 문자열 리터럴로 주면, OpenAPI로 컴파일됐을 때 `{ type: "string", enum: ["order"] }`가 되고, `scripts/sync-notion-events.js`가 `enum[0]`을 읽어 메타데이터로 파싱한다 — 별도 emitter나 커스텀 데코레이터 없이 기존 `@typespec/openapi3` 파이프라인을 그대로 재사용하는 트릭이다. HTTP 오퍼레이션이 하나도 없는 모델(orphan)도 `@service`가 선언된 프로젝트 안에 있으면 전부 `components.schemas`에 실린다는 걸 확인하고 이 방식으로 정했다. producer/consumer가 여럿이면 콤마로 구분한 문자열 하나로 둔다(예: `"product,wms"`) — 스크립트가 split해서 노션 Multi-select 배열로 바꾼다.
+이벤트 하나는 producer/consumer/topic/exchange/queue/dataFormat/payloadType을 **리터럴 타입 필드**로 박아 넣은 모델이다. TypeSpec에서 `producer: "order";`처럼 프로퍼티 타입 자체를 문자열 리터럴로 주면, OpenAPI로 컴파일됐을 때 `{ type: "string", enum: ["order"] }`가 되고, `sync-notion-events`가 `enum[0]`을 읽어 메타데이터로 파싱한다 — 별도 emitter나 커스텀 데코레이터 없이 기존 `@typespec/openapi3` 파이프라인을 그대로 재사용하는 트릭이다. HTTP 오퍼레이션이 하나도 없는 모델(orphan)도 `@service`가 선언된 프로젝트 안에 있으면 전부 `components.schemas`에 실린다는 걸 확인하고 이 방식으로 정했다. producer/consumer가 여럿이면 콤마로 구분한 문자열 하나로 둔다(예: `"product,wms"`) — 스크립트가 split해서 노션 Multi-select 배열로 바꾼다.
 
 ```bash
 npm run build                     # main.tsp 전체 컴파일 → REST 경로 + 이벤트 스키마가 같은 tsp-output/schema/*.yaml에 함께 실림
@@ -352,6 +385,23 @@ npm run sync:notion:events          # 실제 upsert (NOTION_TOKEN, NOTION_EVENT_
 | 2026-09-15 | `POST /internal/v1/wms/inventories/restore`, `POST /internal/v1/wms/outbounds/orders`를 비동기 이벤트(`order.inventory.confirm`, `order.canceled.inventory-restore`)로 전환. `events/` TypeSpec 스펙 + `scripts/sync-notion-events.js` 작성, 공통 로직은 `scripts/lib/notion-openapi.js`로 추출해 REST 스크립트와 공유 | 완료 | REST/이벤트 양쪽 `--dry-run` 검증 완료. order-service `PaymentCancellationEvent`가 실제 발행하는 routingKey(`order.canceled.inventory-restore`)와 product-service `InventoryMessagingProperties`의 restore 기본값(`order.inventory.restore`)이 서로 다른 걸 발견 — product-service 쪽 재고 복구 큐가 메시지를 못 받고 있을 가능성, 별도 확인 필요(이번 작업 범위 아님) |
 | 2026-09-15 | 이벤트 스펙을 별도 컴파일 단위(`api-spec/events/`)에서 `main.tsp` 하나로 통합 — `models/events.dto.tsp`(페이로드) + `routes/events/inventory.events.tsp`(이벤트 정의, `routes/{internal,client}`와 나란한 세 번째 카테고리)로 재배치, `build:events` 스크립트 제거 | 완료 | 분리해뒀던 이유(별도 emitter 필요할까 봐)가 실제로는 근거가 없었음 — `doc.paths`/`doc.components.schemas` 모양으로 구분하는 두 스크립트는 REST/이벤트가 한 파일에 섞여 있어도 문제없다는 걸 재확인. `npm run build` 한 번으로 REST 19개 경로 + 이벤트 2개 스키마 동시 생성, 양쪽 `--dry-run` 재검증 완료 |
 | 2026-09-15 | `ci-wms-service.yml`에 `build-and-test` job 추가(product-service와 동일 패턴: `./gradlew :common:build :wms-service:build`), trigger 경로에 `common/`·`build.gradle`·`settings.gradle`·`gradle/**`·`gradlew` 추가, `sync-notion`과 취소 정책이 달라 job별 `concurrency`로 분리 | 완료 | 기존엔 `sync-notion` job만 있어서 실제 빌드/컴파일 검증이 CI에 전혀 없었음. 로컬에서 `./gradlew :common:build :wms-service:build` 실행해 성공 확인. DB 서비스 컨테이너는 아직 리포지토리/테스트가 없어 미추가(product-service도 동일 상태) — 통합 테스트 생기면 auth-service의 MySQL 컨테이너 패턴 참고해 Postgres로 추가 |
+| 2026-09-15 | product-service 시드(UNIT 213건)를 `dblink`로 가져와 `wms_product`를 채우는 `db/seed/seed_wms_product.sql` 작성, `docker-compose.yml`에 `extra_hosts` 추가 | 완료 | 실제 컨테이너 대상으로 실행해 213건 삽입(REFRIGERATED 103/ROOM_TEMPERATURE 97/FROZEN 13) 및 id·sku_code·name 일치 확인, 재실행 시 `ON CONFLICT`로 중복 없음도 확인. `barcode`/`box_unit_qty`/`pallet_box_qty`/`safety_stock`은 원본에 없어 임의 기본값 |
+| 2026-09-15 | `db/seed/seed_wms_warehouse.sql` 작성 — 실제 컬리 물류센터/컬리나우 매장 8곳 warehouse 시드 + 김포물류센터(GIMPO_DC) location 예시 53건 | 완료 | 실제 컨테이너에 실행해 창고 8/로케이션 53건 삽입 확인, storage_type별 보관존(24)·피킹존(27)·버퍼(2) 구성, 재실행 시 `ON CONFLICT`로 중복 없음 확인. `code`/`is_active`/로케이션 레이아웃은 원본에 없어 임의로 채움 |
 | - | Repository(2파일 구조)·Service·Controller 구현 | 계획 | 엔티티만 우선 반영, [erd-spec.md](./erd-spec.md)의 미결 사항(로케이션 주소 체계, 재고 예약 시점 등) 및 `api-spec/` 계약 먼저 확정 필요 |
-| - | `InboundOrder`에 `po_number` 컬럼 추가 검토 | 계획 | `api-spec/inbound.tsp`의 TODO 참고 — SCM 발주번호 연계에 필요 |
+| 2026-09-15 | `POST /internal/v1/wms/inbounds/asn` 구현 — `InboundOrderService`/`InboundInternalController`/DTO/Repository(2파일 구조: `InboundOrderRepository`+`InboundOrderJpaRepository`, `InboundItem`/`Warehouse`/`WmsProduct`는 plain JPA repo). `InboundOrder`에 누락됐던 `po_number` 컬럼도 추가(`V2` 마이그레이션) | 완료 | 실제 서버 기동 후 curl로 성공/창고없음/상품없음/유효성검증 4가지 케이스 검증, 트랜잭션 롤백(상품 못 찾으면 InboundOrder도 안 남음) 확인. `/internal/**`이라 order/user-service 패턴대로 `@PublicApi` 사용(사용자 JWT 컨텍스트 없는 서비스 간 호출) |
+| 2026-09-15 | `POST /api/v1/wms/inbounds/inspect` 구현 — 입고 확정 플로우 1~2단계(검수 완료 + InboundOrder 상태 갱신 + 버퍼 로케이션 Inventory 생성/증가). `InboundItem.inspect()` 시그니처 확장(lotNo/expiredDate/targetLocation), `Inventory.receive()` 신규, `LocationJpaRepository`/`InventoryJpaRepository` 신규. TypeSpec `InspectItemRequest`도 요청 형태에 맞춰 갱신(`inboundItemId`를 path→body로, inboundUnit/targetLocationId nullable 추가) | 완료 | 실제 서버로 전 시나리오 검증: 단위 미지정(ASN 값 사용)/오버라이드(PALLET로 재계산) 둘 다 정상, 마지막 아이템 검수 시 InboundOrder가 COMPLETED+completedDate 자동 반영, 동일 상품/LOT/유통기한 재검수 시 Inventory가 새 행이 아니라 기존 행에 누적(800→850) 확인, 없는 item/location/유효성검증 실패 3가지 에러 + 트랜잭션 롤백 확인. targetLocationId=null(자동 추천)은 로케이션 배정 전략이 erd-spec.md 미결 사항이라 추천 로직 없이 비워두기만 함(3단계 put-away 구현 시 채울 예정) |
+| 2026-09-16 | `Location.zone`을 자유 문자열에서 `Zone{BUFFER,PICKING,STORAGE}` enum으로 변경(`V3` 마이그레이션, 기존 값은 `location_type` 기준 정규화), `api-spec`/`erd-spec.md` 동기화, put-away/confirm API 설명 정정 | 완료 | 실제 서버 기동으로 Flyway V3 적용 확인(`location` 53건 zone 값 BUFFER 2/STORAGE 24/PICKING 27로 정규화), `chk_location_zone` CHECK 제약 확인 |
+| 2026-09-16 | `POST /api/v1/wms/inbounds/inspect`의 `targetLocationId=null`(자동 추천) 분기 구현 — 보관존(STORAGE) PALLET_RACK 중 완전히 빈 로케이션을 aisle/rack/level/bin 오름차순 1건 추천(`LocationJpaRepository.findAvailableLocations`, `NOT EXISTS` 서브쿼리로 유효 재고/진행 중 이동 지시 배제), 없으면 `WmsErrorCode.NO_AVAILABLE_LOCATION`(`WMS409`) | 완료 | 실제 서버로 검증: 정상 추천(최전방 1건), 후보 전부 점유 시 409 확인 후 테스트 데이터 정리. 사용자가 준 규칙에서 두 가지를 바꿔 구현함 — ① `location_type`을 `inboundUnit`에 따라 SHELF_BIN으로도 분기하는 조건은 `zone=STORAGE`와 결합하면(SHELF_BIN은 항상 zone=PICKING) 항상 0건이 되는 모순이 있어, put-away는 개념상 항상 대량 보관용 PALLET_RACK만 대상으로 한다고 보고 고정함(피킹존 보충은 별도 REPLENISHMENT 영역). ② 예외를 `IllegalStateException` 대신 프로젝트 컨벤션인 `BusinessException`+`WmsErrorCode`(신규 파일, `ErrorCode` 구현)로 처리해 `ApiResponse.error()` JSON 응답이 나가도록 함 |
+| 2026-09-16 | 입고 확정 플로우 3단계(StockMovement 생성) 구현 — `inspect()`가 버퍼 로케이션 재고 증가 뒤, `movement_type=PUT_AWAY`/`status=PENDING`/`from=버퍼`/`to=target_location_id`인 적치 작업 지시를 `StockMovementJpaRepository`(신규, plain JpaRepository)로 생성. `InboundUnit→MovementUnit` 매핑(PALLET→PALLET, CARTON·BOX→BOX) 추가 | 완료 | 실제 서버로 검증: ASN 생성→검수(자동 추천) 후 `stock_movement` 1건이 from=DOCK(BUFFER)/to=추천된 STORAGE 로케이션/PENDING으로 정확히 생성됨 확인, 테스트 데이터 정리. 물리 이동 완료 처리(StockMovement.complete() + 재고 위치 이전 + `InboundItem.putAway()`)는 put-away/confirm API 구현 시점(4단계 이전 별도 작업)으로 남겨둠 |
+| 2026-09-16 | 입고 확정 플로우 4단계(상품 도메인 이벤트 발행)의 TypeSpec 계약 작성 — `wms.inbound.completed` 이벤트(producer: wms, consumer: product, exchange `wms.topic.exchange`, queue `product.inbound.completed.queue`) 신규. `routes/events/inbound.events.tsp`(신규 파일, `inventory.events.tsp`와 도메인 분리) + `models/events.dto.tsp`에 `InboundCompletedEventPayload` 추가 | 완료 | `npm run build`/`lint` 통과(에러 0, warning 21→22 — 신규 orphan 스키마 1개는 기존 두 이벤트와 동일 패턴이라 정상), `sync:notion:events:dry`로 3개 이벤트 전부 파싱/블록 생성 확인. Java 발행자(Outbox 패턴 재사용 예정)·product-service 소비자 둘 다 아직 미구현 — 계약만 우선 정의, 실 연동 전 컨슈머 팀 확인 필요하다고 이벤트 설명에 명시 |
+| 2026-09-16 | `POST /api/v1/wms/inbounds/put-away/confirm` 구현 — 버퍼→목표 로케이션 물리 이동 완료 처리. 대기 중인 PUT_AWAY StockMovement를 `inbound_item_id`로 직접 찾아 완료 처리(`reassignTarget`+`complete`), `Inventory.remove()`(신규) + `receive()`로 버퍼→목표 로케이션 재고 이전, `InboundItem.putAway()`로 상태 전환. `stock_movement.inbound_item_id` FK 추가(`V4` 마이그레이션) | 완료 | 실제 서버로 검증: 추천 로케이션과 다른 로케이션으로 확정해도 정상 반영(재고 이전 + StockMovement.to_location_id 갱신) 확인, 이미 PUT_AWAY/아직 PENDING 상태에서 재확정 시도 시 `WMS4092`(409) 확인, 존재하지 않는 inboundItemId/targetLocationId 시 404 확인. location 기준으로 대기 작업 지시를 찾으면 작업자가 추천과 다른 곳에 적치했을 때 매칭이 깨져서, StockMovement에 `inbound_item_id`를 직접 연결하는 방식으로 설계함(REPLENISHMENT/RELOCATION은 입고 건과 무관해 NULL 허용) |
+| 2026-09-16 | `PutAwayConfirmRequest`를 `{inboundItemId, targetLocationId}`에서 `{stockMovementId, targetLocationId}`로 변경 — 작업 지시(StockMovement) 자체의 id로 직접 조회하는 편이 "이 검수 건의 PENDING PUT_AWAY 작업 지시"를 역으로 찾는 것보다 단순하고 애매함이 없음. `InboundItemResponse`에 `stockMovementId` 필드 추가(inspect 응답에 실려 옴 — PDA가 그대로 confirm에 재사용). `StockMovementJpaRepository`의 커스텀 조회 메서드 제거(표준 `findById`로 충분해짐), `WmsErrorCode.INVALID_INBOUND_ITEM_STATUS`→`INVALID_STOCK_MOVEMENT_STATUS`로 개명(검증 대상이 InboundItem이 아니라 StockMovement 자체의 movementType/status가 됨) | 완료 | 실제 서버로 재검증: inspect 응답의 stockMovementId로 confirm 성공(추천과 다른 로케이션 지정 포함), 이미 COMPLETED인 stockMovementId 재확정 시 409, 존재하지 않는 stockMovementId 시 404 확인. TypeSpec(`PutAwayConfirmRequest`, `InboundItemResponse`) 동기화 및 `npm run build/lint` 통과 |
+| 2026-09-16 | `wms.inbound.completed` 이벤트 발행 구현(Outbox 패턴) — product-service의 검증된 RabbitMQ 아웃박스 구조(`ProductOutbox`/`OutboxService`/`OutboxPublishService`/`OutboxEagerPublisher`/`OutboxPublishScheduler`/`RabbitEventPublisher`)를 `Wms*` 이름으로 그대로 이식. 기존 `Outbox` 엔티티(erd-spec의 범용 aggregate_type/aggregate_id/event_type, Kafka 전제 설계, 발행자 없이 방치돼 있었음)를 `WmsOutbox`(exchange/routing_key/type_id/published_at)로 교체(`V5` 마이그레이션, 테이블명도 `wms_outbox`). `InboundOrderService.inspect()`가 StockMovement 생성 직후 같은 트랜잭션에서 `outboxService.recordInboundCompleted(...)` 호출 → 커밋 후 `OutboxEagerPublisher`가 즉시 발행 시도, 실패하면 `OutboxPublishScheduler`(5초 주기)가 재시도 | 완료 | 실제 서버 + RabbitMQ(`kurly-rabbitmq`)로 검증: (1) 큐 미존재 상태에서 커밋 직후 발행 시도 → 브로커가 unroutable로 반려 → 아웃박스 PENDING 유지, 5초 뒤 스케줄러 재시도 로그 확인(설계대로 동작), (2) 관리 API로 테스트 큐를 `wms.topic.exchange`에 바인딩한 뒤 다음 재시도에서 ACK 수신 → 아웃박스 PUBLISHED 전환 + 큐에 실제 메시지 도달, `__TypeId__` 헤더/payload 필드 전부 계약과 일치 확인. product-service 쪽 소비자는 여전히 미구현(이번 범위 아님) — 테스트 큐/바인딩/데이터는 정리함 |
+| 2026-09-16 | `GET /api/v1/wms/inventories/movement` 신설 — StockMovement 목록 조회(warehouseId/movementType/status 선택 필터, limit 기본 50·최대 200, createdAt 오름차순). PDA 작업자가 대기 중인 적치/보충/이동 작업을 창고 단위로 훑어보는 용도. `put-away/recommendation`(inboundItemId 1건 미리보기, inbound 도메인)과는 성격이 달라 inventory 도메인(`inventory.api.tsp`)에 배치 — 기존 recommendation API는 그대로 유지 | 완료 | `StockMovementResponse`에 lotNo/expiredDate/inboundItemId/unitQuantity/quantity/createdAt/completedAt 보강(TypeSpec+Java 동시 반영). 실제 서버로 검증: warehouseId+movementType+status 복합 필터, 필터 없음(default limit), 존재하지 않는 warehouseId(빈 배열), limit 파라미터, confirm 이후 status=PENDING→COMPLETED 필터 전환까지 전부 확인. `npm run build/lint` 통과(경고는 신규 오퍼레이션 1개분만 증가, 기존 패턴과 동일) |
+| 2026-09-16 | `put-away/recommendation`을 "단건 미리보기 조회"에서 "대기 중인 적치 작업 지시의 목표 로케이션 재추천/재배정"으로 재정의(`GET`→`POST`, `inboundItemId`→`stockMovementId`). `InboundItem.reassignTargetLocation()`(신규) + `StockMovement.reassignTarget()`(기존 재사용)로 InboundItem/StockMovement 양쪽을 함께 갱신. confirmPutAway와 재추천이 공유하는 "PENDING PUT_AWAY 작업 지시 조회+검증" 로직을 `findPendingPutAwayMovement()`로 추출해 중복 제거 | 완료 | 실제 서버로 검증: 원래 추천 로케이션(3)과 다른 로케이션(15)으로 재배정되는지 확인(자기 자신의 PENDING 작업 지시가 원래 로케이션을 점유 중이라 자동 제외됨), InboundItem.targetLocation/StockMovement.toLocation 둘 다 갱신 확인, 이미 COMPLETED인 작업 지시에 재추천 시도 시 409(WMS4092), 존재하지 않는 stockMovementId 시 404 확인. TypeSpec(`PutAwayRecommendationRequest` 신규, `PutAwayRecommendationResult`에 stockMovementId 추가) 동기화 및 build/lint 통과 |
+| 2026-09-16 | TypeSpec→Notion 동기화 로직/CI를 다른 서비스도 쓸 수 있게 일반화 — `scripts/sync-notion-{db,events}.js`+`scripts/lib/notion-openapi.js`를 리포 루트 공용 패키지 `tools/notion-sync-kit`(`file:` 의존성)로 추출, `DEFAULT_DOMAIN='WMS'` 하드코딩을 `SERVICE_DOMAIN` 환경변수로 교체, `PROJECT_ROOT` 계산을 `import.meta.url` 기반에서 `process.cwd()` 기반으로 변경(공용 패키지에서 실행돼도 호출한 서비스의 api-spec 디렉터리를 가리키도록). CI의 `sync-notion` job도 `.github/workflows/reusable-notion-sync.yml`(`workflow_call`)로 추출, `ci-wms-service.yml`은 `working-directory`/`domain: WMS`만 넘겨 호출하도록 축소. `.env.example` 신규 추가(기존에 문서만 있고 파일은 없었음) | 완료 | 리팩터링 전후 `sync:notion:dry`/`sync:notion:events:dry` 결과 비교로 동작 동일함 확인(도메인 값 `WMS`로 동일하게 채워짐), `node_modules` 삭제 후 `npm install`/`npm ci` 클린 설치로 `file:` 의존성 해석 확인, `SERVICE_DOMAIN` 미설정 시 fail-fast 확인, 재사용 워크플로우 YAML 문법 검증 완료(실제 GitHub Actions 트리거는 미검증). 다른 서비스 부트스트랩용 템플릿은 `tools/notion-sync-kit/template/`에 추가(실제 다른 서비스의 TypeSpec 명세 작성은 이번 범위 아님) |
+| 2026-09-16 | REST 동기화(`tools/notion-sync-kit/bin/sync-notion-db.js`)가 오퍼레이션의 `@doc`(`op.description`)을 페이지 맨 위 "📖 API 개요" 블록으로 렌더링하도록 수정 — 기존엔 `extractEndpoints`가 파싱만 해두고 `buildPageChildren`에서 한 번도 쓰지 않아 본문에 전혀 안 나오고 있었다. `@doc` 없는 오퍼레이션은 "(작성 필요)"로 표시(이벤트 동기화의 `ev.overview \|\| '(작성 필요)'`와 동일 패턴) | 완료 | `npm run sync:notion:dry`로 20개 엔드포인트 전부 확인 — 단문/여러 줄 `@doc` 모두 줄바꿈 유지되며 정상 렌더링, `@doc` 없는 placeholder 엔드포인트(workers 등) 3개는 "(작성 필요)"로 정확히 폴백. `tools/notion-sync-kit`는 공용 패키지라 이 변경은 모든 서비스의 REST 동기화에 곧바로 적용된다 |
+| 2026-09-17 | `InboundItem`에 낙관적 락(`@Version`) 도입(`V6` 마이그레이션) — 검수(inspect)처럼 같은 행을 읽어 상태를 전이시키는 흐름에서 동시 요청이 서로 덮어쓰는 걸 막는다. `InboundItemJpaRepository.findWithOptimisticLockById`(신규, `@Lock(LockModeType.OPTIMISTIC)`)를 `InboundOrderService.inspect()`가 사용하도록 교체. `common`의 `GlobalExceptionHandler`에 `OptimisticLockingFailureException` → 409(`GlobalErrorCode.CONFLICT`) 핸들러 추가(기존엔 매핑이 없어 500으로 새던 것) | 완료 | 실제 서버로 동시 요청 2개를 진짜로 경합시켜 검증: 하나는 200 성공, 하나는 정확히 409 CONFLICT로 실패. 실패한 트랜잭션의 부수효과(버퍼 재고 증가, StockMovement, Outbox 이벤트)가 전부 롤백되어 각각 정확히 1건만 남는 것 확인(도입 전이었다면 재고가 800으로 두 배 반영되고 StockMovement/Outbox가 중복 생성됐을 상황). `confirmPutAway`/`recommendPutAway`는 `item`을 `movement.getInboundItem()`으로 얻어 직접 findById를 쓰지 않지만, `@Version`이 붙은 이상 flush 시점에 자동으로 버전 검증되므로 별도 조치 없이 함께 보호된다 |
+| 2026-09-17 | 코드 리뷰 발견 사항 반영: (1) `confirmPutAway`/`recommendPutAway`가 공유하는 `findPendingPutAwayMovement`가 `StockMovement`를 `PESSIMISTIC_WRITE`로 잠그도록 변경(`findWithPessimisticLockById` 신규) — 기존엔 InboundItem의 낙관적 락에 우연히 기대고 있어서(작업 지시 자체는 잠기지 않음) 안전하긴 했지만 명시적이지 않았다. (2) `InventoryJpaRepository`의 조회에 `PESSIMISTIC_WRITE` 추가, `Inventory.remove()`에 재고 부족 가드(`WmsErrorCode.INSUFFICIENT_INVENTORY`, WMS4094) 추가. (3) 검증 중 발견한 별도 버그도 같이 수정: `uk_inventory_lot`가 표준 유니크 제약이라 `lpn_code IS NULL`인 행끼리 유일성이 전혀 보장되지 않아, 같은 상품/LOT를 동시에 검수하면 재고가 두 행으로 쪼개졌다 — `NULLS NOT DISTINCT`로 전환(`V7`). `common`의 `GlobalExceptionHandler`에 `DataIntegrityViolationException` → 409 핸들러도 추가(이 제약이 막아주는 나머지 경합을 500 대신 409로) | 완료 | 실제 서버로 3가지 시나리오 전부 검증: ① 같은 stockMovementId로 동시 confirmPutAway → 하나만 성공, 나머지는 moveInventory 실행 전에 409로 실패, DB에 재고 이동 1건만 반영 확인. ② 같은 상품/LOT로 서로 다른 InboundItem 2건을 동시에 inspect → NULLS NOT DISTINCT 덕에 하나는 성공, 하나는 409(DataIntegrityViolationException)로 깔끔하게 실패하며 완전 롤백(PENDING으로 복귀) 확인 — 수정 전엔 재고가 400/400 두 행으로 쪼개지는 걸 직접 재현해서 확인했다. ③ 버퍼 재고보다 큰 수량을 put-away confirm으로 빼려 하면 409 INSUFFICIENT_INVENTORY로 깔끔하게 실패, 트랜잭션 롤백 확인 |
+| 2026-09-17 | `wms.return.inspected` 이벤트(반품 검수 완료) TypeSpec 계약 작성 — producer: wms, consumer: product,order(재고 복구 + 환불/교환 플로우), exchange `wms.topic.exchange`. `routes/events/return.events.tsp`(신규, "반품" 도메인 — REST 리소스가 아직 하나도 없어 이벤트가 이 도메인의 첫 산출물) + `models/events.dto.tsp`에 `ReturnInspectionCompletedEventPayload`/`ReturnInspectionItem`(품목별 검수수량/재입고수량/폐기수량) 추가 | 완료 | `npm run build/lint` 통과, `sync:notion:events:dry`로 4개 이벤트 전부(신규 1 + 기존 3) 파싱/블록 생성 확인 — 수신(consumer) multi-select이 product/order 둘로 정확히 분리됨도 확인. WMS에 반품(Return) 도메인 엔티티/API가 전혀 없어 `returnOrderId`는 외부(OMS/주문) 참조 키로 취급 — 계약만 우선 정의, 발행자·양쪽 소비자 전부 미구현 |
 | - | Postman 팀 워크스페이스 자동 동기화 스크립트 | 계획 | Postman API Key/컬렉션 UID 발급 후 진행 ([6.4](#64-postman-동기화) 참고) |

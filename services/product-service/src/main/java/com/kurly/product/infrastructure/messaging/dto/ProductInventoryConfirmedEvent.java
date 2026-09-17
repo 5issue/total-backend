@@ -1,7 +1,7 @@
 package com.kurly.product.infrastructure.messaging.dto;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
@@ -18,7 +18,7 @@ public record ProductInventoryConfirmedEvent(
         Status status,
         @JsonInclude(JsonInclude.Include.NON_EMPTY)
         List<FailedItemInfo> failedItems,
-        LocalDateTime confirmedAt
+        Instant confirmedAt
 ) {
     public record FailedItemInfo(
             Long productId,

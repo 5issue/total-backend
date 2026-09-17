@@ -74,50 +74,15 @@ jobs:
             services/wms-service/build/reports/tests/
           retention-days: 7
 
-  # api-spec(TypeSpec)이 생성한 OpenAPI를 노션 API 명세 DB에 동기화한다.
+  # api-spec(TypeSpec)이 생성한 OpenAPI를 공용 노션 API 명세 DB에 동기화한다.
   # PR 단계에서는 돌리지 않는다 — develop에 실제로 merge된 것만 문서에 반영하기 위함.
+  # 실제 동기화 로직/단계는 reusable-notion-sync.yml 하나로 관리되고, 다른 서비스도
+  # working-directory/domain만 바꿔 같은 워크플로우를 호출한다.
   sync-notion:
     if: github.event_name != 'pull_request'
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    # Notion 페이지 본문을 지우고 다시 쓰는 도중 취소되면 본문이 빈 채로 남을 수 있어서,
-    # build-and-test와 달리 진행 중인 실행은 취소하지 않는다.
-    concurrency:
-      group: ${{ github.workflow }}-notion-${{ github.ref }}
-      cancel-in-progress: false
-    defaults:
-      run:
-        working-directory: services/wms-service/api-spec
-
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          persist-credentials: false
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          cache: npm
-          cache-dependency-path: services/wms-service/api-spec/package-lock.json
-
-      - run: npm ci
-
-      # 서로 다른 노션 DB를 건드리는 독립적인 동기화라, 하나가 실패해도 나머지는 계속 돌려야 한다.
-      - name: Sync REST API spec to Notion
-        id: sync_notion
-        continue-on-error: true
-        run: npm run sync:notion
-        env:
-          NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
-          NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID }}
-
-      - name: Sync async event spec to Notion
-        if: always()
-        run: npm run sync:notion:events
-        env:
-          NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
-          NOTION_EVENT_DATABASE_ID: ${{ secrets.NOTION_EVENT_DATABASE_ID }}
-
-      - name: Fail job if REST sync failed
-        if: steps.sync_notion.outcome == 'failure'
-        run: exit 1
+    needs: [build-and-test]
+    uses: ./.github/workflows/reusable-notion-sync.yml
+    with:
+      working-directory: services/wms-service/api-spec
+      domain: WMS
+    secrets: inherit

@@ -20,3 +20,15 @@ enum TaskStatus {
   COMPLETED,
   CANCELED,
 }
+
+/**
+ * 로케이션의 기능적 구역. `com.kurly.wms.infrastructure.entity.Location.Zone`과 1:1로 대응한다.
+ * `LocationType`(PALLET_RACK/SHELF_BIN/BUFFER)과 사실상 1:1로 겹치는 값이라 중복처럼 보일 수
+ * 있는데, 나중에 하나의 물리 구역(zone)에 여러 location_type이 섞이는 경우가 생기면 그때부터
+ * 의미가 갈라진다고 보고 일단 별도 컬럼으로 유지한다.
+ */
+enum Zone {
+  BUFFER,
+  PICKING,
+  STORAGE,
+}

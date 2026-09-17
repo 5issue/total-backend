@@ -1,0 +1,71 @@
+name: Reusable - Notion Sync
+
+# TypeSpec → OpenAPI → Notion 동기화 로직/단계를 한 곳에서 관리하기 위한 재사용 워크플로우.
+# 여러 서비스가 같은 공용 Notion DB(REST/이벤트 각 하나)에 도메인 필드로 구분해 기록하므로,
+# 실제 동작을 바꾸려면(재시도 정책, 실패 격리 방식 등) 이 파일 하나만 고치면 모든 서비스에
+# 반영된다. 각 서비스는 working-directory/domain 값만 다르게 넘겨 호출한다.
+on:
+  workflow_call:
+    inputs:
+      working-directory:
+        description: "서비스의 api-spec 디렉터리 경로 (예: services/wms-service/api-spec)"
+        required: true
+        type: string
+      domain:
+        description: "노션 '도메인' 속성에 쓸 값 (예: WMS, ORDER)"
+        required: true
+        type: string
+    secrets:
+      NOTION_TOKEN:
+        required: true
+      NOTION_DATABASE_ID:
+        required: true
+      NOTION_EVENT_DATABASE_ID:
+        required: true
+
+jobs:
+  sync-notion:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Notion 페이지 본문을 지우고 다시 쓰는 도중 취소되면 본문이 빈 채로 남을 수 있어서,
+    # 진행 중인 실행은 취소하지 않는다.
+    concurrency:
+      group: ${{ github.workflow }}-notion-${{ inputs.working-directory }}-${{ github.ref }}
+      cancel-in-progress: false
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: ${{ inputs.working-directory }}/package-lock.json
+
+      - run: npm ci
+
+      # 서로 다른 노션 DB를 건드리는 독립적인 동기화라, 하나가 실패해도 나머지는 계속 돌려야 한다.
+      - name: Sync REST API spec to Notion
+        id: sync_notion
+        continue-on-error: true
+        run: npm run sync:notion
+        env:
+          NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
+          NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID }}
+          SERVICE_DOMAIN: ${{ inputs.domain }}
+
+      - name: Sync async event spec to Notion
+        if: always()
+        run: npm run sync:notion:events
+        env:
+          NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
+          NOTION_EVENT_DATABASE_ID: ${{ secrets.NOTION_EVENT_DATABASE_ID }}
+
+      - name: Fail job if REST sync failed
+        if: steps.sync_notion.outcome == 'failure'
+        run: exit 1
