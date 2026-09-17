@@ -104,7 +104,7 @@ public class InboundOrderService {
      */
     @Transactional
     public InboundItemResponse inspect(InspectItemRequest request) {
-        InboundItem item = inboundItemJpaRepository.findById(request.inboundItemId())
+        InboundItem item = inboundItemJpaRepository.findWithOptimisticLockById(request.inboundItemId())
                 .orElseThrow(() -> new EntityNotFoundException("입고 상세를 찾을 수 없습니다. inboundItemId=" + request.inboundItemId()));
 
         InboundOrder order = item.getInboundOrder();
@@ -177,9 +177,13 @@ public class InboundOrderService {
                 RECOMMENDATION_REASON, movement.getStatus());
     }
 
-    /** stockMovementId로 대기 중인(PENDING) 적치(PUT_AWAY) 작업 지시를 찾는다. 아니면 409로 실패한다. */
+    /**
+     * stockMovementId로 대기 중인(PENDING) 적치(PUT_AWAY) 작업 지시를 배타적으로 선점해 찾는다.
+     * 같은 stockMovementId로 들어온 동시 요청은 이 행의 락이 풀릴 때까지 대기했다가, 이미 상태가
+     * 바뀐 걸 보고 여기서 즉시 실패한다 — moveInventory/item.putAway를 실행하기 전에 걸러진다.
+     */
     private StockMovement findPendingPutAwayMovement(Long stockMovementId) {
-        StockMovement movement = stockMovementJpaRepository.findById(stockMovementId)
+        StockMovement movement = stockMovementJpaRepository.findWithPessimisticLockById(stockMovementId)
                 .orElseThrow(() -> new EntityNotFoundException("적치 작업 지시를 찾을 수 없습니다. stockMovementId=" + stockMovementId));
 
         if (movement.getMovementType() != MovementType.PUT_AWAY || movement.getStatus() != MovementStatus.PENDING) {
