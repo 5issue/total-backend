@@ -9,6 +9,7 @@ public record OrderPaymentCompletedMessage(
         Long orderId,
         String orderNo,
         Long memberId,
+        Long regionId,
         Long paidAmount,
         LocalDateTime paidAt,
         DeliveryAddress deliveryAddress,

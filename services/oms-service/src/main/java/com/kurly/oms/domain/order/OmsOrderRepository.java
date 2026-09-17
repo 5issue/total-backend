@@ -3,8 +3,6 @@ package com.kurly.oms.domain.order;
 import com.kurly.oms.presentation.dto.OmsOrderSummary;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
-import org.springframework.data.jpa.repository.Query;
-import org.springframework.data.repository.query.Param;
 
 import java.time.LocalDateTime;
 import java.util.Optional;
@@ -17,47 +15,15 @@ public interface OmsOrderRepository {
 
     Optional<OmsOrder> findByOrderId(Long orderId);
 
-    @Query(value = """
-            SELECT new com.kurly.oms.presentation.dto.OmsOrderSummary(
-                o.id,
-                o.orderId,
-                o.orderNo,
-                CAST(o.status AS string),
-                COUNT(s.id),
-                r.regionName,
-                fc.centerName
-            )
-            FROM OmsOrder o
-            LEFT JOIN Shipment s ON s.omsOrderId = o.id
-            LEFT JOIN TamRegion r ON r.id = s.regionId
-            LEFT JOIN FulfillmentCenter fc ON fc.id = s.centerId
-            WHERE (:orderNo IS NULL OR o.orderNo = :orderNo)
-            AND (:status IS NULL OR CAST(o.status AS string) = :status)
-            AND (:regionId IS NULL OR s.regionId = :regionId)
-            AND (:centerId IS NULL OR s.centerId = :centerId)
-            AND (CAST(:startAt AS timestamp) IS NULL OR o.createdAt >= :startAt)
-            AND (CAST(:endAt AS timestamp) IS NULL OR o.createdAt <= :endAt)
-            GROUP BY o.id, o.orderId, o.orderNo, o.status, r.regionName, fc.centerName
-            ORDER BY o.id DESC
-            """,
-            countQuery = """
-                    SELECT COUNT(DISTINCT o.id)
-                    FROM OmsOrder o
-                    LEFT JOIN Shipment s ON s.omsOrderId = o.id
-                    WHERE (:orderNo IS NULL OR o.orderNo = :orderNo)
-                    AND (:status IS NULL OR CAST(o.status AS string) = :status)
-                    AND (:regionId IS NULL OR s.regionId = :regionId)
-                    AND (:centerId IS NULL OR s.centerId = :centerId)
-                    AND (CAST(:startAt AS timestamp) IS NULL OR o.createdAt >= :startAt)
-                    AND (CAST(:endAt AS timestamp) IS NULL OR o.createdAt <= :endAt)
-                    """)
     Page<OmsOrderSummary> searchOrders(
-            @Param("orderNo") String orderNo,
-            @Param("status") String status,
-            @Param("regionId") Long regionId,
-            @Param("centerId") Long centerId,
-            @Param("startAt") LocalDateTime startAt,
-            @Param("endAt") LocalDateTime endAt,
+            String orderNo,
+            String status,
+            Long regionId,
+            Long centerId,
+            LocalDateTime startAt,
+            LocalDateTime endAt,
             Pageable pageable
     );
+
+    Optional<OmsOrder> findByIdWithItems(Long omsOrderId);
 }

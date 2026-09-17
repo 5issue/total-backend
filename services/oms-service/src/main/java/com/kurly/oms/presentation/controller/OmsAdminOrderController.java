@@ -8,10 +8,7 @@ import com.kurly.oms.application.OmsReturnService;
 import com.kurly.oms.domain.common.StorageType;
 import com.kurly.oms.domain.returnorder.OmsReturnStatus;
 import com.kurly.oms.presentation.api.OmsAdminOrderApi;
-import com.kurly.oms.presentation.dto.OmsOrderListResponse;
-import com.kurly.oms.presentation.dto.OmsOrderSearchCondition;
-import com.kurly.oms.presentation.dto.ReturnProcessDto;
-import com.kurly.oms.presentation.dto.ReturnProcessListDto;
+import com.kurly.oms.presentation.dto.*;
 import io.swagger.v3.oas.annotations.Operation;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Pageable;
@@ -47,8 +44,8 @@ public class OmsAdminOrderController implements OmsAdminOrderApi {
 
     @Override
     @GetMapping("/orders/{omsOrderId}")
-    public ApiResponse<Object> getOrderMonitoring(@PathVariable Long omsOrderId) {
-        return ApiResponse.success(orderService.getOrderMonitoring(omsOrderId));
+    public ApiResponse<OmsOrderDetailResponse> getOrderDetail(@PathVariable Long omsOrderId) {
+        return ApiResponse.success(orderService.getOrderDetail(omsOrderId));
     }
 
     @Override

@@ -44,6 +44,9 @@ public class OmsOrder extends BaseEntity {
     @Column(nullable = false, unique = true, length = 64)
     private String sourceEventId;
 
+    @Column(nullable = false)
+    private Long regionId;
+
     @Column(nullable = false, length = 80)
     private String recipientName;
 
@@ -62,11 +65,14 @@ public class OmsOrder extends BaseEntity {
     private LocalDateTime cancelledAt;
 
     @Builder(access = AccessLevel.PRIVATE)
-    private OmsOrder(Long orderId, String orderNo, OmsOrderStatus status, String sourceEventId, String recipientName, String recipientPhone, String postalCode, String roadAddress, String detailAddress) {
+    private OmsOrder(Long orderId, String orderNo, OmsOrderStatus status, String sourceEventId,
+                     Long regionId, String recipientName, String recipientPhone,
+                     String postalCode, String roadAddress, String detailAddress) {
         this.orderId = orderId;
         this.orderNo = orderNo;
         this.status = status;
         this.sourceEventId = sourceEventId;
+        this.regionId = regionId;
         this.recipientName = recipientName;
         this.recipientPhone = recipientPhone;
         this.postalCode = postalCode;
@@ -74,17 +80,32 @@ public class OmsOrder extends BaseEntity {
         this.detailAddress = detailAddress;
     }
 
-    public static OmsOrder create(Long orderId, String orderNo, String sourceEventId, String recipientName, String recipientPhone, String postalCode, String roadAddress, String detailAddress, List<OmsOrderItem> items) {
+    public static OmsOrder create(Long orderId, String orderNo, String sourceEventId,
+                                  Long regionId, String recipientName, String recipientPhone,
+                                  String postalCode, String roadAddress, String detailAddress,
+                                  List<OmsOrderItem> items) {
         Assert.notNull(orderId, "주문 서비스 orderId는 필수입니다.");
         Assert.hasText(orderNo, "주문번호는 필수입니다.");
         Assert.hasText(sourceEventId, "주문 이벤트 ID는 필수입니다.");
+        Assert.notNull(regionId, "주문 서비스 regionId는 필수입니다.");
         Assert.hasText(recipientName, "수령인명은 필수입니다.");
         Assert.hasText(recipientPhone, "수령인 연락처는 필수입니다.");
         Assert.hasText(postalCode, "우편번호는 필수입니다.");
         Assert.hasText(roadAddress, "도로명 주소는 필수입니다.");
         Assert.notEmpty(items, "주문 품목은 최소 1개 이상이어야 합니다.");
 
-        OmsOrder omsOrder = OmsOrder.builder().orderId(orderId).orderNo(orderNo).status(OmsOrderStatus.ORDER_RECEIVED).sourceEventId(sourceEventId).recipientName(recipientName).recipientPhone(recipientPhone).postalCode(postalCode).roadAddress(roadAddress).detailAddress(detailAddress).build();
+        OmsOrder omsOrder = OmsOrder.builder()
+                .orderId(orderId)
+                .orderNo(orderNo)
+                .status(OmsOrderStatus.ORDER_RECEIVED)
+                .sourceEventId(sourceEventId)
+                .regionId(regionId)
+                .recipientName(recipientName)
+                .recipientPhone(recipientPhone)
+                .postalCode(postalCode)
+                .roadAddress(roadAddress)
+                .detailAddress(detailAddress)
+                .build();
 
         for (OmsOrderItem item : items) {
             omsOrder.items.add(item);

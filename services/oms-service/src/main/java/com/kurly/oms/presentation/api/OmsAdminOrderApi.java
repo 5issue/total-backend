@@ -3,6 +3,7 @@ package com.kurly.oms.presentation.api;
 import com.kurly.common.response.ApiResponse;
 import com.kurly.oms.domain.common.StorageType;
 import com.kurly.oms.domain.returnorder.OmsReturnStatus;
+import com.kurly.oms.presentation.dto.OmsOrderDetailResponse;
 import com.kurly.oms.presentation.dto.OmsOrderListResponse;
 import com.kurly.oms.presentation.dto.ReturnProcessDto;
 import com.kurly.oms.presentation.dto.ReturnProcessListDto;
@@ -28,8 +29,10 @@ public interface OmsAdminOrderApi {
             @Parameter(hidden = true) Pageable pageable
     );
 
-    @Operation(summary = "OMS 주문 및 Shipment 상세 관제")
-    ApiResponse<Object> getOrderMonitoring(Long omsOrderId);
+    @Operation(summary = "OMS 주문 상세 조회", description = "OMS 주문, 온도대별 Shipment, 센터·회차 정보를 상세 조회합니다.")
+    ApiResponse<OmsOrderDetailResponse> getOrderDetail(
+            @Parameter(description = "OMS 주문 ID") Long omsOrderId
+    );
 
     @Operation(summary = "CS 관리자 주문 직권 취소")
     ApiResponse<Void> cancelOrder(Long orderId);
