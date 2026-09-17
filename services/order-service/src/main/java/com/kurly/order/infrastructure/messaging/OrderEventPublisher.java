@@ -1,7 +1,5 @@
 package com.kurly.order.infrastructure.messaging;
 
-import com.kurly.order.domain.order.OrderEvent;
-import com.kurly.order.domain.order.SalesOrderCreatedEvent;
 import lombok.RequiredArgsConstructor;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.modulith.events.ApplicationModuleListener;
@@ -18,6 +16,15 @@ public class OrderEventPublisher {
         rabbitTemplate.convertAndSend(
                 OrderRabbitMqConfig.EXCHANGE_ORDER,
                 OrderRabbitMqConfig.ROUTING_KEY_ORDER_PAYMENT_COMPLETED,
+                event
+        );
+    }
+
+    @ApplicationModuleListener
+    public void publishOrderReturnRequested(OrderReturnRequestedEvent event) {
+        rabbitTemplate.convertAndSend(
+                OrderRabbitMqConfig.EXCHANGE_ORDER,
+                OrderRabbitMqConfig.ROUTING_KEY_ORDER_RETURN_REQUESTED,
                 event
         );
     }

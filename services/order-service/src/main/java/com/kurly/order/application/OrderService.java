@@ -387,7 +387,7 @@ public class OrderService {
         )));
 
         orderClaimRepository.save(claim);
-        eventPublisher.publishEvent(OrderEvent.of("order.return-requested", order));
+        eventPublisher.publishEvent(OrderReturnRequestedEvent.of(order));
         return OrderClaimResponseDto.from(claim);
     }
 

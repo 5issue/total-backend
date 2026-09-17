@@ -7,9 +7,18 @@ import org.springframework.context.annotation.Configuration;
 @Configuration
 public class OrderRabbitMqConfig {
 
-    public static final String EXCHANGE = "order.topic.exchange";
-    public static final String PRODUCT_EXCHANGE = "product.topic.exchange";
-    public static final String INVENTORY_RESTORED_QUEUE = "order.inventory-restored.queue";
+    // ==========================================
+    // Exchanges
+    // ==========================================
+    public static final String EXCHANGE_ORDER = "order.topic.exchange";
+    public static final String EXCHANGE_PRODUCT = "product.topic.exchange";
+
+    // ==========================================
+    // Routing Keys
+    // ==========================================
+    public static final String ROUTING_KEY_ORDER_PAYMENT_COMPLETED = "order.payment.completed";
+    public static final String ROUTING_KEY_ORDER_RETURN_REQUESTED = "order.return-requested";
+
     public static final String ROUTING_KEY_INVENTORY_RESTORED = "product.inventory.restored";
 
 
