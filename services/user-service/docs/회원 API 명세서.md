@@ -6,6 +6,7 @@
 | 회원  | POST   | O      | /api/v1/users/me/addresses                      | 신규 배송지 등록              | User        | 불필요  |
 | 회원  | PATCH  | O      | /api/v1/users/me/addresses/{address_id}/default | 특정 배송지를 기본 배송지로 설정     | User        | 필요    |
 | 회원  | POST   | X      | /internal/v1/users/sync-profile                 | 로그인 후 회원 프로필 생성        | User, Admin | 불필요   |
+| 회원  | GET    | O      | /internal/v1/users/{member_id}/delivery-addresses/{address_id} | 주문 서비스용 배송지 단건 조회 | User        | **필요**  |
 
 
 ## 기본 주문자 정보 및 배송 요청사항 조회
@@ -369,6 +370,90 @@
 > **503은 현재 미구현이다.** DB 연동 장애는 지금 500으로 나간다. 별도 코드가 필요하면
 > `DataAccessResourceFailureException` 핸들러를 `common`에 추가해야 하며, 전 서비스에
 > 영향이 있으므로 팀 합의가 필요하다.
+
+---
+
+## 주문 서비스용 배송지 단건 조회
+
+order-service가 장바구니 조회·배송 약속 계산 시 호출한다(2026-09-12 합의).
+
+**호출측이 사용자의 access token을 그대로 전파**하고 user-service가 재검증한다(설계서 3.4).
+`sync-profile`과 달리 `Authorization`이 **필수**다.
+
+## 🔹 Request
+
+**Headers**
+
+|이름|필수|설명|
+|---|---|---|
+|Authorization|**Y**|`Bearer {Access Token}` — 주문자 본인의 토큰|
+
+**Path Parameters**
+
+|이름|타입|필수|설명|
+|---|---|---|---|
+|member_id|Long|Y|회원 식별자. **토큰의 `sub`와 일치해야 한다**|
+|address_id|Long|Y|배송지 식별자|
+
+**Query Parameters**
+
+|이름|타입|필수|기본값|설명|
+|---|---|---|---|---|
+|-|-|-|-|해당없음|
+
+---
+
+## 🔹 Body
+
+요청 본문 없음.
+
+---
+
+## 🔹 Response
+
+**성공 (200 OK)**
+
+```json
+{
+  "status": "SUCCESS",
+  "message": "회원 배송지 조회가 완료되었습니다.",
+  "data": {
+    "addressId": 8,
+    "addressName": "우리집",
+    "recipientName": "홍길동",
+    "recipientPhone": "010-1234-5678",
+    "address": "서울특별시 강남구 테헤란로 123",
+    "detailAddress": "101동 1001호"
+  },
+  "error": null,
+  "timestamp": "2026-09-16T00:25:00Z"
+}
+```
+
+|필드|타입|설명|
+|---|---|---|
+|addressId|Long|배송지 식별자|
+|addressName|String|배송지 별칭|
+|recipientName|String|수령인 이름|
+|recipientPhone|String|수령인 연락처. **엔티티의 `phone`에 대응**|
+|address|String|기본 주소|
+|detailAddress|String|상세 주소. **엔티티의 `addressDetail`에 대응**|
+
+> **우편번호(`zipCode`)는 싣지 않는다.** 합의 명세에 없어 제외했다.
+> 배송 약속 계산에 필요하면 **명세를 먼저 고친 뒤** 추가한다 — 협의 진행 중(2026-09-16).
+
+**실패**
+
+|HTTP|error|message|사유|
+|---|---|---|---|
+|401|`UNAUTHORIZED`|"인증이 필요합니다."|토큰 없음·만료·서명 불일치|
+|404|`ADDRESS_NOT_FOUND`|"존재하지 않는 배송지입니다."|없는 배송지 **또는 타인의 배송지**|
+
+> **타인의 배송지와 없는 배송지는 같은 404다.** 구분해 응답하면 `address_id`를 훑어 존재 여부를
+> 알아낼 수 있다. `member_id`가 토큰의 `sub`와 다른 경우도 같은 404다.
+>
+> 호출측(order)의 `ORD_NOT_FOUND_ADDRESS`는 order 쪽 코드다. user-service가 돌려주는 `error`는
+> 위 표의 값이며, 매핑은 order가 한다.
 
 ---
 
