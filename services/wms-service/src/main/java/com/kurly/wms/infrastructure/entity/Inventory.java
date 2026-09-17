@@ -1,5 +1,7 @@
 package com.kurly.wms.infrastructure.entity;
 
+import com.kurly.common.exception.BusinessException;
+import com.kurly.wms.domain.exception.WmsErrorCode;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.FetchType;
@@ -87,6 +89,10 @@ public class Inventory {
 
     /** put-away 등 로케이션 간 실물 이동으로 이 로케이션의 재고가 빠져나갈 때 사용한다. */
     public void remove(int amount) {
+        if (amount > this.quantity) {
+            throw new BusinessException(WmsErrorCode.INSUFFICIENT_INVENTORY,
+                    "재고가 부족합니다. inventoryId=" + this.id + ", quantity=" + this.quantity + ", 요청 수량=" + amount);
+        }
         this.quantity -= amount;
     }
 

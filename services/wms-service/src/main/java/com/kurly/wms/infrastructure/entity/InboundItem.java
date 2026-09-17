@@ -1,5 +1,7 @@
 package com.kurly.wms.infrastructure.entity;
 
+import com.kurly.common.exception.BusinessException;
+import com.kurly.wms.domain.exception.WmsErrorCode;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -11,6 +13,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 import java.time.LocalDate;
 import lombok.AccessLevel;
 import lombok.Builder;
@@ -66,6 +69,11 @@ public class InboundItem {
     @Column(name = "status", length = 20, nullable = false)
     private InboundItemStatus status;
 
+    /** 검수/적치처럼 같은 행을 읽어 상태를 전이시키는 동시 요청을 막기 위한 낙관적 락. */
+    @Version
+    @Column(name = "version", nullable = false)
+    private Long version;
+
     @Builder
     private InboundItem(InboundOrder inboundOrder, WmsProduct product, InboundUnit inboundUnit,
                          Integer orderedQuantity, String lpnCode, String lotNo, LocalDate expiredDate,
@@ -87,6 +95,10 @@ public class InboundItem {
      * 사항 4번) null일 수 있다 — put-away를 구현하는 시점에 채워진다.
      */
     public void inspect(int inspectQuantity, int totalBaseQuantity, String lotNo, LocalDate expiredDate, Location targetLocation) {
+        if(this.getStatus() != InboundItemStatus.PENDING) {
+            throw new BusinessException(WmsErrorCode.INVALID_INBOUND_ITEM_STATUS,
+                    "검수 가능한 상태가 아닙니다. inboundItemId=" + this.getId() + ", status=" + this.getStatus());
+        }
         this.inspectQuantity = inspectQuantity;
         this.totalBaseQuantity = totalBaseQuantity;
         this.lotNo = lotNo;
