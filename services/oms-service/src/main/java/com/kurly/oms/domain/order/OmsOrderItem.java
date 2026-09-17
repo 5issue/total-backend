@@ -64,9 +64,7 @@ public class OmsOrderItem extends BaseEntity {
             Long productId,
             Long skuId,
             StorageType storageType,
-            Integer quantity,
-            BigDecimal volumeCm3,
-            Integer weightGram
+            Integer quantity
     ) {
         Assert.notNull(orderItemId, "원 주문 상품 ID는 필수입니다.");
         Assert.notNull(productId, "상품 ID는 필수입니다.");
@@ -80,8 +78,8 @@ public class OmsOrderItem extends BaseEntity {
                 .skuId(skuId)
                 .storageType(storageType)
                 .quantity(quantity)
-                .volumeCm3(volumeCm3)
-                .weightGram(weightGram)
+                .volumeCm3(null)
+                .weightGram(null)
                 .build();
     }
 

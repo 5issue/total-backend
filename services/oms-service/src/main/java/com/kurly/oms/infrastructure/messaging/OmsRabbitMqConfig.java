@@ -3,43 +3,90 @@ package com.kurly.oms.infrastructure.messaging;
 import org.springframework.amqp.core.*;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.beans.factory.annotation.Qualifier;
 
 @Configuration
 public class OmsRabbitMqConfig {
 
-    public static final String ORDER_EXCHANGE = "order.topic.exchange";
-    public static final String OMS_EXCHANGE = "oms.topic.exchange";
-    public static final String RETURN_REQUESTED_QUEUE = "oms.return-requested.queue";
-    public static final String RETURN_REQUESTED_DLQ = "oms.return-requested.dlq";
-    public static final String RETURN_REQUESTED_KEY = "order.return-requested";
+    // ==========================================
+    // Exchanges
+    // ==========================================
+    public static final String EXCHANGE_ORDER = "order.topic.exchange";
+    public static final String EXCHANGE_OMS = "oms.topic.exchange";
 
-    @Bean
-    TopicExchange orderTopicExchange() {
-        return ExchangeBuilder.topicExchange(ORDER_EXCHANGE).durable(true).build();
-    }
+    // ==========================================
+    // Routing Keys
+    // ==========================================
+    public static final String ROUTING_KEY_ORDER_PAYMENT_COMPLETED = "order.payment.completed";
+    public static final String ROUTING_KEY_ORDER_RETURN_REQUESTED = "order.return-requested";
 
+    // ==========================================
+    // Queues & DLQs
+    // ==========================================
+    public static final String QUEUE_PAYMENT_COMPLETED = "oms.order-payment-completed.queue";
+    public static final String DLQ_PAYMENT_COMPLETED = "oms.order-payment-completed.dlq";
+
+    public static final String QUEUE_RETURN_REQUESTED = "oms.return-requested.queue";
+    public static final String DLQ_RETURN_REQUESTED = "oms.return-requested.dlq";
+
+    // ==========================================
+    // Exchange Beans
+    // ==========================================
     @Bean
     TopicExchange omsTopicExchange() {
-        return ExchangeBuilder.topicExchange(OMS_EXCHANGE).durable(true).build();
+        return ExchangeBuilder.topicExchange(EXCHANGE_OMS).durable(true).build();
+    }
+
+    // ==========================================
+    // 1. Payment Completed Flow
+    // ==========================================
+    @Bean
+    Queue paymentCompletedDlq() {
+        return QueueBuilder.durable(DLQ_PAYMENT_COMPLETED).build();
     }
 
     @Bean
-    Queue returnRequestedDeadLetterQueue() {
-        return QueueBuilder.durable(RETURN_REQUESTED_DLQ).build();
-    }
-
-    @Bean
-    Queue returnRequestedQueue() {
-        return QueueBuilder.durable(RETURN_REQUESTED_QUEUE)
+    Queue paymentCompletedQueue() {
+        return QueueBuilder.durable(QUEUE_PAYMENT_COMPLETED)
                 .deadLetterExchange("")
-                .deadLetterRoutingKey(RETURN_REQUESTED_DLQ)
+                .deadLetterRoutingKey(DLQ_PAYMENT_COMPLETED)
                 .build();
     }
 
     @Bean
-    Binding returnRequestedBinding(@Qualifier("returnRequestedQueue") Queue returnRequestedQueue,
-                                   @Qualifier("orderTopicExchange") TopicExchange orderTopicExchange) {
-        return BindingBuilder.bind(returnRequestedQueue).to(orderTopicExchange).with(RETURN_REQUESTED_KEY);
+    Binding paymentCompletedBinding() {
+        return new Binding(
+                QUEUE_PAYMENT_COMPLETED,
+                Binding.DestinationType.QUEUE,
+                EXCHANGE_ORDER,
+                ROUTING_KEY_ORDER_PAYMENT_COMPLETED,
+                null
+        );
+    }
+
+    // ==========================================
+    // 2. Return Requested Flow
+    // ==========================================
+    @Bean
+    Queue returnRequestedDlq() {
+        return QueueBuilder.durable(DLQ_RETURN_REQUESTED).build();
+    }
+
+    @Bean
+    Queue returnRequestedQueue() {
+        return QueueBuilder.durable(QUEUE_RETURN_REQUESTED)
+                .deadLetterExchange("")
+                .deadLetterRoutingKey(DLQ_RETURN_REQUESTED)
+                .build();
+    }
+
+    @Bean
+    Binding returnRequestedBinding() {
+        return new Binding(
+                QUEUE_RETURN_REQUESTED,
+                Binding.DestinationType.QUEUE,
+                EXCHANGE_ORDER,
+                ROUTING_KEY_ORDER_RETURN_REQUESTED,
+                null
+        );
     }
 }
