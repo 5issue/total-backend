@@ -53,3 +53,41 @@ model InboundCompletedEventPayload {
 
   occurredAt: utcDateTime;
 }
+
+/**
+ * WMS가 반품 검수를 완료했을 때 발행하는 이벤트의 페이로드. 아직 구현되지 않은
+ * `com.kurly.wms.infrastructure.messaging.dto.ReturnInspectionCompletedEvent`(예정)와
+ * 대응한다.
+ *
+ * WMS에는 아직 반품(Return) 도메인 엔티티가 없다 — `InboundCompletedEventPayload`가
+ * `InboundOrder`/`InboundItem`에 대응하는 것과 달리, 이 페이로드는 대응하는 WMS 쪽 엔티티가
+ * 아직 없어서 `returnOrderId`를 반품을 접수한 상위 도메인(OMS/주문)의 식별자를 그대로
+ * 참조하는 외부 참조 키로 취급한다(`StockAllocationRequest.referenceId`와 같은 성격).
+ */
+model ReturnInspectionCompletedEventPayload {
+  eventId: string;
+  routingKey: string;
+
+  @doc("반품을 접수한 상위 도메인(OMS/주문)의 식별자. WMS에 아직 자체 Return 엔티티가 없어 외부 참조 키로 취급한다.")
+  returnOrderId: int64;
+
+  warehouseId: int64;
+  items: ReturnInspectionItem[];
+
+  occurredAt: utcDateTime;
+}
+
+@doc("반품 검수 품목 1건의 결과. inspectedQuantity = restockedQuantity + defectiveQuantity가 항상 성립한다.")
+model ReturnInspectionItem {
+  productId: int64;
+  lotNo: string | null;
+
+  @doc("검수 대상 수량(반품 접수 시점 수량).")
+  inspectedQuantity: int32;
+
+  @doc("검수 합격 후 판매 가능 재고로 재입고한 수량.")
+  restockedQuantity: int32;
+
+  @doc("검수 불합격(파손·오염·유통기한 등)으로 폐기 처리한 수량.")
+  defectiveQuantity: int32;
+}

@@ -87,6 +87,7 @@ erDiagram
         Date    expired_date
         Long    target_location_id FK
         Enum    status
+        Long    version
     }
     INVENTORY {
         Long     id PK
@@ -251,6 +252,7 @@ SCM 서비스로부터 전달받는 발주 및 입고 예정 정보.
 | `expired_date` | Date | | 유통기한 (FEFO의 핵심 기준) |
 | `target_location_id` | Long | FK → Location | 적치할 목표 로케이션 ID |
 | `status` | Enum | | 상세 상태 (`PENDING` / `INSPECTED` 검수완료 / `PUT_AWAY` 적치완료) |
+| `version` | Long | NOT NULL, DEFAULT 0 (V6) | JPA `@Version` 낙관적 락. 검수/적치처럼 같은 행을 읽어 상태를 전이시키는 흐름에서 동시 요청(중복 클릭, 재시도)이 서로 덮어쓰는 걸 막는다 |
 
 > `unit_per_quantity`(단위당 낱개 수) 컬럼은 제거. 환산 계수는 `WmsProduct`에서 조회한다.
 > - `inbound_unit = PALLET` → `× pallet_box_qty × box_unit_qty`
@@ -275,7 +277,9 @@ SCM 서비스로부터 전달받는 발주 및 입고 예정 정보.
 | `reserved_quantity` | Integer | `CHECK (reserved_quantity >= 0)` | 주문 선점 예약 수량 |
 | `updated_at` | DateTime | | 최종 재고 변동 일시 |
 
-**UK 제약**: `(warehouse_id, location_id, product_id, lot_no, expired_date, lpn_code)`
+**UK 제약**: `(warehouse_id, location_id, product_id, lot_no, expired_date, lpn_code)`, `NULLS NOT DISTINCT`(V7) — 표준 유니크 제약은 `lpn_code`가 NULL인 행끼리 서로 다른 값으로 취급해 유일성이 보장되지 않았다(LPN 없이 관리하는 게 기본값이라 실질적으로 이 조합의 유일성이 전혀 없었던 셈). 동시에 같은 조합을 "없음"으로 보고 각자 새 행을 만드는 find-or-create 경합의 마지막 방어선이다.
+
+**동시성**: `receiveIntoBuffer`/`moveInventory`가 이 조합으로 조회할 때 `PESSIMISTIC_WRITE`로 잠가 lost update를 막는다. `remove()`는 재고보다 큰 수량을 빼려 하면 `BusinessException(INSUFFICIENT_INVENTORY)`으로 막는다(DB의 `chk_inventory_quantity`가 마지막 방어선).
 
 **조회 시**: 상품 전체 가용 재고 = `SUM(quantity - reserved_quantity)` (해당 상품의 전 로케이션 합산).
 
@@ -303,6 +307,8 @@ SCM 서비스로부터 전달받는 발주 및 입고 예정 정보.
 | `status` | Enum | | 작업 상태 (`PENDING` 지시생성 / `IN_PROGRESS` 작업중 / `COMPLETED` 완료 / `CANCELED` 취소) |
 | `created_at` | DateTime | | 작업 지시 생성 일시 |
 | `completed_at` | DateTime | | 작업 완료 일시 |
+
+**동시성**: put-away/confirm과 put-away/recommendation이 stockMovementId로 이 행을 조회할 때 `PESSIMISTIC_WRITE`로 잠근다 — 같은 작업 지시를 동시에 완료/재배정하려는 요청은 먼저 락을 쥔 쪽이 끝날 때까지 대기했다가, 이미 바뀐 status를 보고 재고 이동 전에 즉시 실패한다.
 
 ---
 

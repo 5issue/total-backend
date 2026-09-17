@@ -23,6 +23,7 @@ import "./routes/client/workers.api.tsp";
 
 import "./routes/events/inventory.events.tsp";
 import "./routes/events/inbound.events.tsp";
+import "./routes/events/return.events.tsp";
 
 using TypeSpec.Http;
 using TypeSpec.OpenAPI;
