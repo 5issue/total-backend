@@ -3,6 +3,8 @@ package com.kurly.oms.presentation.api;
 import com.kurly.common.response.ApiResponse;
 import com.kurly.oms.presentation.dto.OmsOrderDetailResponse;
 import com.kurly.oms.presentation.dto.OmsOrderListResponse;
+import com.kurly.oms.presentation.dto.ReturnJudgementRequest;
+import com.kurly.oms.presentation.dto.ReturnJudgementResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -33,15 +35,9 @@ public interface OmsAdminOrderApi {
     @Operation(summary = "CS 관리자 주문 직권 취소")
     ApiResponse<Void> cancelOrder(Long orderId);
 
-//    @Operation(summary = "반품 신청 내역 목록 조회 (Admin/BO)")
-//    ApiResponse<ReturnProcessListDto> listReturns(OmsReturnStatus status, StorageType storageType, int page, int size);
-
-//    @Operation(summary = "반품 신청 상세 내역 조회 (Admin/BO)")
-//    ApiResponse<ReturnProcessDto> getReturnDetail(Long returnId);
-
-    @Operation(summary = "[냉동/냉장] 반품 승인 및 자체폐기 확정")
-    ApiResponse<Void> approveColdChainReturn(Long returnId);
-
-    @Operation(summary = "[상온/비식품] 반품 승인 및 역물류 지시")
-    ApiResponse<Void> processLogisticsReturn(Long returnId);
+    @Operation(summary = "반품 통합 판정 (BO/Admin)", description = "품목별 폐기/수거/반려 판정을 일괄 처리합니다.")
+    ApiResponse<ReturnJudgementResponse> judgeReturn(
+            @Parameter(description = "OMS 주문 ID") Long omsOrderId,
+            ReturnJudgementRequest request
+    );
 }

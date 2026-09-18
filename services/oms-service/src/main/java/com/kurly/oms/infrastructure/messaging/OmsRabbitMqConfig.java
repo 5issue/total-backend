@@ -19,6 +19,9 @@ public class OmsRabbitMqConfig {
     public static final String ROUTING_KEY_ORDER_PAYMENT_COMPLETED = "order.payment.completed";
     public static final String ROUTING_KEY_ORDER_RETURN_REQUESTED = "order.return-requested";
 
+    public static final String ROUTING_KEY_REFUND_REQUESTED = "oms.order-refund.requested";
+    public static final String ROUTING_KEY_INSPECTION_REQUESTED = "oms.return.inspection-requested";
+
     // ==========================================
     // Queues & DLQs
     // ==========================================
@@ -84,7 +87,7 @@ public class OmsRabbitMqConfig {
         return new Binding(
                 QUEUE_RETURN_REQUESTED,
                 Binding.DestinationType.QUEUE,
-                "order.topic.exchange",
+                EXCHANGE_ORDER,
                 ROUTING_KEY_ORDER_RETURN_REQUESTED,
                 null
         );

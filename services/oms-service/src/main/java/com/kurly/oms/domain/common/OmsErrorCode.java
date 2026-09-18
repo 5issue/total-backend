@@ -16,7 +16,7 @@ public enum OmsErrorCode implements ErrorCode {
     OMS_RETURN_NOT_FOUND(HttpStatus.NOT_FOUND, "반품 정보를 찾을 수 없습니다."),
 
     // 409 CONFLICT
-    OMS_ALREADY_PROCESSING(HttpStatus.CONFLICT, "취소가 불가능한 주문입니다.");
+    OMS_CONFLICT_TEMPERATURE(HttpStatus.CONFLICT, "콜드체인(냉장/냉동) 품목만 자체폐기 승인이 가능합니다.");
 
     // 422 UNPROCESSABLE_CONTENT
 

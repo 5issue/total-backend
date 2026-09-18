@@ -7,7 +7,6 @@ import com.kurly.oms.domain.common.StorageType;
 import com.kurly.oms.domain.fulfillment.*;
 import com.kurly.oms.domain.order.OmsOrder;
 import com.kurly.oms.domain.order.OmsOrderItem;
-import com.kurly.oms.domain.order.OmsOrderItemRepository;
 import com.kurly.oms.domain.order.OmsOrderRepository;
 import com.kurly.oms.domain.shipment.ShipmentRepository;
 import com.kurly.oms.infrastructure.messaging.OrderPaymentCompletedMessage;
@@ -34,7 +33,6 @@ public class OmsOrderService {
     private final TamRegionRepository tamRegionRepository;
     private final FulfillmentCenterRepository fulfillmentCenterRepository;
     private final DeliverySlotRepository deliverySlotRepository;
-    private final OmsOrderItemRepository omsOrderItemRepository;
 
     @Transactional
     public void createOrder(OrderPaymentCompletedMessage event) {

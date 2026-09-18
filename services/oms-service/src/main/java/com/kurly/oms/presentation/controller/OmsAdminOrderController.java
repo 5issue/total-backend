@@ -6,9 +6,7 @@ import com.kurly.common.security.Role;
 import com.kurly.oms.application.OmsOrderService;
 import com.kurly.oms.application.OmsReturnService;
 import com.kurly.oms.presentation.api.OmsAdminOrderApi;
-import com.kurly.oms.presentation.dto.OmsOrderDetailResponse;
-import com.kurly.oms.presentation.dto.OmsOrderListResponse;
-import com.kurly.oms.presentation.dto.OmsOrderSearchCondition;
+import com.kurly.oms.presentation.dto.*;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Pageable;
 import org.springframework.web.bind.annotation.*;
@@ -54,34 +52,14 @@ public class OmsAdminOrderController implements OmsAdminOrderApi {
         return ApiResponse.success();
     }
 
-//    @Operation(summary = "반품 신청 내역 목록 조회 (Admin/BO)")
-//    @Override
-//    @GetMapping("/returns")
-//    public ApiResponse<ReturnProcessListDto> listReturns(
-//            @RequestParam(required = false) OmsReturnStatus status,
-//            @RequestParam(required = false) StorageType storageType,
-//            @RequestParam(defaultValue = "1") int page,
-//            @RequestParam(defaultValue = "20") int size) {
-//        return ApiResponse.success(returnService.listReturns(status, storageType, page, size));
-//    }
-
-    //    @Override
-//    @GetMapping("/returns/{returnId}")
-//    public ApiResponse<ReturnProcessDto> getReturnDetail(@PathVariable Long returnId) {
-//        return ApiResponse.success(returnService.getReturnDetail(returnId));
-//    }
-//
-    @Override
-    @PostMapping("/returns/{returnId}/approve-coldchain")
-    public ApiResponse<Void> approveColdChainReturn(@PathVariable Long returnId) {
-        returnService.approveColdChainReturn(returnId);
-        return ApiResponse.success();
-    }
-
-    @Override
-    @PostMapping("/returns/{returnId}/process-logistics")
-    public ApiResponse<Void> processLogisticsReturn(@PathVariable Long returnId) {
-        returnService.processLogisticsReturn(returnId);
-        return ApiResponse.success();
+    @PostMapping("/orders/{omsOrderId}/return-judgement")
+    public ApiResponse<ReturnJudgementResponse> judgeReturn(
+            @PathVariable Long omsOrderId,
+            @RequestBody ReturnJudgementRequest request
+    ) {
+        return ApiResponse.success(
+                "반품 판정이 완료되었습니다.",
+                returnService.judgeReturn(omsOrderId, request)
+        );
     }
 }
