@@ -25,6 +25,7 @@ public enum OrderErrorCode implements ErrorCode {
     // 404 NOT_FOUND
     ORD_NOT_FOUND_ADDRESS(HttpStatus.NOT_FOUND, "배송지를 먼저 설정해 주세요."),
     ORD_NOT_FOUND_ORDER(HttpStatus.NOT_FOUND, "주문 정보를 찾을 수 없습니다."),
+    ORD_NOT_FOUND_CLAIM(HttpStatus.NOT_FOUND, "반품 정보를 찾을 수 없습니다."),
 
     // 409 CONFLICT
     ORD_INSUFFICIENT_STOCK(HttpStatus.CONFLICT, "주문 상품의 재고가 부족합니다."),
