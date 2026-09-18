@@ -167,7 +167,9 @@ class AuthControllerIntegrationTest {
 
             mockMvc.perform(post(REFRESH_PATH).cookie(issued))
                     .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.data.accessToken").isNotEmpty());
+                    .andExpect(jsonPath("$.data.accessToken").isNotEmpty())
+                    // 소셜 콜백이 302로 바뀌며 본문이 사라져, 주체 식별자를 여기로 옮겼다.
+                    .andExpect(jsonPath("$.data.userId").isNotEmpty());
         }
 
         @Test

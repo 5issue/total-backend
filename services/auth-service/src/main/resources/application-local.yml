@@ -52,6 +52,8 @@ oauth:
   allowed-redirect-uris:
     - ${OAUTH_REDIRECT_URI_KAKAO:http://localhost:8081/api/v1/auth/oauth/kakao/callback}
     - ${OAUTH_REDIRECT_URI_NAVER:http://localhost:8081/api/v1/auth/oauth/naver/callback}
+  # 콜백 처리 후 브라우저를 돌려보낼 프론트 주소. 요청값이 아니라 설정값만 쓴다(오픈 리다이렉트 방지).
+  frontend-redirect-uri: ${OAUTH_FRONTEND_REDIRECT_URI:http://localhost:3000/}
   providers:
     kakao:
       client-id: ${KAKAO_CLIENT_ID:}

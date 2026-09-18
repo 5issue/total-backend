@@ -58,7 +58,8 @@ class SocialAuthServiceUnitTest {
     private static TokenPair tokenPair() {
         return new TokenPair(
                 new IssuedToken("access", Instant.now().plusSeconds(1800), Duration.ofMinutes(30), "a"),
-                new IssuedToken("refresh", Instant.now().plusSeconds(1209600), Duration.ofDays(14), "r"));
+                new IssuedToken("refresh", Instant.now().plusSeconds(1209600), Duration.ofDays(14), "r"),
+                1001L);
     }
 
     @Nested
@@ -110,7 +111,6 @@ class SocialAuthServiceUnitTest {
                     AuthProvider.KAKAO, "code", "state-v", TRANSACTION);
 
             assertThat(result.userId()).isEqualTo(50001L);
-            assertThat(result.newUser()).isFalse();
             // 로그인 경로는 user-service에 의존하지 않아야 한다.
             verify(userProfileClient, never()).syncProfile(any(), any());
         }
@@ -130,7 +130,6 @@ class SocialAuthServiceUnitTest {
                     AuthProvider.KAKAO, "code", "state-v", TRANSACTION);
 
             assertThat(result.userId()).isEqualTo(70001L);
-            assertThat(result.newUser()).isTrue();
             verify(userProfileClient).syncProfile(AuthProvider.KAKAO, "new-pid");
         }
     }

@@ -105,7 +105,7 @@ public class AuthTokenService {
                 .expiresAt(toLocalDateTime(refresh.expiresAt()))
                 .authUser(user)
                 .build());
-        return new TokenPair(access, refresh);
+        return new TokenPair(access, refresh, user.getUserId());
     }
 
     private TokenPair refreshAdminToken(String tokenHash) {
@@ -146,7 +146,7 @@ public class AuthTokenService {
                 .expiresAt(toLocalDateTime(refresh.expiresAt()))
                 .authAdmin(admin)
                 .build());
-        return new TokenPair(access, refresh);
+        return new TokenPair(access, refresh, admin.getAdminId());
     }
 
     /**

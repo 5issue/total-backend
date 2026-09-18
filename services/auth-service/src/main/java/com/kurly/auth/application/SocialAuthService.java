@@ -37,7 +37,7 @@ public class SocialAuthService {
 
     /** 인가 URL과, 콜백까지 이어져야 할 컨텍스트를 함께 만든다. */
     public AuthorizationRequest createAuthorizationRequest(AuthProvider provider, String redirectUri) {
-        // 검증하지 않으면 공격자가 자기 서버를 redirect_uri로 지정해 인가 코드를 가로챌 수 있다(BE-16).
+        // 검증하지 않으면 공격자가 자기 서버를 redirect_uri로 지정해 인가 코드를 가로챌 수 있다(BE-01).
         if (!oAuthProviderProperties.isAllowedRedirectUri(redirectUri)) {
             log.warn("허용되지 않은 redirect_uri 요청: {}", redirectUri);
             throw new BusinessException(AuthErrorCode.BAD_REQUEST, "허용되지 않은 redirectUri 입니다.");
@@ -68,7 +68,6 @@ public class SocialAuthService {
         String providerId = oAuthClient.fetchProviderId(provider, providerAccessToken);
 
         AuthUser authUser = authUserRepository.findByProviderAndProviderId(provider, providerId).orElse(null);
-        boolean newUser = false;
 
         if (authUser == null) {
             // 회원 도메인이 id를 소유하므로 여기서 동기화하고 참조값을 받아온다. 멱등이라 재시도해도 안전하다.
@@ -78,7 +77,6 @@ public class SocialAuthService {
                     .providerId(providerId)
                     .userId(profile.userId())
                     .build());
-            newUser = profile.newUser();
             log.info("소셜 회원가입 완료: provider={}, userId={}", provider, profile.userId());
         }
 
@@ -88,7 +86,7 @@ public class SocialAuthService {
         }
 
         return new SocialLoginResult(
-                authTokenService.issueUserTokens(authUser), authUser.getUserId(), newUser);
+                authTokenService.issueUserTokens(authUser), authUser.getUserId());
     }
 
     public record AuthorizationRequest(String loginUrl, OAuthTransaction transaction) {

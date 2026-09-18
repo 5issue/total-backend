@@ -40,6 +40,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class OAuthControllerUnitTest {
 
     private static final String REDIRECT = "http://localhost:8081/api/v1/auth/oauth/kakao/callback";
+    private static final String FRONTEND = "http://localhost:3000/";
     private static final String BODY = """
             {"redirectUri":"http://localhost:8081/api/v1/auth/oauth/kakao/callback"}""";
 
@@ -54,7 +55,8 @@ class OAuthControllerUnitTest {
         mockMvc = MockMvcBuilders.standaloneSetup(new OAuthController(
                         socialAuthService,
                         new OAuthTransactionCookies(cookieProperties),
-                        new RefreshTokenCookieFactory(cookieProperties)))
+                        new RefreshTokenCookieFactory(cookieProperties),
+                        FRONTEND))
                 .setControllerAdvice(new GlobalExceptionHandler())
                 .build();
     }
@@ -62,7 +64,8 @@ class OAuthControllerUnitTest {
     private static TokenPair tokenPair() {
         return new TokenPair(
                 new IssuedToken("access-token", Instant.now().plusSeconds(1800), Duration.ofMinutes(30), "a"),
-                new IssuedToken("refresh-token", Instant.now().plusSeconds(1209600), Duration.ofDays(14), "r"));
+                new IssuedToken("refresh-token", Instant.now().plusSeconds(1209600), Duration.ofDays(14), "r"),
+                1001L);
     }
 
     private static Cookie[] transactionCookies() {
@@ -129,34 +132,38 @@ class OAuthControllerUnitTest {
     class CallbackTest {
 
         @Test
-        void 기존_회원은_200이다() throws Exception {
+        void 성공하면_프론트로_302_리다이렉트한다() throws Exception {
             given(socialAuthService.handleCallback(any(), any(), any(), any()))
-                    .willReturn(new SocialLoginResult(tokenPair(), 50001L, false));
+                    .willReturn(new SocialLoginResult(tokenPair(), 50001L));
 
             mockMvc.perform(get("/api/v1/auth/oauth/kakao/callback")
                             .param("code", "c").param("state", "state-v")
                             .cookie(transactionCookies()))
-                    .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.message").value("소셜 로그인이 완료되었습니다."))
-                    .andExpect(jsonPath("$.data.user.userId").value(50001))
-                    .andExpect(jsonPath("$.data.expiresIn").value(1800));
+                    .andExpect(status().isFound())
+                    .andExpect(header().string(HttpHeaders.LOCATION,
+                            "http://localhost:3000/?login=success"));
         }
 
         @Test
-        void 신규_회원은_201이다() throws Exception {
+        void access_token은_리다이렉트_URL에_싣지_않는다() throws Exception {
             given(socialAuthService.handleCallback(any(), any(), any(), any()))
-                    .willReturn(new SocialLoginResult(tokenPair(), 70001L, true));
+                    .willReturn(new SocialLoginResult(tokenPair(), 1L));
 
-            mockMvc.perform(get("/api/v1/auth/oauth/kakao/callback")
+            MvcResult result = mockMvc.perform(get("/api/v1/auth/oauth/kakao/callback")
                             .param("code", "c").param("state", "state-v")
                             .cookie(transactionCookies()))
-                    .andExpect(status().isCreated());
+                    .andReturn();
+
+            // 설계서 1.4 — access는 메모리 보관. URL·히스토리·Referer 어디에도 남으면 안 된다.
+            assertThat(result.getResponse().getHeader(HttpHeaders.LOCATION))
+                    .doesNotContain("access-token")
+                    .doesNotContain("refresh-token");
         }
 
         @Test
         void 토큰이_실린_응답은_캐시되지_않는다() throws Exception {
             given(socialAuthService.handleCallback(any(), any(), any(), any()))
-                    .willReturn(new SocialLoginResult(tokenPair(), 1L, false));
+                    .willReturn(new SocialLoginResult(tokenPair(), 1L));
 
             mockMvc.perform(get("/api/v1/auth/oauth/kakao/callback")
                             .param("code", "c").param("state", "state-v")
@@ -167,7 +174,7 @@ class OAuthControllerUnitTest {
         @Test
         void 컨텍스트_쿠키와_refresh_쿠키를_함께_내려준다() throws Exception {
             given(socialAuthService.handleCallback(any(), any(), any(), any()))
-                    .willReturn(new SocialLoginResult(tokenPair(), 1L, false));
+                    .willReturn(new SocialLoginResult(tokenPair(), 1L));
 
             MvcResult result = mockMvc.perform(get("/api/v1/auth/oauth/kakao/callback")
                             .param("code", "c").param("state", "state-v")
@@ -181,19 +188,45 @@ class OAuthControllerUnitTest {
         }
 
         @Test
-        void 컨텍스트_쿠키가_없으면_401이다() throws Exception {
+        void 컨텍스트_쿠키가_없어도_JSON이_아니라_실패_리다이렉트다() throws Exception {
             mockMvc.perform(get("/api/v1/auth/oauth/kakao/callback")
                             .param("code", "c").param("state", "s"))
-                    .andExpect(status().isUnauthorized())
-                    .andExpect(jsonPath("$.error").value("UNAUTHORIZED"));
+                    .andExpect(status().isFound())
+                    .andExpect(header().string(HttpHeaders.LOCATION,
+                            "http://localhost:3000/?login=failed"));
         }
 
         @Test
-        void 콜백도_지원하지_않는_제공자는_400이다() throws Exception {
+        void 사용자가_동의를_취소하면_실패_리다이렉트다() throws Exception {
+            // 제공자는 code 대신 error를 싣고 되돌려보낸다.
+            mockMvc.perform(get("/api/v1/auth/oauth/kakao/callback")
+                            .param("error", "access_denied").param("state", "state-v")
+                            .cookie(transactionCookies()))
+                    .andExpect(status().isFound())
+                    .andExpect(header().string(HttpHeaders.LOCATION,
+                            "http://localhost:3000/?login=failed"));
+        }
+
+        @Test
+        void 콜백도_지원하지_않는_제공자는_실패_리다이렉트다() throws Exception {
             mockMvc.perform(get("/api/v1/auth/oauth/google/callback")
                             .param("code", "c").param("state", "s")
                             .cookie(transactionCookies()))
-                    .andExpect(status().isBadRequest());
+                    .andExpect(status().isFound())
+                    .andExpect(header().string(HttpHeaders.LOCATION,
+                            "http://localhost:3000/?login=failed"));
+        }
+
+        @Test
+        void 실패해도_1회용_컨텍스트_쿠키는_만료시킨다() throws Exception {
+            MvcResult result = mockMvc.perform(get("/api/v1/auth/oauth/kakao/callback")
+                            .param("error", "access_denied")
+                            .cookie(transactionCookies()))
+                    .andReturn();
+
+            assertThat(result.getResponse().getHeaders(HttpHeaders.SET_COOKIE))
+                    .anyMatch(c -> c.startsWith("oauth_state=") && c.contains("Max-Age=0"))
+                    .noneMatch(c -> c.startsWith("refresh_token="));
         }
     }
 }

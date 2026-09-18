@@ -10,7 +10,7 @@ import java.util.Map;
  * 소셜 제공자 설정.
  *
  * @param allowedRedirectUris 허용할 redirect_uri 목록. <b>반드시 검증해야 한다</b> —
- *                            공격자가 임의 redirect_uri를 지정하면 인가 코드를 자기 서버로 받아갈 수 있다(BE-16).
+ *                            공격자가 임의 redirect_uri를 지정하면 인가 코드를 자기 서버로 받아갈 수 있다(BE-01).
  * @param providers           제공자별 엔드포인트·자격증명. 엔드포인트는 각 제공자 문서 기준으로 확인이 필요하다.
  */
 @ConfigurationProperties(prefix = "oauth")
