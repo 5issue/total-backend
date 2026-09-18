@@ -29,6 +29,7 @@ public class OAuthTransactionCookies {
     static final String STATE_COOKIE = "oauth_state";
     static final String VERIFIER_COOKIE = "oauth_code_verifier";
     static final String REDIRECT_URI_COOKIE = "oauth_redirect_uri";
+    static final String RETURN_TO_COOKIE = "oauth_return_to";
 
     private static final String PATH = "/api/v1/auth/oauth";
     private static final Duration TTL = Duration.ofMinutes(10);
@@ -41,6 +42,10 @@ public class OAuthTransactionCookies {
         cookies.add(build(STATE_COOKIE, transaction.state(), TTL));
         cookies.add(build(VERIFIER_COOKIE, transaction.codeVerifier(), TTL));
         cookies.add(build(REDIRECT_URI_COOKIE, transaction.redirectUri(), TTL));
+        // 선택값이라 없으면 쿠키 자체를 만들지 않는다.
+        if (StringUtils.hasText(transaction.returnTo())) {
+            cookies.add(build(RETURN_TO_COOKIE, transaction.returnTo(), TTL));
+        }
         return cookies;
     }
 
@@ -48,7 +53,8 @@ public class OAuthTransactionCookies {
         return List.of(
                 build(STATE_COOKIE, "", Duration.ZERO),
                 build(VERIFIER_COOKIE, "", Duration.ZERO),
-                build(REDIRECT_URI_COOKIE, "", Duration.ZERO));
+                build(REDIRECT_URI_COOKIE, "", Duration.ZERO),
+                build(RETURN_TO_COOKIE, "", Duration.ZERO));
     }
 
     public Optional<OAuthTransaction> extract(HttpServletRequest request) {
@@ -58,7 +64,12 @@ public class OAuthTransactionCookies {
         if (state.isEmpty() || verifier.isEmpty() || redirectUri.isEmpty()) {
             return Optional.empty();
         }
-        return Optional.of(new OAuthTransaction(state.get(), verifier.get(), redirectUri.get()));
+        // returnTo는 선택값이다. 없다고 로그인을 실패시키면 안 된다.
+        // 쿠키는 사용자가 고칠 수 있는 입력이므로 읽을 때도 다시 검증한다.
+        String returnTo = read(request, RETURN_TO_COOKIE)
+                .flatMap(ReturnToPath::sanitize)
+                .orElse(null);
+        return Optional.of(new OAuthTransaction(state.get(), verifier.get(), redirectUri.get(), returnTo));
     }
 
     private Optional<String> read(HttpServletRequest request, String name) {

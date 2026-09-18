@@ -42,7 +42,7 @@ class AdminAuthServiceUnitTest {
     private static TokenPair anyTokenPair() {
         IssuedToken access = new IssuedToken("access", Instant.now().plusSeconds(1800), Duration.ofMinutes(30), "a");
         IssuedToken refresh = new IssuedToken("refresh", Instant.now().plusSeconds(1209600), Duration.ofDays(14), "r");
-        return new TokenPair(access, refresh);
+        return new TokenPair(access, refresh, 9001L);
     }
 
     @Nested

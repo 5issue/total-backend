@@ -72,7 +72,7 @@ public class AuthController {
         ResponseCookie rotatedCookie = refreshTokenCookieFactory.create(
                 tokens.refreshToken().token(), tokens.refreshToken().ttl());
         TokenRefreshResponse body = new TokenRefreshResponse(
-                tokens.accessToken().token(), tokens.accessToken().ttl().toSeconds());
+                tokens.accessToken().token(), tokens.accessToken().ttl().toSeconds(), tokens.subject());
 
         return ResponseEntity.ok()
                 .header(HttpHeaders.SET_COOKIE, rotatedCookie.toString())

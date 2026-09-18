@@ -74,6 +74,7 @@ oauth:
   allowed-redirect-uris:
     - ${OAUTH_REDIRECT_URI_KAKAO}
     - ${OAUTH_REDIRECT_URI_NAVER}
+  frontend-redirect-uri: ${OAUTH_FRONTEND_REDIRECT_URI}
   providers:
     kakao:
       client-id: ${KAKAO_CLIENT_ID}

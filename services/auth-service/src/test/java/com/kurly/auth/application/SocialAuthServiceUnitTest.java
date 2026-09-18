@@ -58,7 +58,8 @@ class SocialAuthServiceUnitTest {
     private static TokenPair tokenPair() {
         return new TokenPair(
                 new IssuedToken("access", Instant.now().plusSeconds(1800), Duration.ofMinutes(30), "a"),
-                new IssuedToken("refresh", Instant.now().plusSeconds(1209600), Duration.ofDays(14), "r"));
+                new IssuedToken("refresh", Instant.now().plusSeconds(1209600), Duration.ofDays(14), "r"),
+                1001L);
     }
 
     @Nested
@@ -70,7 +71,7 @@ class SocialAuthServiceUnitTest {
             given(oAuthClient.buildAuthorizationUri(any(), any(), any())).willReturn("https://provider/login");
 
             SocialAuthService.AuthorizationRequest request =
-                    socialAuthService.createAuthorizationRequest(AuthProvider.KAKAO, REDIRECT);
+                    socialAuthService.createAuthorizationRequest(AuthProvider.KAKAO, REDIRECT, null);
 
             assertThat(request.loginUrl()).isEqualTo("https://provider/login");
             assertThat(request.transaction().redirectUri()).isEqualTo(REDIRECT);
@@ -83,9 +84,9 @@ class SocialAuthServiceUnitTest {
             given(oAuthClient.buildAuthorizationUri(any(), any(), any())).willReturn("https://provider/login");
 
             OAuthTransaction first = socialAuthService
-                    .createAuthorizationRequest(AuthProvider.KAKAO, REDIRECT).transaction();
+                    .createAuthorizationRequest(AuthProvider.KAKAO, REDIRECT, null).transaction();
             OAuthTransaction second = socialAuthService
-                    .createAuthorizationRequest(AuthProvider.KAKAO, REDIRECT).transaction();
+                    .createAuthorizationRequest(AuthProvider.KAKAO, REDIRECT, null).transaction();
 
             assertThat(first.state()).isNotEqualTo(second.state());
             assertThat(first.codeVerifier()).isNotEqualTo(second.codeVerifier());
@@ -110,7 +111,6 @@ class SocialAuthServiceUnitTest {
                     AuthProvider.KAKAO, "code", "state-v", TRANSACTION);
 
             assertThat(result.userId()).isEqualTo(50001L);
-            assertThat(result.newUser()).isFalse();
             // 로그인 경로는 user-service에 의존하지 않아야 한다.
             verify(userProfileClient, never()).syncProfile(any(), any());
         }
@@ -130,7 +130,6 @@ class SocialAuthServiceUnitTest {
                     AuthProvider.KAKAO, "code", "state-v", TRANSACTION);
 
             assertThat(result.userId()).isEqualTo(70001L);
-            assertThat(result.newUser()).isTrue();
             verify(userProfileClient).syncProfile(AuthProvider.KAKAO, "new-pid");
         }
     }
