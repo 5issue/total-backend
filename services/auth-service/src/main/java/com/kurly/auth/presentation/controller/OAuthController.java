@@ -44,6 +44,7 @@ public class OAuthController {
     private static final String RESULT_PARAM = "login";
     private static final String RESULT_SUCCESS = "success";
     private static final String RESULT_FAILED = "failed";
+    private static final String RETURN_TO_PARAM = "returnTo";
 
     private final SocialAuthService socialAuthService;
     private final OAuthTransactionCookies oAuthTransactionCookies;
@@ -72,7 +73,8 @@ public class OAuthController {
 
         AuthProvider authProvider = parseProvider(provider);
         SocialAuthService.AuthorizationRequest authorization =
-                socialAuthService.createAuthorizationRequest(authProvider, request.redirectUri());
+                socialAuthService.createAuthorizationRequest(
+                        authProvider, request.redirectUri(), request.returnTo());
 
         ResponseEntity.BodyBuilder builder = ResponseEntity.ok();
         oAuthTransactionCookies.create(authorization.transaction())
@@ -122,7 +124,7 @@ public class OAuthController {
                     result.tokens().refreshToken().token(), result.tokens().refreshToken().ttl());
             builder.header(HttpHeaders.SET_COOKIE, refreshCookie.toString());
 
-            return redirect(builder, RESULT_SUCCESS);
+            return redirect(builder, RESULT_SUCCESS, transaction.returnTo());
         } catch (BusinessException e) {
             log.warn("소셜 콜백 처리 실패: provider={}, errorCode={}", provider, e.getErrorCode());
             return redirect(builder, RESULT_FAILED);
@@ -137,9 +139,17 @@ public class OAuthController {
      * 시큐어코딩가이드에 해당 항목이 없어 보안팀에 확인 요청 중이다(검토요청서 A-8).
      */
     private ResponseEntity<Void> redirect(ResponseEntity.BodyBuilder builder, String result) {
-        String location = UriComponentsBuilder.fromUriString(frontendRedirectUri)
-                .queryParam(RESULT_PARAM, result)
-                .toUriString();
+        return redirect(builder, result, null);
+    }
+
+    private ResponseEntity<Void> redirect(ResponseEntity.BodyBuilder builder, String result, String returnTo) {
+        UriComponentsBuilder uri = UriComponentsBuilder.fromUriString(frontendRedirectUri)
+                .queryParam(RESULT_PARAM, result);
+        if (StringUtils.hasText(returnTo)) {
+            // 이미 검증을 마친 값이다. queryParam이 여기서 딱 한 번 인코딩한다.
+            uri.queryParam(RETURN_TO_PARAM, returnTo);
+        }
+        String location = uri.toUriString();
         return builder
                 .location(URI.create(location))
                 .cacheControl(CacheControl.noStore())

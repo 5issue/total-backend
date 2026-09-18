@@ -10,6 +10,7 @@ import com.kurly.auth.exception.AuthErrorCode;
 import com.kurly.auth.infrastructure.oauth.OAuthClient;
 import com.kurly.auth.infrastructure.oauth.OAuthProviderProperties;
 import com.kurly.auth.infrastructure.oauth.OAuthTransaction;
+import com.kurly.auth.infrastructure.oauth.ReturnToPath;
 import com.kurly.auth.infrastructure.oauth.PkceChallenge;
 import com.kurly.common.exception.BusinessException;
 import com.kurly.common.exception.UnauthorizedException;
@@ -36,7 +37,8 @@ public class SocialAuthService {
     private final AuthTokenService authTokenService;
 
     /** 인가 URL과, 콜백까지 이어져야 할 컨텍스트를 함께 만든다. */
-    public AuthorizationRequest createAuthorizationRequest(AuthProvider provider, String redirectUri) {
+    public AuthorizationRequest createAuthorizationRequest(AuthProvider provider, String redirectUri,
+                                                          String returnTo) {
         // 검증하지 않으면 공격자가 자기 서버를 redirect_uri로 지정해 인가 코드를 가로챌 수 있다(BE-01).
         if (!oAuthProviderProperties.isAllowedRedirectUri(redirectUri)) {
             log.warn("허용되지 않은 redirect_uri 요청: {}", redirectUri);
@@ -44,8 +46,9 @@ public class SocialAuthService {
         }
 
         PkceChallenge pkce = PkceChallenge.generate();
-        OAuthTransaction transaction =
-                new OAuthTransaction(PkceChallenge.generateState(), pkce.verifier(), redirectUri);
+        OAuthTransaction transaction = new OAuthTransaction(
+                PkceChallenge.generateState(), pkce.verifier(), redirectUri,
+                ReturnToPath.sanitize(returnTo).orElse(null));
         String loginUrl = oAuthClient.buildAuthorizationUri(provider, transaction, pkce.challenge());
         return new AuthorizationRequest(loginUrl, transaction);
     }

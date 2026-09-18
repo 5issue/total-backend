@@ -34,6 +34,23 @@ class OAuthTransactionCookiesUnitTest {
         }
 
         @Test
+        void returnTo가_없으면_쿠키를_만들지_않는다() {
+            assertThat(cookies.create(TRANSACTION)).extracting(ResponseCookie::getName)
+                    .doesNotContain("oauth_return_to");
+        }
+
+        @Test
+        void returnTo가_있으면_네_번째_쿠키로_내려간다() {
+            OAuthTransaction withReturn =
+                    new OAuthTransaction("s", "v", "http://localhost:8081/cb", "/checkout");
+
+            assertThat(cookies.create(withReturn))
+                    .filteredOn(c -> c.getName().equals("oauth_return_to"))
+                    .singleElement()
+                    .satisfies(c -> assertThat(c.getValue()).isEqualTo("/checkout"));
+        }
+
+        @Test
         void SameSite는_Lax다() {
             // 소셜 제공자에서 돌아오는 흐름은 크로스사이트라 Strict면 쿠키가 전송되지 않는다.
             assertThat(cookies.create(TRANSACTION))
@@ -63,11 +80,15 @@ class OAuthTransactionCookiesUnitTest {
     class ExpireTest {
 
         @Test
-        void 세_쿠키를_즉시_만료시킨다() {
+        void 네_쿠키를_모두_즉시_만료시킨다() {
             List<ResponseCookie> expired = cookies.expire();
 
-            assertThat(expired).hasSize(3)
-                    .allSatisfy(cookie -> assertThat(cookie.getMaxAge().isZero()).isTrue());
+            // returnTo도 1회용이다. 남겨두면 다음 로그인에 엉뚱한 경로로 복귀한다.
+            assertThat(expired).hasSize(4)
+                    .extracting(ResponseCookie::getName)
+                    .containsExactlyInAnyOrder("oauth_state", "oauth_code_verifier",
+                            "oauth_redirect_uri", "oauth_return_to");
+            assertThat(expired).allSatisfy(cookie -> assertThat(cookie.getMaxAge().isZero()).isTrue());
         }
     }
 

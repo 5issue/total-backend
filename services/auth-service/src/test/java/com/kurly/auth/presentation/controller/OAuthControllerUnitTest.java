@@ -68,6 +68,14 @@ class OAuthControllerUnitTest {
                 1001L);
     }
 
+    private static Cookie[] transactionCookies(String returnTo) {
+        return new Cookie[]{
+                new Cookie("oauth_state", "state-v"),
+                new Cookie("oauth_code_verifier", "verifier-v"),
+                new Cookie("oauth_redirect_uri", REDIRECT),
+                new Cookie("oauth_return_to", returnTo)};
+    }
+
     private static Cookie[] transactionCookies() {
         return new Cookie[]{
                 new Cookie("oauth_state", "state-v"),
@@ -81,7 +89,7 @@ class OAuthControllerUnitTest {
 
         @Test
         void 로그인_URL과_컨텍스트_쿠키를_내려준다() throws Exception {
-            given(socialAuthService.createAuthorizationRequest(AuthProvider.KAKAO, REDIRECT))
+            given(socialAuthService.createAuthorizationRequest(AuthProvider.KAKAO, REDIRECT, null))
                     .willReturn(new SocialAuthService.AuthorizationRequest(
                             "https://provider/login", new OAuthTransaction("s", "v", REDIRECT)));
 
@@ -100,7 +108,7 @@ class OAuthControllerUnitTest {
 
         @Test
         void 제공자_이름은_대소문자를_가리지_않는다() throws Exception {
-            given(socialAuthService.createAuthorizationRequest(AuthProvider.KAKAO, REDIRECT))
+            given(socialAuthService.createAuthorizationRequest(AuthProvider.KAKAO, REDIRECT, null))
                     .willReturn(new SocialAuthService.AuthorizationRequest(
                             "https://provider/login", new OAuthTransaction("s", "v", REDIRECT)));
 
@@ -213,6 +221,57 @@ class OAuthControllerUnitTest {
                             .param("code", "c").param("state", "s")
                             .cookie(transactionCookies()))
                     .andExpect(status().isFound())
+                    .andExpect(header().string(HttpHeaders.LOCATION,
+                            "http://localhost:3000/?login=failed"));
+        }
+
+        @Test
+        void returnTo가_있으면_성공_리다이렉트에_실어_보낸다() throws Exception {
+            given(socialAuthService.handleCallback(any(), any(), any(), any()))
+                    .willReturn(new SocialLoginResult(tokenPair(), 1L));
+
+            mockMvc.perform(get("/api/v1/auth/oauth/kakao/callback")
+                            .param("code", "c").param("state", "state-v")
+                            .cookie(transactionCookies("/checkout")))
+                    .andExpect(header().string(HttpHeaders.LOCATION,
+                            "http://localhost:3000/?login=success&returnTo=/checkout"));
+        }
+
+        @Test
+        void returnTo는_한_번만_인코딩된다() throws Exception {
+            // %2F가 %252F가 되면 프론트가 경로를 복원하지 못한다(OAuthClient에서 겪은 문제).
+            given(socialAuthService.handleCallback(any(), any(), any(), any()))
+                    .willReturn(new SocialLoginResult(tokenPair(), 1L));
+
+            MvcResult result = mockMvc.perform(get("/api/v1/auth/oauth/kakao/callback")
+                            .param("code", "c").param("state", "state-v")
+                            .cookie(transactionCookies("/search?q=%EC%82%AC%EA%B3%BC")))
+                    .andReturn();
+
+            assertThat(result.getResponse().getHeader(HttpHeaders.LOCATION))
+                    .doesNotContain("%25")
+                    .contains("returnTo=");
+        }
+
+        @Test
+        void 쿠키의_returnTo가_외부주소면_버린다() throws Exception {
+            // HttpOnly는 스크립트만 막는다. 사용자가 쿠키를 고칠 수 있으므로 읽을 때도 검증한다.
+            given(socialAuthService.handleCallback(any(), any(), any(), any()))
+                    .willReturn(new SocialLoginResult(tokenPair(), 1L));
+
+            mockMvc.perform(get("/api/v1/auth/oauth/kakao/callback")
+                            .param("code", "c").param("state", "state-v")
+                            .cookie(transactionCookies("//evil.com")))
+                    .andExpect(header().string(HttpHeaders.LOCATION,
+                            "http://localhost:3000/?login=success"));
+        }
+
+        @Test
+        void 실패_리다이렉트에는_returnTo를_싣지_않는다() throws Exception {
+            // 프론트가 모든 화면을 보호 라우트로 두어 실패 시 /login으로 보낸다(2026-09-18 협의).
+            mockMvc.perform(get("/api/v1/auth/oauth/kakao/callback")
+                            .param("error", "access_denied").param("state", "state-v")
+                            .cookie(transactionCookies("/checkout")))
                     .andExpect(header().string(HttpHeaders.LOCATION,
                             "http://localhost:3000/?login=failed"));
         }

@@ -71,7 +71,7 @@ class SocialAuthServiceUnitTest {
             given(oAuthClient.buildAuthorizationUri(any(), any(), any())).willReturn("https://provider/login");
 
             SocialAuthService.AuthorizationRequest request =
-                    socialAuthService.createAuthorizationRequest(AuthProvider.KAKAO, REDIRECT);
+                    socialAuthService.createAuthorizationRequest(AuthProvider.KAKAO, REDIRECT, null);
 
             assertThat(request.loginUrl()).isEqualTo("https://provider/login");
             assertThat(request.transaction().redirectUri()).isEqualTo(REDIRECT);
@@ -84,9 +84,9 @@ class SocialAuthServiceUnitTest {
             given(oAuthClient.buildAuthorizationUri(any(), any(), any())).willReturn("https://provider/login");
 
             OAuthTransaction first = socialAuthService
-                    .createAuthorizationRequest(AuthProvider.KAKAO, REDIRECT).transaction();
+                    .createAuthorizationRequest(AuthProvider.KAKAO, REDIRECT, null).transaction();
             OAuthTransaction second = socialAuthService
-                    .createAuthorizationRequest(AuthProvider.KAKAO, REDIRECT).transaction();
+                    .createAuthorizationRequest(AuthProvider.KAKAO, REDIRECT, null).transaction();
 
             assertThat(first.state()).isNotEqualTo(second.state());
             assertThat(first.codeVerifier()).isNotEqualTo(second.codeVerifier());

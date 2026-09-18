@@ -59,7 +59,7 @@ class SocialAuthServiceUnitExceptionTest {
         @Test
         void 허용_목록에_없는_redirectUri는_거부된다() {
             assertThatThrownBy(() -> socialAuthService.createAuthorizationRequest(
-                    AuthProvider.KAKAO, "https://attacker.example.com/steal"))
+                    AuthProvider.KAKAO, "https://attacker.example.com/steal", null))
                     .isInstanceOf(BusinessException.class);
 
             // 인가 URL 자체를 만들지 않아야 한다. 만들면 공격자 주소가 담긴 URL이 나간다.
