@@ -94,6 +94,7 @@ class PaymentControllerUnitTest {
                             .contentType(MediaType.APPLICATION_JSON).content(BODY))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.message").value("결제가 성공적으로 승인 및 완료되었습니다."))
+                    .andExpect(jsonPath("$.data.paymentId").value(1))
                     .andExpect(jsonPath("$.data.paymentStatus").value("SUCCESS"))
                     .andExpect(jsonPath("$.data.receiptUrl").value("https://toss.im/r/1"))
                     .andExpect(jsonPath("$.data.paymentCompletedAt").isNotEmpty());
@@ -124,6 +125,7 @@ class PaymentControllerUnitTest {
                             .header(PaymentController.IDEMPOTENCY_KEY_HEADER, "key-1")
                             .contentType(MediaType.APPLICATION_JSON).content(BODY))
                     .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data.paymentId").value(1))
                     .andExpect(jsonPath("$.data.paymentStatus").value("SUCCESS"));
 
             org.mockito.Mockito.verify(paymentCheckoutService, org.mockito.Mockito.never())

@@ -123,6 +123,29 @@ class IdempotentRequestExecutorUnitTest {
             assertThat(outcome.body().status()).isEqualTo("SUCCESS");
             verify(idempotencyService, never()).complete(anyLong(), anyInt(), anyString());
         }
+
+        @Test
+        void 필드가_추가되기_전에_저장된_응답도_재생된다() {
+            // CheckoutResponse에 paymentId를 더한 시점에, 이전에 저장된 본문에는 그 필드가 없다.
+            // 역직렬화가 터지면 그 키로는 영원히 재시도가 막히므로 반드시 통과해야 한다.
+            // 헬퍼가 저장하는 본문이 {"status":"SUCCESS"} — paymentId가 없던 시절의 형태다.
+            given(idempotencyService.begin(anyLong(), anyString(), anyString(), anyString()))
+                    .willReturn(new IdempotencyService.Result(record(5L, true), true));
+
+            var outcome = executor.execute(USER_ID, KEY, PATH, new Request(111L, 32_000L),
+                    ExtendedResponse.class, 200, () -> {
+                        throw new AssertionError("재생일 때 처리를 실행하면 이중 결제가 된다");
+                    });
+
+            assertThat(outcome.replayed()).isTrue();
+            assertThat(outcome.body().status()).isEqualTo("SUCCESS");
+            // 없던 필드는 null로 채워진다. 프론트는 이 경우를 견뎌야 한다.
+            assertThat(outcome.body().paymentId()).isNull();
+        }
+
+        /** 필드가 늘어난 뒤의 응답 형태. */
+        record ExtendedResponse(Long paymentId, String status) {
+        }
     }
 
     @Nested

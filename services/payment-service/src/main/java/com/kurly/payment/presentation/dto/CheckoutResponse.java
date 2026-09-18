@@ -11,6 +11,7 @@ import java.time.Instant;
  * 저장하므로 시스템 시간대 기준으로 {@code Instant}로 되돌린다.
  */
 public record CheckoutResponse(
+        Long paymentId,
         Instant paymentCompletedAt,
         String receiptUrl,
         String paymentStatus
@@ -18,6 +19,7 @@ public record CheckoutResponse(
 
     public static CheckoutResponse from(Payment payment) {
         return new CheckoutResponse(
+                payment.getId(),
                 Timestamps.toInstant(payment.getApprovedAt()),
                 payment.getReceiptUrl(),
                 payment.getStatus().name());
