@@ -30,4 +30,6 @@ public interface StockMovementJpaRepository extends JpaRepository<StockMovement,
             @Param("movementType") MovementType movementType,
             @Param("status") MovementStatus status,
             Pageable pageable);
+
+    boolean existsByToLocationIdAndStatusIn(Long id, List<MovementStatus> pending);
 }
