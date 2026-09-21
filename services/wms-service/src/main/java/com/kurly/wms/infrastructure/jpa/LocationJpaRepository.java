@@ -6,17 +6,28 @@ import com.kurly.wms.infrastructure.entity.Location.LocationStatus;
 import com.kurly.wms.infrastructure.entity.Location.LocationType;
 import com.kurly.wms.infrastructure.entity.Location.Zone;
 import com.kurly.wms.infrastructure.entity.StockMovement.MovementStatus;
+import jakarta.persistence.LockModeType;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 public interface LocationJpaRepository extends JpaRepository<Location, Long> {
     Optional<Location> findFirstByWarehouseIdAndLocationTypeAndStatusOrderByIdAsc(
             Long warehouseId, LocationType locationType, LocationStatus status);
+
+    /**
+     * StockMovementQueryService.create()가 타겟 로케이션의 "비어있음 + 진행 중인 이동 없음"을
+     * 확인하고 새 작업 지시를 저장하기까지 원자적으로 처리하기 위해 쓰는 조회. 잠그지 않으면
+     * 같은 targetLocationId를 노리는 동시 요청 둘 다 두 체크를 통과해 같은 로케이션에 이동
+     * 지시가 중복 생성될 수 있다.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    Optional<Location> findWithPessimisticLockById(Long id);
 
     /**
      * 완전히 빈(유효 재고 없음) + 진행 중인 이동 지시로 선점되지 않은 로케이션을

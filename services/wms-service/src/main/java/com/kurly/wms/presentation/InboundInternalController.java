@@ -5,6 +5,7 @@ import com.kurly.common.security.PublicApi;
 import com.kurly.wms.application.InboundOrderService;
 import com.kurly.wms.presentation.dto.InboundAsnCreateRequest;
 import com.kurly.wms.presentation.dto.InboundOrderResponse;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -17,6 +18,7 @@ import org.springframework.web.bind.annotation.RestController;
  * {@code @PublicApi}다(order/user-service의 internal 컨트롤러와 동일한 이유 — 호출자가
  * 서비스 간 통신이라 사용자 JWT 컨텍스트가 없다).
  */
+@Tag(name = "Inbound")
 @RestController
 @RequiredArgsConstructor
 @RequestMapping("/internal/v1/wms/inbounds")
