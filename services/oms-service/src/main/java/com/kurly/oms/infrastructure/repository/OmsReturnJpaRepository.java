@@ -20,4 +20,11 @@ public interface OmsReturnJpaRepository extends JpaRepository<OmsReturn, Long>, 
             """)
     Optional<OmsReturn> findByOmsOrderIdWithDetails(@Param("omsOrderId") Long omsOrderId);
 
+    @Query("""
+            SELECT DISTINCT r FROM OmsReturn r
+            LEFT JOIN FETCH r.items ri
+            LEFT JOIN FETCH ri.orderItem
+            WHERE r.id = :returnId
+            """)
+    Optional<OmsReturn> findByIdWithDetails(@Param("returnId") Long returnId);
 }

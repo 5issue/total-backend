@@ -9,4 +9,5 @@ public interface OmsReturnRepository {
 
     Optional<OmsReturn> findByOmsOrderIdWithDetails(Long omsOrderId);
 
+    Optional<OmsReturn> findByIdWithDetails(Long returnId);
 }

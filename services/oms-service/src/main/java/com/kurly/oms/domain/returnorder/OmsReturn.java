@@ -38,6 +38,12 @@ public class OmsReturn extends BaseEntity {
     @Column(length = 500)
     private String adminNote;
 
+    @Column
+    private Long totalRefundAmount;
+
+    @Column
+    private Long deductedShippingFee;
+
     private OmsReturn(Long omsOrderId, Long orderId) {
         this.omsOrderId = omsOrderId;
         this.orderId = orderId;
@@ -69,5 +75,21 @@ public class OmsReturn extends BaseEntity {
         } else {
             this.status = OmsReturnStatus.REJECTED;
         }
+    }
+
+    public void completeInspection() {
+        this.status = OmsReturnStatus.COMPLETED;
+    }
+
+    public void recordRefund(Long refundAmount, Long deductedFee) {
+        this.totalRefundAmount = refundAmount;
+        this.deductedShippingFee = deductedFee;
+        this.status = OmsReturnStatus.COMPLETED;
+    }
+
+    public void recordInspectionFailure() {
+        this.status = OmsReturnStatus.REJECTED;
+        this.totalRefundAmount = 0L;
+        this.deductedShippingFee = 0L;
     }
 }

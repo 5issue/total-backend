@@ -4,7 +4,6 @@ import com.kurly.common.response.ApiResponse;
 import com.kurly.common.security.PublicApi;
 import com.kurly.oms.application.OmsFulfillmentService;
 import com.kurly.oms.application.OmsOrderService;
-import com.kurly.oms.application.OmsReturnService;
 import com.kurly.oms.presentation.api.OmsInternalApi;
 import com.kurly.oms.presentation.dto.CancelEligibilityResponseDto;
 import lombok.RequiredArgsConstructor;
@@ -18,7 +17,6 @@ public class OmsInternalController implements OmsInternalApi {
 
     private final OmsOrderService orderService;
     private final OmsFulfillmentService fulfillmentService;
-    private final OmsReturnService returnService;
 
     @Override
     @PostMapping("/delivery-promises")
@@ -32,10 +30,4 @@ public class OmsInternalController implements OmsInternalApi {
         return ApiResponse.success(orderService.checkCancelEligibility(orderId));
     }
 
-    @Override
-    @PostMapping("/returns/{returnId}/inspection-result")
-    public ApiResponse<Void> receiveInspectionResult(@PathVariable Long returnId) {
-        returnService.receiveInspectionResult(returnId);
-        return ApiResponse.success();
-    }
 }

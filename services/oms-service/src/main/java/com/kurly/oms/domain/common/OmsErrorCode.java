@@ -10,6 +10,7 @@ import org.springframework.http.HttpStatus;
 public enum OmsErrorCode implements ErrorCode {
 
     // 400 BAD_REQUEST
+    OMS_INVALID_STATUS(HttpStatus.NOT_FOUND, "현재 상태에서 처리할 수 없습니다."),
 
     // 404 NOT_FOUND
     OMS_ORDER_NOT_FOUND(HttpStatus.NOT_FOUND, "주문 정보를 찾을 수 없습니다."),

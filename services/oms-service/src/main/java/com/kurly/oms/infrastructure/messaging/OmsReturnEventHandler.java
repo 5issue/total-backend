@@ -19,4 +19,12 @@ public class OmsReturnEventHandler {
         returnService.receiveReturn(event);
     }
 
+    @RabbitListener(queues = OmsRabbitMqConfig.QUEUE_WMS_INSPECTED)
+    public void handle(WmsReturnInspectedMessage message) {
+        log.info("[WmsReturnEventHandler] WMS 검수 완료 수신: returnId={}, result={}, approvedCount={}",
+                message.omsReturnId(), message.inspectionResult(), message.approvedItemIds().size());
+
+        returnService.processInspectionResult(message);
+    }
+
 }

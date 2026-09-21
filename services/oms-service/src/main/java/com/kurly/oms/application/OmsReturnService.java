@@ -5,13 +5,11 @@ import com.kurly.oms.domain.common.OmsErrorCode;
 import com.kurly.oms.domain.common.StorageType;
 import com.kurly.oms.domain.order.OmsOrder;
 import com.kurly.oms.domain.order.OmsOrderRepository;
-import com.kurly.oms.domain.returnorder.OmsReturn;
-import com.kurly.oms.domain.returnorder.OmsReturnItem;
-import com.kurly.oms.domain.returnorder.OmsReturnRepository;
-import com.kurly.oms.domain.returnorder.ReturnDecision;
+import com.kurly.oms.domain.returnorder.*;
 import com.kurly.oms.infrastructure.messaging.OmsRefundRequestedEvent;
 import com.kurly.oms.infrastructure.messaging.OmsReturnInspectionRequestedEvent;
 import com.kurly.oms.infrastructure.messaging.OrderReturnRequestedMessage;
+import com.kurly.oms.infrastructure.messaging.WmsReturnInspectedMessage;
 import com.kurly.oms.presentation.dto.ReturnJudgementRequest;
 import com.kurly.oms.presentation.dto.ReturnJudgementResponse;
 import lombok.RequiredArgsConstructor;
@@ -91,8 +89,18 @@ public class OmsReturnService {
         );
 
         if (!coldApprovedItemIds.isEmpty()) {
+            long coldRefundAmount = omsReturn.getItems().stream()
+                    .filter(item -> coldApprovedItemIds.contains(item.getOmsOrderItemId()))
+                    .mapToLong(item -> item.getOrderItem().getUnitPrice() * item.getOrderItem().getQuantity())
+                    .sum();
+
             eventPublisher.publishEvent(OmsRefundRequestedEvent.of(
-                    omsReturn.getOmsOrderId(), omsReturn.getOrderId(), coldApprovedItemIds));
+                    omsReturn.getOmsOrderId(),
+                    omsReturn.getOrderId(),
+                    coldRefundAmount,
+                    0L,
+                    coldApprovedItemIds
+            ));
         }
 
         if (!logisticsApprovedItemIds.isEmpty()) {
@@ -108,5 +116,42 @@ public class OmsReturnService {
                 rejectedItemIds,
                 LocalDateTime.now()
         );
+    }
+
+    @Transactional
+    public void processInspectionResult(WmsReturnInspectedMessage message) {
+        OmsReturn omsReturn = omsReturnRepository.findByIdWithDetails(message.omsReturnId())
+                .orElseThrow(() -> new BusinessException(OmsErrorCode.OMS_RETURN_NOT_FOUND));
+
+        if (omsReturn.getStatus() != OmsReturnStatus.PROCESSING) {
+            throw new BusinessException(OmsErrorCode.OMS_INVALID_STATUS);
+        }
+
+        if ("FAILED".equalsIgnoreCase(message.inspectionResult()) || message.approvedItemIds().isEmpty()) {
+            log.warn("[OmsReturnService] 검수 전량 불합격 처리: returnId={}, note={}", message.omsReturnId(), message.wmsNote());
+            omsReturn.recordInspectionFailure();
+            return;
+        }
+
+        long approvedItemsTotalAmount = omsReturn.getItems().stream()
+                .filter(item -> message.approvedItemIds().contains(item.getOmsOrderItemId()))
+                .mapToLong(item -> item.getOrderItem().getUnitPrice() * item.getOrderItem().getQuantity())
+                .sum();
+
+        long deductedFee = "CUSTOMER".equalsIgnoreCase(message.faultType()) ? 3000L : 0L;
+        long finalRefundAmount = Math.max(0L, approvedItemsTotalAmount - deductedFee);
+
+        omsReturn.recordRefund(finalRefundAmount, deductedFee);
+
+        eventPublisher.publishEvent(OmsRefundRequestedEvent.of(
+                omsReturn.getOmsOrderId(),
+                omsReturn.getOrderId(),
+                finalRefundAmount,
+                deductedFee,
+                message.approvedItemIds()
+        ));
+
+        log.info("[OmsReturnService] WMS 검수 기반 환불 요청 이벤트 발행 완료: returnId={}, finalRefundAmount={}, deductedFee={}",
+                omsReturn.getId(), finalRefundAmount, deductedFee);
     }
 }
