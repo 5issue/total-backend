@@ -77,7 +77,7 @@ public class OmsReturn extends BaseEntity {
         }
     }
 
-    public void completeInspection() {
+    public void completeRefund() {
         this.status = OmsReturnStatus.COMPLETED;
     }
 

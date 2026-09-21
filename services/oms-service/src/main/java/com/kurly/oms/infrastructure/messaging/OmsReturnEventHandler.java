@@ -27,4 +27,13 @@ public class OmsReturnEventHandler {
         returnService.processInspectionResult(message);
     }
 
+    @RabbitListener(queues = OmsRabbitMqConfig.QUEUE_PAYMENT_REFUNDED)
+    public void handle(PaymentRefundCompletedMessage message) {
+        log.info("[PaymentRefundCompletedMessage] Payment 환불 완료 수신: returnId={}, refundAmount={}, refundAt={}",
+                message.omsReturnId(), message.refundAmount(), message.refundAt());
+
+        returnService.completeRefund(message);
+
+    }
+
 }

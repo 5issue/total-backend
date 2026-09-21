@@ -24,6 +24,8 @@ public class OmsRabbitMqConfig {
 
     public static final String ROUTING_KEY_WMS_INSPECTED = "wms.return.inspected";
 
+    public static final String ROUTING_KEY_PAYMENT_REFUNDED = "payment.refund.completed";
+
 
     // ==========================================
     // Queues & DLQs
@@ -36,6 +38,9 @@ public class OmsRabbitMqConfig {
 
     public static final String QUEUE_WMS_INSPECTED = "oms.wms-inspected.queue";
     public static final String DLQ_WMS_INSPECTED = "oms.wms-inspected.dlq";
+
+    public static final String QUEUE_PAYMENT_REFUNDED = "oms.payment-refunded.queue";
+    public static final String DLQ_PAYMENT_REFUNDED = "oms.payment-refunded.dlq";
 
     // ==========================================
     // Exchange Beans
@@ -114,4 +119,26 @@ public class OmsRabbitMqConfig {
                 .with(ROUTING_KEY_WMS_INSPECTED);
     }
 
+    // ==========================================
+    // 3. Payment Refund Completed Flow
+    // ==========================================
+    @Bean
+    Queue paymentRefundedDlq() {
+        return QueueBuilder.durable(DLQ_PAYMENT_REFUNDED).build();
+    }
+
+    @Bean
+    Queue paymentRefundedQueue() {
+        return QueueBuilder.durable(QUEUE_PAYMENT_REFUNDED)
+                .deadLetterExchange("")
+                .deadLetterRoutingKey(DLQ_PAYMENT_REFUNDED)
+                .build();
+    }
+
+    @Bean
+    Binding paymentRefundedBinding(Queue paymentRefundedQueue, TopicExchange omsTopicExchange) {
+        return BindingBuilder.bind(paymentRefundedQueue)
+                .to(omsTopicExchange)
+                .with(ROUTING_KEY_PAYMENT_REFUNDED);
+    }
 }

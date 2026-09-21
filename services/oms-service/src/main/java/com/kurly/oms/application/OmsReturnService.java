@@ -6,10 +6,7 @@ import com.kurly.oms.domain.common.StorageType;
 import com.kurly.oms.domain.order.OmsOrder;
 import com.kurly.oms.domain.order.OmsOrderRepository;
 import com.kurly.oms.domain.returnorder.*;
-import com.kurly.oms.infrastructure.messaging.OmsRefundRequestedEvent;
-import com.kurly.oms.infrastructure.messaging.OmsReturnInspectionRequestedEvent;
-import com.kurly.oms.infrastructure.messaging.OrderReturnRequestedMessage;
-import com.kurly.oms.infrastructure.messaging.WmsReturnInspectedMessage;
+import com.kurly.oms.infrastructure.messaging.*;
 import com.kurly.oms.presentation.dto.ReturnJudgementRequest;
 import com.kurly.oms.presentation.dto.ReturnJudgementResponse;
 import lombok.RequiredArgsConstructor;
@@ -183,5 +180,17 @@ public class OmsReturnService {
 
         log.info("[OmsReturnService] 통합 환불 요청 이벤트 발행 완료: returnId={}, finalRefundAmount={}, deductedFee={}",
                 omsReturn.getId(), finalRefundAmount, deductedFee);
+    }
+
+    @Transactional
+    public void completeRefund(PaymentRefundCompletedMessage message) {
+        OmsReturn omsReturn = omsReturnRepository.findByIdWithDetails(message.omsReturnId())
+                .orElseThrow(() -> new BusinessException(OmsErrorCode.OMS_RETURN_NOT_FOUND));
+
+        if (!omsReturn.getTotalRefundAmount().equals(message.refundAmount())) {
+            throw new IllegalStateException("환불 금액이 일치하지 않습니다.");
+        }
+
+        omsReturn.completeRefund();
     }
 }
