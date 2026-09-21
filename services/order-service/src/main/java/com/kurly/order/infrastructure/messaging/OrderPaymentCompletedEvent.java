@@ -44,6 +44,7 @@ public record OrderPaymentCompletedEvent(
                                 item.getProductId(),
                                 item.getSkuId(),
                                 item.getQuantity(),
+                                item.getUnitPrice(),
                                 item.getStorageType()
                         ))
                         .toList(),
@@ -65,6 +66,7 @@ public record OrderPaymentCompletedEvent(
             Long productId,
             Long skuId,
             Integer quantity,
+            Long unitPrice,
             StorageType storageType
     ) {
     }
