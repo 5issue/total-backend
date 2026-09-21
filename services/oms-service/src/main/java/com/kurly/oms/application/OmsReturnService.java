@@ -29,6 +29,7 @@ import java.util.stream.Collectors;
 @Slf4j
 public class OmsReturnService {
 
+    private final static Long RETURN_SHIPPING_FEE = 3000L;
     private final OmsOrderRepository omsOrderRepository;
     private final OmsReturnRepository omsReturnRepository;
     private final ApplicationEventPublisher eventPublisher;
@@ -82,17 +83,24 @@ public class OmsReturnService {
             }
         }
 
-        omsReturn.applyJudgement(
-                request.adminNote(),
-                !coldApprovedItemIds.isEmpty(),
-                !logisticsApprovedItemIds.isEmpty()
-        );
+        boolean hasCold = !coldApprovedItemIds.isEmpty();
+        boolean hasLogistics = !logisticsApprovedItemIds.isEmpty();
 
-        if (!coldApprovedItemIds.isEmpty()) {
+        omsReturn.applyJudgement(request.adminNote(), hasCold, hasLogistics);
+
+        // 1. 상온 항목이 있으면 WMS 수거 지시만 발행 (환불 이벤트는 WMS 검수 완료 시까지 지연)
+        if (hasLogistics) {
+            eventPublisher.publishEvent(OmsReturnInspectionRequestedEvent.of(
+                    omsReturn.getOmsOrderId(), omsReturn.getOrderId(), logisticsApprovedItemIds));
+        }
+        // 2. 상온 항목 없이 순수 콜드체인(자체폐기) 승인건만 있는 경우 -> 즉시 단일 환불 이벤트 발행
+        else if (hasCold) {
             long coldRefundAmount = omsReturn.getItems().stream()
                     .filter(item -> coldApprovedItemIds.contains(item.getOmsOrderItemId()))
                     .mapToLong(item -> item.getOrderItem().getUnitPrice() * item.getOrderItem().getQuantity())
                     .sum();
+
+            omsReturn.recordRefund(coldRefundAmount, 0L);
 
             eventPublisher.publishEvent(OmsRefundRequestedEvent.of(
                     omsReturn.getOmsOrderId(),
@@ -101,11 +109,6 @@ public class OmsReturnService {
                     0L,
                     coldApprovedItemIds
             ));
-        }
-
-        if (!logisticsApprovedItemIds.isEmpty()) {
-            eventPublisher.publishEvent(OmsReturnInspectionRequestedEvent.of(
-                    omsReturn.getOmsOrderId(), omsReturn.getOrderId(), logisticsApprovedItemIds));
         }
 
         return new ReturnJudgementResponse(
@@ -129,29 +132,56 @@ public class OmsReturnService {
 
         if ("FAILED".equalsIgnoreCase(message.inspectionResult()) || message.approvedItemIds().isEmpty()) {
             log.warn("[OmsReturnService] 검수 전량 불합격 처리: returnId={}, note={}", message.omsReturnId(), message.wmsNote());
-            omsReturn.recordInspectionFailure();
+
+            // 기존 APPROVE_COLDCHAIN 승인된 건만 발행
+            long coldOnlyAmount = omsReturn.getItems().stream()
+                    .filter(item -> item.getDecision() == ReturnDecision.APPROVE_COLDCHAIN)
+                    .mapToLong(item -> item.getOrderItem().getUnitPrice() * item.getOrderItem().getQuantity())
+                    .sum();
+
+            if (coldOnlyAmount > 0) {
+                omsReturn.recordRefund(coldOnlyAmount, 0L);
+                List<Long> coldItemIds = omsReturn.getItems().stream()
+                        .filter(item -> item.getDecision() == ReturnDecision.APPROVE_COLDCHAIN)
+                        .map(OmsReturnItem::getOmsOrderItemId).toList();
+
+                eventPublisher.publishEvent(OmsRefundRequestedEvent.of(
+                        omsReturn.getOmsOrderId(), omsReturn.getOrderId(), coldOnlyAmount, 0L, coldItemIds));
+            } else {
+                omsReturn.recordInspectionFailure();
+            }
             return;
         }
 
-        long approvedItemsTotalAmount = omsReturn.getItems().stream()
-                .filter(item -> message.approvedItemIds().contains(item.getOmsOrderItemId()))
+        // 통합 환불 대상 = 기존 APPROVE_COLDCHAIN 품목 금액 + WMS 검수 합격(APPROVE_LOGISTICS) 품목 금액
+        List<OmsReturnItem> allApprovedItems = omsReturn.getItems().stream()
+                .filter(item -> item.getDecision() == ReturnDecision.APPROVE_COLDCHAIN
+                                || (item.getDecision() == ReturnDecision.APPROVE_LOGISTICS && message.approvedItemIds().contains(item.getOmsOrderItemId())))
+                .toList();
+
+        long totalApprovedAmount = allApprovedItems.stream()
                 .mapToLong(item -> item.getOrderItem().getUnitPrice() * item.getOrderItem().getQuantity())
                 .sum();
 
-        long deductedFee = "CUSTOMER".equalsIgnoreCase(message.faultType()) ? 3000L : 0L;
-        long finalRefundAmount = Math.max(0L, approvedItemsTotalAmount - deductedFee);
+        // 귀책 사유에 따른 배송비 차감 (고객 변심 시 3,000원)
+        long deductedFee = "CUSTOMER".equalsIgnoreCase(message.faultType()) ? RETURN_SHIPPING_FEE : 0L;
+        long finalRefundAmount = Math.max(0L, totalApprovedAmount - deductedFee);
 
         omsReturn.recordRefund(finalRefundAmount, deductedFee);
+
+        List<Long> finalApprovedItemIds = allApprovedItems.stream()
+                .map(OmsReturnItem::getOmsOrderItemId)
+                .toList();
 
         eventPublisher.publishEvent(OmsRefundRequestedEvent.of(
                 omsReturn.getOmsOrderId(),
                 omsReturn.getOrderId(),
                 finalRefundAmount,
                 deductedFee,
-                message.approvedItemIds()
+                finalApprovedItemIds
         ));
 
-        log.info("[OmsReturnService] WMS 검수 기반 환불 요청 이벤트 발행 완료: returnId={}, finalRefundAmount={}, deductedFee={}",
+        log.info("[OmsReturnService] 통합 환불 요청 이벤트 발행 완료: returnId={}, finalRefundAmount={}, deductedFee={}",
                 omsReturn.getId(), finalRefundAmount, deductedFee);
     }
 }
