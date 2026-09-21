@@ -34,7 +34,6 @@ public class OmsReturnItem extends BaseEntity {
     @Column(length = 255)
     private String rejectReason;
 
-
     public static OmsReturnItem create(OmsOrderItem orderItem) {
         Assert.notNull(orderItem, "OmsOrderItem은 필수입니다.");
         OmsReturnItem returnItem = new OmsReturnItem();

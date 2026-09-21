@@ -3,7 +3,7 @@ package com.kurly.oms.domain.returnorder;
 import java.util.Optional;
 
 public interface OmsReturnRepository {
-    void save(OmsReturn omsReturn);
+    OmsReturn save(OmsReturn omsReturn);
 
     boolean existsByOmsOrderId(Long omsOrderId);
 

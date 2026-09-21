@@ -129,4 +129,8 @@ public class OmsOrder extends BaseEntity {
         return RELEASE_REQUIRED_STATUSES.contains(this.status);
     }
 
+    public void updateStatus(OmsOrderStatus status) {
+        this.status = status;
+    }
+
 }

@@ -127,7 +127,7 @@ public class OmsReturnService {
             throw new BusinessException(OmsErrorCode.OMS_INVALID_STATUS);
         }
 
-        if ("FAILED".equalsIgnoreCase(message.inspectionResult()) || message.approvedItemIds().isEmpty()) {
+        if (message.approvedItemIds().isEmpty()) {
             log.warn("[OmsReturnService] 검수 전량 불합격 처리: returnId={}, note={}", message.omsReturnId(), message.wmsNote());
 
             // 기존 APPROVE_COLDCHAIN 승인된 건만 발행
