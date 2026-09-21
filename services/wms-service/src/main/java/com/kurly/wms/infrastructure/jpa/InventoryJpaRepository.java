@@ -24,6 +24,14 @@ public interface InventoryJpaRepository extends JpaRepository<Inventory, Long> {
             Long warehouseId, Long locationId, Long productId, String lotNo, LocalDate expiredDate, String lpnCode);
 
     /**
+     * StockMovementQueryService.create()가 "가용 수량 확인 → reserve()"를 원자적으로 하기 위해
+     * 쓰는 조회. 잠그지 않으면 같은 inventoryId를 대상으로 한 동시 요청이 둘 다 가용 수량 검증을
+     * 통과해 실제 재고보다 많이 예약(over-reserve)할 수 있다.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    Optional<Inventory> findWithPessimisticLockById(Long id);
+
+    /**
      * 상품별 재고 요약(GET /api/v1/wms/inventories/summary)용 집계 조회. warehouseId/productId는
      * 둘 다 선택 조건이다 — warehouseId가 null이면 전국 전체 창고를 상품 단위로 통합 집계한다.
      * 응답의 warehouseId(요청값을 그대로 되돌려주는 것뿐)는 서비스 계층에서 채운다.

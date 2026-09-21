@@ -56,9 +56,9 @@ public class StockMovementQueryService {
 
         Warehouse warehouse = warehouseJpaRepository.findById(request.warehouseId())
                 .orElseThrow(() -> new EntityNotFoundException("창고를 찾을 수 없습니다. warehouseId=" + request.warehouseId()));
-        Inventory inventory = inventoryJpaRepository.findById(request.inventoryId())
+        Inventory inventory = inventoryJpaRepository.findWithPessimisticLockById(request.inventoryId())
                 .orElseThrow(() -> new EntityNotFoundException("재고를 찾을 수 없습니다. inventoryId=" + request.inventoryId()));
-        Location targetLocation = locationJpaRepository.findById(request.targetLocationId())
+        Location targetLocation = locationJpaRepository.findWithPessimisticLockById(request.targetLocationId())
                 .orElseThrow(() -> new EntityNotFoundException("로케이션을 찾을 수 없습니다. targetLocationId=" + request.targetLocationId()));
         int totalBaseQuantity = calculateTotalBaseQuantity(inventory.getProduct(), request.movementUnit(), request.unitQuantity());
 
