@@ -29,6 +29,7 @@ public record OrderPaymentCompletedMessage(
             Long productId,
             Long skuId,
             Integer quantity,
+            Long unitPrice,
             String storageType
     ) {
     }

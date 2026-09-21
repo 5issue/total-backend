@@ -41,6 +41,9 @@ public class OmsOrderItem extends BaseEntity {
     @Column(nullable = false)
     private Integer quantity;
 
+    @Column(nullable = false)
+    private Long unitPrice;
+
     @Column(precision = 12, scale = 2)
     private BigDecimal volumeCm3;
 
@@ -48,13 +51,14 @@ public class OmsOrderItem extends BaseEntity {
 
     @Builder(access = AccessLevel.PRIVATE)
     private OmsOrderItem(Long orderItemId, Long productId, Long skuId,
-                         StorageType storageType, Integer quantity,
+                         StorageType storageType, Integer quantity, Long unitPrice,
                          BigDecimal volumeCm3, Integer weightGram) {
         this.orderItemId = orderItemId;
         this.productId = productId;
         this.skuId = skuId;
         this.storageType = storageType;
         this.quantity = quantity;
+        this.unitPrice = unitPrice;
         this.volumeCm3 = volumeCm3;
         this.weightGram = weightGram;
     }
@@ -64,13 +68,15 @@ public class OmsOrderItem extends BaseEntity {
             Long productId,
             Long skuId,
             StorageType storageType,
-            Integer quantity
+            Integer quantity,
+            Long unitPrice
     ) {
         Assert.notNull(orderItemId, "원 주문 상품 ID는 필수입니다.");
         Assert.notNull(productId, "상품 ID는 필수입니다.");
         Assert.notNull(skuId, "SKU ID는 필수입니다.");
         Assert.notNull(storageType, "보관 온도대는 필수입니다.");
         Assert.isTrue(quantity != null && quantity > 0, "수량은 1개 이상이어야 합니다.");
+        Assert.isTrue(unitPrice != null && unitPrice > 0L, "단가는 필수이며 0보다 커야 합니다.");
 
         return OmsOrderItem.builder()
                 .orderItemId(orderItemId)
@@ -78,6 +84,7 @@ public class OmsOrderItem extends BaseEntity {
                 .skuId(skuId)
                 .storageType(storageType)
                 .quantity(quantity)
+                .unitPrice(unitPrice)
                 .volumeCm3(null)
                 .weightGram(null)
                 .build();

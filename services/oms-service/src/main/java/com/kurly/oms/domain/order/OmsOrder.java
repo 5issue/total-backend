@@ -47,6 +47,9 @@ public class OmsOrder extends BaseEntity {
     @Column(nullable = false)
     private Long regionId;
 
+    @Column(nullable = false)
+    private Long paidAmount;
+
     @Column(nullable = false, length = 80)
     private String recipientName;
 
@@ -66,13 +69,14 @@ public class OmsOrder extends BaseEntity {
 
     @Builder(access = AccessLevel.PRIVATE)
     private OmsOrder(Long orderId, String orderNo, OmsOrderStatus status, String sourceEventId,
-                     Long regionId, String recipientName, String recipientPhone,
+                     Long regionId, Long paidAmount, String recipientName, String recipientPhone,
                      String postalCode, String roadAddress, String detailAddress) {
         this.orderId = orderId;
         this.orderNo = orderNo;
         this.status = status;
         this.sourceEventId = sourceEventId;
         this.regionId = regionId;
+        this.paidAmount = paidAmount;
         this.recipientName = recipientName;
         this.recipientPhone = recipientPhone;
         this.postalCode = postalCode;
@@ -81,13 +85,14 @@ public class OmsOrder extends BaseEntity {
     }
 
     public static OmsOrder create(Long orderId, String orderNo, String sourceEventId,
-                                  Long regionId, String recipientName, String recipientPhone,
+                                  Long regionId, Long paidAmount, String recipientName, String recipientPhone,
                                   String postalCode, String roadAddress, String detailAddress,
                                   List<OmsOrderItem> items) {
         Assert.notNull(orderId, "주문 서비스 orderId는 필수입니다.");
         Assert.hasText(orderNo, "주문번호는 필수입니다.");
         Assert.hasText(sourceEventId, "주문 이벤트 ID는 필수입니다.");
         Assert.notNull(regionId, "주문 서비스 regionId는 필수입니다.");
+        Assert.isTrue(paidAmount != null && paidAmount > 0L, "결제 총 금액은 필수이며 0보다 커야 합니다.");
         Assert.hasText(recipientName, "수령인명은 필수입니다.");
         Assert.hasText(recipientPhone, "수령인 연락처는 필수입니다.");
         Assert.hasText(postalCode, "우편번호는 필수입니다.");
@@ -100,6 +105,7 @@ public class OmsOrder extends BaseEntity {
                 .status(OmsOrderStatus.ORDER_RECEIVED)
                 .sourceEventId(sourceEventId)
                 .regionId(regionId)
+                .paidAmount(paidAmount)
                 .recipientName(recipientName)
                 .recipientPhone(recipientPhone)
                 .postalCode(postalCode)

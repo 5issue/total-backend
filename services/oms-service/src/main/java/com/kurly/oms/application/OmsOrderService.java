@@ -42,7 +42,8 @@ public class OmsOrderService {
                         item.productId(),
                         item.skuId(),
                         StorageType.valueOf(item.storageType()),
-                        item.quantity()
+                        item.quantity(),
+                        item.unitPrice()
                 ))
                 .toList();
 
@@ -51,6 +52,7 @@ public class OmsOrderService {
                 event.orderNo(),
                 event.eventId().toString(),
                 event.regionId(),
+                event.paidAmount(),
                 event.deliveryAddress().recipientName(),
                 event.deliveryAddress().phone(),
                 event.deliveryAddress().zipCode(),
