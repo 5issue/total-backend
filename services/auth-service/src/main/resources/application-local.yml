@@ -40,6 +40,10 @@ auth:
     secure: ${AUTH_REFRESH_COOKIE_SECURE:false}
 
 kurly:
+  cors:
+    # 로컬 프론트 오리진. 공통 기본값은 :8080이라 주입하지 않으면 :3000에서 오는
+    # 브라우저 호출이 프리플라이트에서 전부 막힌다(frontend-redirect-uri와 맞춘다).
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000,http://127.0.0.1:3000}
   security:
     issuer: ${JWT_ISSUER:https://auth.kurly.local}
     audience: ${JWT_AUDIENCE:kurly-api}
@@ -48,10 +52,9 @@ user-service:
   base-url: ${USER_SERVICE_BASE_URL:http://localhost:8088}
 
 oauth:
-  # 인가 코드 가로채기를 막기 위한 화이트리스트(BE-16). 콘솔 등록값과 정확히 일치해야 한다.
-  allowed-redirect-uris:
-    - ${OAUTH_REDIRECT_URI_KAKAO:http://localhost:8081/api/v1/auth/oauth/kakao/callback}
-    - ${OAUTH_REDIRECT_URI_NAVER:http://localhost:8081/api/v1/auth/oauth/naver/callback}
+  # 인가 코드 가로채기를 막기 위한 화이트리스트(BE-01). 콘솔 등록값과 정확히 일치해야 한다.
+  # 백엔드 콜백(제공자 → 백엔드)과 프론트 콜백(제공자 → 프론트 서버)을 모두 허용해 둔다.
+  allowed-redirect-uris: ${OAUTH_ALLOWED_REDIRECT_URIS:http://localhost:8081/api/v1/auth/oauth/kakao/callback,http://localhost:8081/api/v1/auth/oauth/naver/callback,http://localhost:3000/callback/kakao,http://localhost:3000/callback/naver}
   # 콜백 처리 후 브라우저를 돌려보낼 프론트 주소. 요청값이 아니라 설정값만 쓴다(오픈 리다이렉트 방지).
   frontend-redirect-uri: ${OAUTH_FRONTEND_REDIRECT_URI:http://localhost:3000/}
   providers:
