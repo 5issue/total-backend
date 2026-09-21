@@ -85,9 +85,9 @@ model ProductInventorySummaryResponse {
   @doc("조회 시 warehouseId를 지정하지 않았으면(전국 통합 집계) null이다.")
   warehouseId: int64 | null;
 
-  totalQuantity: int32;
-  totalReservedQuantity: int32;
-  totalAvailableQuantity: int32;
+  totalQuantity: int64;
+  totalReservedQuantity: int64;
+  totalAvailableQuantity: int64;
 }
 
 @doc("로케이션/LOT 1건의 실물 재고 상세.")

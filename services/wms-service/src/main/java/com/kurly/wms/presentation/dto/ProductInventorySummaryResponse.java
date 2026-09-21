@@ -8,13 +8,13 @@ public record ProductInventorySummaryResponse(
         /** 조회 시 warehouseId를 지정하지 않았으면(전국 통합 집계) null이다. */
         Long warehouseId,
 
-        Integer totalQuantity,
-        Integer totalReservedQuantity,
-        Integer totalAvailableQuantity
+        Long totalQuantity,
+        Long totalReservedQuantity,
+        Long totalAvailableQuantity
 ) {
     public static ProductInventorySummaryResponse of(ProductInventorySummaryProjection projection, Long warehouseId) {
-        int totalQuantity = projection.totalQuantity().intValue();
-        int totalReservedQuantity = projection.totalReservedQuantity().intValue();
+        long totalQuantity = projection.totalQuantity();
+        long totalReservedQuantity = projection.totalReservedQuantity();
         return new ProductInventorySummaryResponse(
                 projection.productId(),
                 warehouseId,
