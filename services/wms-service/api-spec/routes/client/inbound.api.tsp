@@ -20,10 +20,4 @@ interface InboundClient {
   @post
   @route("/put-away/recommendation")
   recommendPutAway(@body body: PutAwayRecommendationRequest): WmsService.Common.ApiResponse<PutAwayRecommendationResult> | WmsService.Common.ErrorResponse;
-
-  @summary("버퍼→목표 로케이션 물리 이동 완료")
-  @doc("임시 도크에 있던 재고를 보관용 로케이션에 적치를 완료한다.")
-  @post
-  @route("/put-away/confirm")
-  confirmPutAway(@body body: PutAwayConfirmRequest): WmsService.Common.ApiResponse<InboundItemResponse> | WmsService.Common.ErrorResponse;
 }

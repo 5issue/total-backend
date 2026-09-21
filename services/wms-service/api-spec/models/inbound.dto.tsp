@@ -142,21 +142,3 @@ model PutAwayRecommendationResult {
 
   status: WmsService.Common.TaskStatus;
 }
-
-@doc("""
-  버퍼(임시 도크)에 있던 재고를 목표 로케이션으로 물리 이동 완료 처리한다. 재고 증가는
-  검수(inspect) 시점에 이미 반영됐고, 여기서는 StockMovement 완료 + 재고 위치 이전만 수행한다.
-
-  inboundItemId가 아니라 stockMovementId로 작업 지시를 특정한다 — inboundItemId만으로는
-  "이 검수 건의 PENDING 상태 PUT_AWAY 작업 지시"를 다시 조회해야 하는데, 작업 지시 자체의
-  식별자를 이미 inspect 응답(InboundItemResponse.stockMovementId)으로 쥐고 있으므로 그걸
-  그대로 넘기는 편이 조회 조건도 단순해지고 애매함도 없다. 이미 COMPLETED/CANCELED인
-  작업 지시를 다시 확정하려 하면 409(WMS409)로 실패한다.
-  """)
-model PutAwayConfirmRequest {
-  @doc("inspect 응답의 stockMovementId. 검수 시점에 생성된, 아직 PENDING인 PUT_AWAY 작업 지시여야 한다.")
-  stockMovementId: int64;
-
-  @doc("작업자가 실제로 적치를 확정한 로케이션. 추천/원래 배정과 다를 수 있다.")
-  targetLocationId: int64;
-}

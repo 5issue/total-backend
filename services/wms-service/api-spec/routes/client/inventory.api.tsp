@@ -9,41 +9,48 @@ namespace WmsService.Inventory;
 @tag("Inventory")
 @route("/api/v1/wms/inventories")
 interface InventoryClient {
-  @summary("실시간 가용 재고 조회")
-  @doc("상품 ID 기준으로 로케이션·LOT별 재고와, 창고 전체 합산 가용 재고를 함께 조회한다.")
+  @summary("상품별 재고 요약 조회 (창고 통합/개별)")
+  @doc("""
+    여러 로케이션에 흩어진 동일 상품의 재고를 상품 단위로 합산해 보여준다. 본사 SCM
+    관리자·상품 기획자·타 서비스 연동처럼 "이 상품이 총 몇 개 있는지"가 궁금한 경우에 쓴다.
+    로케이션/LOT 단위 상세는 상세 조회(`GET /api/v1/wms/inventories`)를 쓴다.
+
+    warehouseId를 생략하면 전국 전체 창고를 통합 집계한다(그 경우 응답의 warehouseId는 null).
+    productId를 생략하면 창고(또는 전국) 안의 모든 상품을 페이지 단위로 나열한다.
+    """)
   @get
-  getByProduct(@query productId: int64, @query warehouseId?: int64): WmsService.Common.ApiResponse<ProductInventorySummaryResponse> | WmsService.Common.ErrorResponse;
+  @route("/summary")
+  getInventorySummary(
+    @query warehouseId?: int64,
+    @query productId?: int64,
+    @query page?: int32,
+    @query size?: int32,
+    @query sort?: string
+  ): WmsService.Common.ApiResponse<WmsService.Common.PageResponse<ProductInventorySummaryResponse>> | WmsService.Common.ErrorResponse;
+
+  @summary("로케이션/LOT별 상세 재고 조회")
+  @doc("""
+    특정 상품이 어느 로케이션·구역(zone)·LOT/유통기한으로 나뉘어 보관 중인지 실물 단위로
+    나열한다. 현장 작업자(PDA)·창고 관리자·재고 실사처럼 "실제로 어디에 얼마나 있는지"가
+    궁금한 경우에 쓴다. 상품 단위 합계는 요약 조회(`GET /api/v1/wms/inventories/summary`)를 쓴다.
+    """)
+  @get
+  listInventoryDetails(
+    @query warehouseId?: int64,
+    @query productId?: int64,
+    @query zone?: WmsService.Common.Zone,
+    @query locationId?: int64,
+    @query lotNo?: string,
+    @query page?: int32,
+    @query size?: int32,
+    @query sort?: string
+  ): WmsService.Common.ApiResponse<WmsService.Common.PageResponse<InventoryDetailResponse>> | WmsService.Common.ErrorResponse;
 
   @summary("주문 접수 시 재고 선점 (Soft-alloc)")
   @doc("주문 접수 시점에 가용 재고를 잠정 선점한다. OutboundOrder 생성 전이라 referenceId로 선점 건을 식별한다.")
   @post
   @route("/allocation")
   allocate(@body body: StockAllocationRequest): WmsService.Common.ApiResponse<StockAllocationResponse> | WmsService.Common.ErrorResponse;
-
-  @summary("내부 이동 지시 생성 (보충 작업)")
-  @doc("피킹존 보충(REPLENISHMENT)이나 단순 재배치(RELOCATION) 등 로케이션 간 이동 작업 지시를 생성한다.")
-  @post
-  @route("/movement")
-  createMovement(@body body: StockMovementCreateRequest): WmsService.Common.ApiResponse<StockMovementResponse> | WmsService.Common.ErrorResponse;
-
-  @summary("적치/보충/이동 작업 지시 목록 조회")
-  @doc("""
-    창고/이동 유형/상태 조건으로 StockMovement 목록을 조회한다. PDA 작업자가 자신이 처리해야
-    할 대기 중인 작업(예: warehouseId + movementType=PUT_AWAY + status=PENDING)을 확인하는
-    용도로 쓴다. put-away/recommendation(inbound.api.tsp)이 입고 상세 1건에 대한 추천
-    로케이션을 미리 보여주는 것과 달리, 이 API는 이미 생성된 작업 지시를 창고 단위로 훑어보는
-    용도라 도메인상 inbound가 아니라 inventory(재고 이동)에 속한다.
-
-    createdAt 오름차순(오래된 순, FIFO)으로 정렬한다. limit 기본값은 50, 최대 200이다.
-    """)
-  @get
-  @route("/movement")
-  listStockMovements(
-    @query warehouseId?: int64,
-    @query movementType?: MovementType,
-    @query status?: MovementStatus,
-    @query limit?: int32
-  ): WmsService.Common.ApiResponse<StockMovementResponse[]> | WmsService.Common.ErrorResponse;
 }
 
 // 창고 구역/로케이션 마스터 관리. base path가 /api/v1/wms/inventories가 아니라
