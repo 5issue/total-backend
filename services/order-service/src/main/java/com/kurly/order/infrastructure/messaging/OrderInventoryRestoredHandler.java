@@ -13,11 +13,11 @@ public class OrderInventoryRestoredHandler {
 
     private final OrderService orderService;
 
-    @RabbitListener(queues = OrderRabbitMqConfig.INVENTORY_RESTORED_QUEUE)
+    @RabbitListener(queues = OrderRabbitMqConfig.QUEUE_INVENTORY_RESTORED)
     public void handle(ProductInventoryRestoredEvent event) {
         log.info("상품 재고 복구 결과 수신: orderId={}, eventId={}, status={}",
                 event.orderId(), event.eventId(), event.status());
-        if ("RESTORED".equals(event.status())) {
+        if ("RESTORED".equals(event.status()) || "ALREADY_RESTORED".equals(event.status())) {
             orderService.completeCancel(event.orderId(), event.reservationToken());
         }
     }

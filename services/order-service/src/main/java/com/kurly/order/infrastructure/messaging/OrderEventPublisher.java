@@ -1,7 +1,5 @@
 package com.kurly.order.infrastructure.messaging;
 
-import com.kurly.order.domain.order.OrderEvent;
-import com.kurly.order.domain.order.SalesOrderCreatedEvent;
 import lombok.RequiredArgsConstructor;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.modulith.events.ApplicationModuleListener;
@@ -14,12 +12,38 @@ public class OrderEventPublisher {
     private final RabbitTemplate rabbitTemplate;
 
     @ApplicationModuleListener
-    public void publish(OrderEvent event) {
-        rabbitTemplate.convertAndSend(OrderRabbitMqConfig.EXCHANGE, event.routingKey(), event);
+    public void publishOrderPaymentCompleted(OrderPaymentCompletedEvent event) {
+        rabbitTemplate.convertAndSend(
+                OrderRabbitMqConfig.EXCHANGE_ORDER,
+                OrderRabbitMqConfig.ROUTING_KEY_ORDER_PAYMENT_COMPLETED,
+                event
+        );
     }
 
     @ApplicationModuleListener
-    public void publishSalesOrderCreated(SalesOrderCreatedEvent event) {
-        rabbitTemplate.convertAndSend(OrderRabbitMqConfig.EXCHANGE, event.routingKey(), event);
+    public void publishOrderReturnRequested(OrderReturnRequestedEvent event) {
+        rabbitTemplate.convertAndSend(
+                OrderRabbitMqConfig.EXCHANGE_ORDER,
+                OrderRabbitMqConfig.ROUTING_KEY_ORDER_RETURN_REQUESTED,
+                event
+        );
+    }
+
+    @ApplicationModuleListener
+    public void publishInventoryRestore(OrderInventoryRestoreEvent event) {
+        rabbitTemplate.convertAndSend(OrderRabbitMqConfig.EXCHANGE_ORDER,
+                OrderRabbitMqConfig.ROUTING_KEY_INVENTORY_RESTORE, event);
+    }
+
+    @ApplicationModuleListener
+    public void publishInventoryRelease(OrderInventoryReleaseEvent event) {
+        rabbitTemplate.convertAndSend(OrderRabbitMqConfig.EXCHANGE_ORDER,
+                OrderRabbitMqConfig.ROUTING_KEY_INVENTORY_RELEASE, event);
+    }
+
+    @ApplicationModuleListener
+    public void publishInventoryConfirm(OrderInventoryConfirmEvent event) {
+        rabbitTemplate.convertAndSend(OrderRabbitMqConfig.EXCHANGE_ORDER,
+                OrderRabbitMqConfig.ROUTING_KEY_INVENTORY_CONFIRM, event);
     }
 }
