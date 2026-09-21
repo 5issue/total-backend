@@ -31,7 +31,6 @@ import com.kurly.wms.presentation.dto.InboundAsnItemRequest;
 import com.kurly.wms.presentation.dto.InboundItemResponse;
 import com.kurly.wms.presentation.dto.InboundOrderResponse;
 import com.kurly.wms.presentation.dto.InspectItemRequest;
-import com.kurly.wms.presentation.dto.PutAwayConfirmRequest;
 import com.kurly.wms.presentation.dto.PutAwayRecommendationRequest;
 import com.kurly.wms.presentation.dto.PutAwayRecommendationResponse;
 import java.time.LocalDate;
@@ -134,30 +133,6 @@ public class InboundOrderService {
     }
 
     /**
-     * 버퍼 → 목표 로케이션 물리 이동 완료 처리(입고 확정 플로우와는 별개로, 검수 이후 현장에서
-     * 실제 적치를 마친 뒤 호출하는 API). stockMovementId로 대기 중이던 적치 작업 지시를 직접
-     * 찾아 완료 처리하고, 버퍼 재고를 목표 로케이션으로 옮기고, 입고 상세 상태를 PUT_AWAY로 바꾼다.
-     */
-    @Transactional
-    public InboundItemResponse confirmPutAway(PutAwayConfirmRequest request) {
-        StockMovement movement = findPendingPutAwayMovement(request.stockMovementId());
-
-        Location targetLocation = locationJpaRepository.findById(request.targetLocationId())
-                .orElseThrow(() -> new EntityNotFoundException("로케이션을 찾을 수 없습니다. targetLocationId=" + request.targetLocationId()));
-
-        moveInventory(movement.getWarehouse(), movement.getProduct(), movement.getFromLocation(), targetLocation,
-                movement.getLotNo(), movement.getExpiredDate(), movement.getQuantity());
-
-        movement.reassignTarget(targetLocation);
-        movement.complete();
-
-        InboundItem item = movement.getInboundItem();
-        item.putAway(targetLocation);
-
-        return InboundItemResponse.from(item, movement.getId());
-    }
-
-    /**
      * 대기 중인 적치 작업 지시의 목표 로케이션을 다시 추천하고 InboundItem/StockMovement 양쪽에
      * 재배정한다. 기존에 배정돼 있던 로케이션은 그 작업 지시 자신이 이미 점유 중이라 재추천
      * 조건(NOT EXISTS PENDING/IN_PROGRESS)에서 자동으로 제외되므로 항상 다른 로케이션이 나온다.
@@ -177,11 +152,6 @@ public class InboundOrderService {
                 RECOMMENDATION_REASON, movement.getStatus());
     }
 
-    /**
-     * stockMovementId로 대기 중인(PENDING) 적치(PUT_AWAY) 작업 지시를 배타적으로 선점해 찾는다.
-     * 같은 stockMovementId로 들어온 동시 요청은 이 행의 락이 풀릴 때까지 대기했다가, 이미 상태가
-     * 바뀐 걸 보고 여기서 즉시 실패한다 — moveInventory/item.putAway를 실행하기 전에 걸러진다.
-     */
     private StockMovement findPendingPutAwayMovement(Long stockMovementId) {
         StockMovement movement = stockMovementJpaRepository.findWithPessimisticLockById(stockMovementId)
                 .orElseThrow(() -> new EntityNotFoundException("적치 작업 지시를 찾을 수 없습니다. stockMovementId=" + stockMovementId));
@@ -276,27 +246,4 @@ public class InboundOrderService {
                 .build());
     }
 
-    /** from 로케이션의 재고를 줄이고 to 로케이션의 재고를 늘려 실물 이동을 반영한다. */
-    private void moveInventory(Warehouse warehouse, WmsProduct product, Location from, Location to,
-                                String lotNo, LocalDate expiredDate, int quantity) {
-        Inventory source = inventoryJpaRepository
-                .findByWarehouseIdAndLocationIdAndProductIdAndLotNoAndExpiredDateAndLpnCode(
-                        warehouse.getId(), from.getId(), product.getId(), lotNo, expiredDate, null)
-                .orElseThrow(() -> new EntityNotFoundException(
-                        "이동할 재고를 찾을 수 없습니다. warehouseId=" + warehouse.getId() + ", locationId=" + from.getId()));
-        source.remove(quantity);
-
-        Inventory target = inventoryJpaRepository
-                .findByWarehouseIdAndLocationIdAndProductIdAndLotNoAndExpiredDateAndLpnCode(
-                        warehouse.getId(), to.getId(), product.getId(), lotNo, expiredDate, null)
-                .orElseGet(() -> inventoryJpaRepository.save(Inventory.builder()
-                        .warehouse(warehouse)
-                        .location(to)
-                        .product(product)
-                        .lotNo(lotNo)
-                        .expiredDate(expiredDate)
-                        .quantity(0)
-                        .build()));
-        target.receive(quantity);
-    }
 }

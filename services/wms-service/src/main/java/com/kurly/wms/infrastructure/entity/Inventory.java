@@ -87,7 +87,13 @@ public class Inventory {
         this.quantity += amount;
     }
 
-    /** put-away 등 로케이션 간 실물 이동으로 이 로케이션의 재고가 빠져나갈 때 사용한다. */
+    /**
+     * put-away 등 로케이션 간 실물 이동으로 이 로케이션의 재고가 빠져나갈 때 사용한다. 이 행이
+     * 미리 예약(reserve)돼 있었다면 그 예약분 해제는 호출부가 별도로 release(amount)를 불러야
+     * 한다 — 여기서 reservedQuantity까지 같이 깎으면, 애초에 예약된 적 없는 이동(예: 입고
+     * 적치 확정처럼 reservedQuantity가 0인 채로 시작하는 경우)에서 reservedQuantity가
+     * 음수가 되어 chk_inventory_reserved_quantity 제약을 위반한다.
+     */
     public void remove(int amount) {
         if (amount > this.quantity) {
             throw new BusinessException(WmsErrorCode.INSUFFICIENT_INVENTORY,
