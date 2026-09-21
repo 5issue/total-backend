@@ -99,6 +99,7 @@ public class StockMovementQueryService {
         StockMovement movement = StockMovement.builder()
                 .warehouse(warehouse)
                 .product(inventory.getProduct())
+                .lpnCode(inventory.getLpnCode())
                 .lotNo(inventory.getLotNo())
                 .expiredDate(inventory.getExpiredDate())
                 .fromLocation(inventory.getLocation())
@@ -168,10 +169,14 @@ public class StockMovementQueryService {
         target.receive(quantity);
     }
     private int calculateTotalBaseQuantity(WmsProduct product, MovementUnit movementUnit, int quantity) {
-        return switch(movementUnit) {
-            case MovementUnit.PALLET -> quantity * product.getEaPerPallet();
-            case MovementUnit.BOX -> quantity * product.getBoxUnitQty();
-            case MovementUnit.EA -> quantity;
-        };
+        try {
+            return switch (movementUnit) {
+                case PALLET -> Math.multiplyExact(quantity, product.getEaPerPallet());
+                case BOX -> Math.multiplyExact(quantity, product.getBoxUnitQty());
+                case EA -> quantity;
+            };
+        } catch (ArithmeticException e) {
+            throw new InvalidValueException("수량 환산 결과가 허용 가능한 정수 범위를 초과했습니다.");
+        }
     }
 }
