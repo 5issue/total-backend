@@ -25,7 +25,12 @@ enum MovementStatus {
   CANCELED,
 }
 
-@doc("피킹존 보충(REPLENISHMENT)이나 단순 재배치(RELOCATION) 등 로케이션 간 이동 작업 지시를 생성한다.")
+@doc("""
+  피킹존 보충(REPLENISHMENT)이나 단순 재배치(RELOCATION) 등 로케이션 간 이동 작업 지시를
+  생성한다. PUT_AWAY는 이 API로 만들 수 없다 — 검수(inspect)가 InboundItem과 연결해서
+  자동으로 생성하는 값이라, 여기서 수동으로 만들면 대응하는 InboundItem이 없어 확정
+  (confirm) 시점에 실패한다.
+  """)
 model StockMovementCreateRequest {
   warehouseId: int64;
   inventoryId: int64;
@@ -33,7 +38,7 @@ model StockMovementCreateRequest {
   fromLocationId: int64;
   targetLocationId: int64;
   movementUnit: MovementUnit;
-  movementType: MovementType;
+  movementType: MovementType.REPLENISHMENT | MovementType.RELOCATION;
 
   @minValue(1)
   unitQuantity: int32;

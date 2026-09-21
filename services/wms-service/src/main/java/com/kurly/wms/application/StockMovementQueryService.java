@@ -62,6 +62,9 @@ public class StockMovementQueryService {
                 .orElseThrow(() -> new EntityNotFoundException("로케이션을 찾을 수 없습니다. targetLocationId=" + request.targetLocationId()));
         int totalBaseQuantity = calculateTotalBaseQuantity(inventory.getProduct(), request.movementUnit(), request.unitQuantity());
 
+        if (request.movementType() == MovementType.PUT_AWAY) {
+            throw new InvalidValueException("PUT_AWAY는 수동 생성할 수 없으며 입고 검수를 통해서만 생성됩니다.");
+        }
         if(!Objects.equals(inventory.getLocation().getId(), request.fromLocationId()) || Objects.equals(request.fromLocationId(), request.targetLocationId())) {
             throw new InvalidValueException("입력된 LocationId가 올바르지 않습니다. inventoryId=" + request.inventoryId() + ", fromLocationId=" + request.fromLocationId());
         }
