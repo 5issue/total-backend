@@ -3,27 +3,9 @@ import "../common/types.tsp";
 
 namespace WmsService.Inventory;
 
-/** `StockMovement.MovementUnit`과 1:1로 대응한다. */
-enum MovementUnit {
-  PALLET,
-  BOX,
-  EA,
-}
-
-/** `StockMovement.MovementType`과 1:1로 대응한다. */
-enum MovementType {
-  PUT_AWAY,
-  REPLENISHMENT,
-  RELOCATION,
-}
-
-/** `StockMovement.MovementStatus`와 1:1로 대응한다. */
-enum MovementStatus {
-  PENDING,
-  IN_PROGRESS,
-  COMPLETED,
-  CANCELED,
-}
+// MovementType/MovementUnit/MovementStatus/StockMovement*Request/Response는
+// models/stock-movements.dto.tsp(WmsService.StockMovement)로 옮겼다 — 조회/확정 API가
+// stock-movements.api.tsp로 독립하면서 여기 있던 사본과 중복되고 있었다.
 
 /** `Location.LocationType`과 1:1로 대응한다. */
 enum LocationType {
@@ -82,29 +64,53 @@ model LocationUpdateRequest {
   bin?: string;
 }
 
-// ── client: 가용 재고 조회 ──────────────────────────────────────────
+// ── client: 재고 조회 (요약/상세 2종) ──────────────────────────────────────
 // 참고: docs/erd-spec.md "논의 필요 사항"에 재고 집계 관련 미결 사항이 남아 있다.
 // 아래 조회 계약은 현재 Inventory 엔티티 구조를 반영한 예시이며, 정책 확정 후 조정될 수 있다.
+//
+// 조회 관점이 서로 달라(상품 중심 합산 vs 로케이션/LOT 중심 나열) 응답 하나에 억지로
+// 합치지 않고 엔드포인트를 둘로 나눴다:
+//   - GET /api/v1/wms/inventories/summary — 상품별 총량 집계(SCM/상품 기획/타 서비스 연동용)
+//   - GET /api/v1/wms/inventories          — 로케이션/LOT별 상세 나열(PDA/창고관리/실사용)
+// 둘 다 페이지네이션 응답이라 WmsService.Common.PageResponse<T>로 감싼다(이 프로젝트 첫
+// 페이지네이션 엔드포인트).
 
-model InventoryLotResponse {
-  id: int64;
-  warehouseId: int64;
-  locationId: int64;
-  lpnCode: string | null;
-  lotNo: string | null;
-  expiredDate: plainDate | null;
-  quantity: int32;
-  reservedQuantity: int32;
-  availableQuantity: int32;
-}
-
-@doc("상품 1개에 대한 창고 전체 합산 가용 재고. 로케이션/LOT별 상세는 lots에 담는다.")
+@doc("""
+  상품 1건에 대한 합산 가용 재고. warehouseId를 지정하면 그 창고 안에서만 집계하고,
+  생략하면 전국 전체 창고를 통합 집계한다 — 이때 응답의 warehouseId는 null이다.
+  """)
 model ProductInventorySummaryResponse {
   productId: int64;
+
+  @doc("조회 시 warehouseId를 지정하지 않았으면(전국 통합 집계) null이다.")
+  warehouseId: int64 | null;
+
   totalQuantity: int32;
   totalReservedQuantity: int32;
   totalAvailableQuantity: int32;
-  lots: InventoryLotResponse[];
+}
+
+@doc("로케이션/LOT 1건의 실물 재고 상세.")
+model InventoryDetailResponse {
+  inventoryId: int64;
+  warehouseId: int64;
+  locationId: int64;
+
+  @doc("""
+    사람이 읽기 좋은 로케이션 표시 코드(예: `P-01-01`). Location 엔티티가 aisle/rack/level/bin을
+    개별 컬럼으로 갖고 있을 뿐 이 형태의 코드 컬럼이 아직 없다 — 구현 시 그 값들을 조합해
+    생성하거나, Location에 코드 컬럼을 추가할지 결정이 필요하다.
+    """)
+  locationCode: string;
+
+  zone: WmsService.Common.Zone;
+  productId: int64;
+  lotNo: string | null;
+  expiredDate: plainDate | null;
+  lpnCode: string | null;
+  quantity: int32;
+  reservedQuantity: int32;
+  availableQuantity: int32;
 }
 
 // ── client: 재고 선점(Soft-alloc) ──────────────────────────────────────
@@ -143,42 +149,6 @@ model StockAllocationResponse {
   fullyAllocated: boolean;
 
   items: StockAllocationItemResult[];
-}
-
-// ── client: 내부 이동 지시 생성(보충) ──────────────────────────────────────
-
-model StockMovementCreateRequest {
-  warehouseId: int64;
-  productId: int64;
-  fromLocationId: int64;
-  toLocationId: int64;
-  movementUnit: MovementUnit;
-  movementType: MovementType;
-
-  @minValue(1)
-  unitQuantity: int32;
-}
-
-model StockMovementResponse {
-  id: int64;
-  warehouseId: int64;
-  productId: int64;
-
-  @doc("PUT_AWAY가 입고 검수 건에서 비롯된 경우에만 채워진다. REPLENISHMENT/RELOCATION은 null.")
-  inboundItemId: int64 | null;
-
-  lotNo: string | null;
-  expiredDate: plainDate | null;
-
-  fromLocationId: int64 | null;
-  toLocationId: int64 | null;
-  movementUnit: MovementUnit;
-  unitQuantity: int32;
-  quantity: int32;
-  movementType: MovementType;
-  status: MovementStatus;
-  createdAt: utcDateTime;
-  completedAt: utcDateTime | null;
 }
 
 // 참고: "주문 취소로 인한 재고 복구"는 예전에 REST(POST /internal/v1/wms/inventories/restore)였지만,
