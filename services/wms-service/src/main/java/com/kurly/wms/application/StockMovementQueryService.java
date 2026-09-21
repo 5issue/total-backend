@@ -3,6 +3,7 @@ package com.kurly.wms.application;
 import com.kurly.common.exception.BusinessException;
 import com.kurly.common.exception.EntityNotFoundException;
 import com.kurly.common.exception.InvalidValueException;
+import com.kurly.wms.domain.enums.StorageType;
 import com.kurly.wms.domain.exception.WmsErrorCode;
 import com.kurly.wms.infrastructure.entity.InboundItem;
 import com.kurly.wms.infrastructure.entity.Inventory;
@@ -35,6 +36,7 @@ public class StockMovementQueryService {
 
     private static final int DEFAULT_LIMIT = 50;
     private static final int MAX_LIMIT = 200;
+    private static final List<MovementStatus> ACTIVE_MOVEMENT_STATUSES = List.of(MovementStatus.PENDING, MovementStatus.IN_PROGRESS);
 
     private final StockMovementJpaRepository stockMovementJpaRepository;
     private final LocationJpaRepository locationJpaRepository;
@@ -53,6 +55,9 @@ public class StockMovementQueryService {
 
     @Transactional
     public StockMovementResponse create(StockMovementCreateRequest request) {
+        if (request.movementType() == MovementType.PUT_AWAY) {
+            throw new InvalidValueException("PUT_AWAY는 수동 생성할 수 없으며 입고 검수를 통해서만 생성됩니다.");
+        }
 
         Warehouse warehouse = warehouseJpaRepository.findById(request.warehouseId())
                 .orElseThrow(() -> new EntityNotFoundException("창고를 찾을 수 없습니다. warehouseId=" + request.warehouseId()));
@@ -60,38 +65,23 @@ public class StockMovementQueryService {
                 .orElseThrow(() -> new EntityNotFoundException("재고를 찾을 수 없습니다. inventoryId=" + request.inventoryId()));
         Location targetLocation = locationJpaRepository.findWithPessimisticLockById(request.targetLocationId())
                 .orElseThrow(() -> new EntityNotFoundException("로케이션을 찾을 수 없습니다. targetLocationId=" + request.targetLocationId()));
-        int totalBaseQuantity = calculateTotalBaseQuantity(inventory.getProduct(), request.movementUnit(), request.unitQuantity());
 
-        if (request.movementType() == MovementType.PUT_AWAY) {
-            throw new InvalidValueException("PUT_AWAY는 수동 생성할 수 없으며 입고 검수를 통해서만 생성됩니다.");
+        if (!Objects.equals(inventory.getLocation().getId(), request.fromLocationId())) {
+            throw new InvalidValueException("입력된 fromLocationId가 재고의 실제 위치와 일치하지 않습니다. inventoryId=" + request.inventoryId() + ", fromLocationId=" + request.fromLocationId());
         }
-        if(!Objects.equals(inventory.getLocation().getId(), request.fromLocationId()) || Objects.equals(request.fromLocationId(), request.targetLocationId())) {
-            throw new InvalidValueException("입력된 LocationId가 올바르지 않습니다. inventoryId=" + request.inventoryId() + ", fromLocationId=" + request.fromLocationId());
-        }
-        if(!Objects.equals(inventory.getProduct().getId(), request.productId())) {
+        if (!Objects.equals(inventory.getProduct().getId(), request.productId())) {
             throw new InvalidValueException("재고의 상품과 요청된 productId가 일치하지 않습니다. inventoryId=" + request.inventoryId() + ", productId=" + request.productId());
         }
-        if(!Objects.equals(inventory.getWarehouse().getId(), warehouse.getId())) {
+        if (!Objects.equals(inventory.getWarehouse().getId(), warehouse.getId())) {
             throw new InvalidValueException("재고가 올바른 창고에 속하지 않습니다. inventoryId=" + request.inventoryId() + ", warehouseId=" + warehouse.getId());
         }
-        if(!Objects.equals(targetLocation.getWarehouse().getId(), warehouse.getId()) || targetLocation.getStatus() != LocationStatus.ACTIVE) {
-            throw new InvalidValueException("타겟 로케이션이 올바른 창고에 속하지 않습니다. targetLocationId=" + request.targetLocationId() + ", warehouseId=" + warehouse.getId());
-        }
-        if(inventory.getLocation().getStorageType() != targetLocation.getStorageType()) {
-            throw new InvalidValueException("보관 유형이 일치하지 않아 이동할 수 없습니다. inventoryId=" + request.inventoryId() + ", targetLocationId=" + request.targetLocationId());
-        }
-        int availableQuantity = inventory.getQuantity() - inventory.getReservedQuantity();
-        if(totalBaseQuantity <= 0 || availableQuantity < totalBaseQuantity) {
-            throw new InvalidValueException("이동 가능한 재고 수량이 부족합니다. inventoryId=" + request.inventoryId() + ", availableQuantity=" + availableQuantity + ", requestedQuantity=" + totalBaseQuantity);
-        }
+        validateTargetLocation(warehouse, inventory.getLocation().getStorageType(), request.fromLocationId(), targetLocation);
+        validateTargetLocationAvailable(targetLocation);
 
-        boolean hasExistingStock = inventoryJpaRepository.existsByLocationIdAndQuantityGreaterThan(targetLocation.getId(), 0);
-        if (hasExistingStock) {
-            throw new InvalidValueException("타겟 로케이션에 이미 재고가 존재합니다. targetLocationId=" + targetLocation.getId());
-        }
-        boolean hasAlreadyTargeted = stockMovementJpaRepository.existsByToLocationIdAndStatusIn(targetLocation.getId(), List.of(MovementStatus.PENDING, MovementStatus.IN_PROGRESS));
-        if (hasAlreadyTargeted) {
-            throw new InvalidValueException("타겟 로케이션에 이미 이동 작업이 진행 중입니다. targetLocationId=" + targetLocation.getId());
+        int totalBaseQuantity = calculateTotalBaseQuantity(inventory.getProduct(), request.movementUnit(), request.unitQuantity());
+        int availableQuantity = inventory.getQuantity() - inventory.getReservedQuantity();
+        if (totalBaseQuantity <= 0 || availableQuantity < totalBaseQuantity) {
+            throw new InvalidValueException("이동 가능한 재고 수량이 부족합니다. inventoryId=" + request.inventoryId() + ", availableQuantity=" + availableQuantity + ", requestedQuantity=" + totalBaseQuantity);
         }
 
         inventory.reserve(totalBaseQuantity);
@@ -117,8 +107,14 @@ public class StockMovementQueryService {
     public StockMovementResponse confirm(StockMovementConfirmRequest request) {
         StockMovement movement = findPendingMovement(request.stockMovementId());
 
-        Location targetLocation = locationJpaRepository.findById(request.targetLocationId())
+        Location targetLocation = locationJpaRepository.findWithPessimisticLockById(request.targetLocationId())
                 .orElseThrow(() -> new EntityNotFoundException("로케이션을 찾을 수 없습니다. targetLocationId=" + request.targetLocationId()));
+
+        validateTargetLocation(movement.getWarehouse(), movement.getProduct().getStorageType(),
+                movement.getFromLocation().getId(), targetLocation);
+        if (!Objects.equals(movement.getToLocation().getId(), targetLocation.getId())) {
+            validateTargetLocationAvailable(targetLocation);
+        }
 
         moveInventory(movement.getWarehouse(), movement.getProduct(), movement.getFromLocation(), targetLocation,
                 movement.getLotNo(), movement.getExpiredDate(), movement.getQuantity());
@@ -131,6 +127,32 @@ public class StockMovementQueryService {
             item.putAway(targetLocation);
         }
         return StockMovementResponse.from(movement);
+    }
+
+
+    private void validateTargetLocation(Warehouse warehouse, StorageType requiredStorageType, Long fromLocationId, Location targetLocation) {
+        if (!Objects.equals(targetLocation.getWarehouse().getId(), warehouse.getId())) {
+            throw new InvalidValueException("목적지 로케이션이 올바른 창고에 속하지 않습니다. targetLocationId=" + targetLocation.getId() + ", warehouseId=" + warehouse.getId());
+        }
+        if (targetLocation.getStatus() != LocationStatus.ACTIVE) {
+            throw new InvalidValueException("목적지 로케이션을 사용할 수 없는 상태입니다. targetLocationId=" + targetLocation.getId() + ", status=" + targetLocation.getStatus());
+        }
+        if (requiredStorageType != targetLocation.getStorageType()) {
+            throw new InvalidValueException("보관 유형이 일치하지 않아 이동할 수 없습니다. targetLocationId=" + targetLocation.getId()
+                    + ", required=" + requiredStorageType + ", actual=" + targetLocation.getStorageType());
+        }
+        if (Objects.equals(fromLocationId, targetLocation.getId())) {
+            throw new InvalidValueException("출발지 로케이션과 목적지 로케이션이 동일합니다. locationId=" + targetLocation.getId());
+        }
+    }
+
+    /** 목적지 로케이션이 완전히 비어 있고, 다른 PENDING/IN_PROGRESS 작업 지시의 목적지로 이미 잡혀 있지 않은지 검증한다. */
+    private void validateTargetLocationAvailable(Location targetLocation) {
+        boolean hasExistingStock = inventoryJpaRepository.existsByLocationIdAndQuantityGreaterThan(targetLocation.getId(), 0);
+        boolean hasAlreadyTargeted = stockMovementJpaRepository.existsByToLocationIdAndStatusIn(targetLocation.getId(), ACTIVE_MOVEMENT_STATUSES);
+        if (hasExistingStock || hasAlreadyTargeted) {
+            throw new InvalidValueException("목적지 로케이션에 이미 재고가 있거나 다른 이동 작업이 진행 중입니다. targetLocationId=" + targetLocation.getId());
+        }
     }
 
     private StockMovement findPendingMovement(Long stockMovementId) {
@@ -168,6 +190,7 @@ public class StockMovementQueryService {
                         .build()));
         target.receive(quantity);
     }
+
     private int calculateTotalBaseQuantity(WmsProduct product, MovementUnit movementUnit, int quantity) {
         try {
             return switch (movementUnit) {
