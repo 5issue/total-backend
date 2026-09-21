@@ -9,7 +9,6 @@ import com.kurly.product.infrastructure.jpa.ProductInventoryJpaRepository;
 import jakarta.annotation.PostConstruct;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -28,6 +27,7 @@ public class ProductInventoryRepositoryImpl implements ProductInventoryRepositor
     private RedisScript<Long> confirmScript;
     private RedisScript<Long> releaseScript;
     private RedisScript<Long> restoreScript;
+    private RedisScript<Long> syncScript;
     private final ProductInventoryJpaRepository productInventoryJpaRepository;
 
     @PostConstruct
@@ -36,6 +36,7 @@ public class ProductInventoryRepositoryImpl implements ProductInventoryRepositor
         this.confirmScript = RedisScript.of(new ClassPathResource("lua/stock_confirm.lua"), Long.class);
         this.releaseScript = RedisScript.of(new ClassPathResource("lua/stock_release.lua"), Long.class);
         this.restoreScript = RedisScript.of(new ClassPathResource("lua/stock_restore.lua"), Long.class);
+        this.syncScript = RedisScript.of(new ClassPathResource("lua/stock_sync.lua"), Long.class);
     }
 
     @Override
@@ -126,10 +127,10 @@ public class ProductInventoryRepositoryImpl implements ProductInventoryRepositor
         ProductInventory inventory = productInventoryJpaRepository.findByProductId(productId)
                 .orElseThrow(() -> new EntityNotFoundException("상품 재고를 찾을 수 없습니다. productId=" + productId));
 
-        String key = getKey(productId);
-        redisTemplate.opsForHash().putAll(key, Map.of(
-                "base_quantity", String.valueOf(inventory.getBaseQuantity()),
-                "reserved_quantity", String.valueOf(inventory.getReservedQuantity())));
+        // 키가 없을 때만 채운다. 동시 요청이 이미 올려둔 reserved_quantity를 DB 값으로 덮어쓰면 초과 판매가 난다.
+        executeScript(syncScript, List.of(getKey(productId)), List.of(
+                String.valueOf(inventory.getBaseQuantity()),
+                String.valueOf(inventory.getReservedQuantity())));
     }
 
     private Long executeScript(RedisScript<Long> script, List<String> keys, List<String> args) {
