@@ -22,6 +22,9 @@ public class OmsRabbitMqConfig {
     public static final String ROUTING_KEY_REFUND_REQUESTED = "oms.order-refund.requested";
     public static final String ROUTING_KEY_INSPECTION_REQUESTED = "oms.return.inspection-requested";
 
+    public static final String ROUTING_KEY_WMS_INSPECTED = "wms.return.inspected";
+
+
     // ==========================================
     // Queues & DLQs
     // ==========================================
@@ -30,6 +33,9 @@ public class OmsRabbitMqConfig {
 
     public static final String QUEUE_RETURN_REQUESTED = "oms.return-requested.queue";
     public static final String DLQ_RETURN_REQUESTED = "oms.return-requested.dlq";
+
+    public static final String QUEUE_WMS_INSPECTED = "oms.wms-inspected.queue";
+    public static final String DLQ_WMS_INSPECTED = "oms.wms-inspected.dlq";
 
     // ==========================================
     // Exchange Beans
@@ -56,14 +62,10 @@ public class OmsRabbitMqConfig {
     }
 
     @Bean
-    Binding paymentCompletedBinding() {
-        return new Binding(
-                QUEUE_PAYMENT_COMPLETED,
-                Binding.DestinationType.QUEUE,
-                EXCHANGE_ORDER,
-                ROUTING_KEY_ORDER_PAYMENT_COMPLETED,
-                null
-        );
+    Binding paymentCompletedBinding(Queue paymentCompletedQueue, TopicExchange orderTopicExchange) {
+        return BindingBuilder.bind(paymentCompletedQueue)
+                .to(orderTopicExchange)
+                .with(ROUTING_KEY_ORDER_PAYMENT_COMPLETED);
     }
 
     // ==========================================
@@ -83,13 +85,33 @@ public class OmsRabbitMqConfig {
     }
 
     @Bean
-    Binding returnRequestedBinding() {
-        return new Binding(
-                QUEUE_RETURN_REQUESTED,
-                Binding.DestinationType.QUEUE,
-                EXCHANGE_ORDER,
-                ROUTING_KEY_ORDER_RETURN_REQUESTED,
-                null
-        );
+    Binding returnRequestedBinding(Queue returnRequestedQueue, TopicExchange orderTopicExchange) {
+        return BindingBuilder.bind(returnRequestedQueue)
+                .to(orderTopicExchange)
+                .with(ROUTING_KEY_ORDER_RETURN_REQUESTED);
     }
+
+    // ==========================================
+    // 3. WMS Inspected Flow
+    // ==========================================
+    @Bean
+    Queue wmsInspectedDlq() {
+        return QueueBuilder.durable(DLQ_WMS_INSPECTED).build();
+    }
+
+    @Bean
+    Queue wmsInspectedQueue() {
+        return QueueBuilder.durable(QUEUE_WMS_INSPECTED)
+                .deadLetterExchange("")
+                .deadLetterRoutingKey(DLQ_WMS_INSPECTED)
+                .build();
+    }
+
+    @Bean
+    Binding wmsInspectedBinding(Queue wmsInspectedQueue, TopicExchange omsTopicExchange) {
+        return BindingBuilder.bind(wmsInspectedQueue)
+                .to(omsTopicExchange)
+                .with(ROUTING_KEY_WMS_INSPECTED);
+    }
+
 }
