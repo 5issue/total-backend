@@ -195,7 +195,7 @@ public class OmsOrderService {
 
     @Transactional(readOnly = true)
     public CancelEligibilityResponseDto checkCancelEligibility(Long orderId) {
-        OmsOrder omsOrder = omsOrderRepository.findById(orderId)
+        OmsOrder omsOrder = omsOrderRepository.findByOrderId(orderId)
                 .orElseThrow(() -> new BusinessException(OmsErrorCode.OMS_ORDER_NOT_FOUND));
 
         return CancelEligibilityResponseDto.from(omsOrder);
