@@ -26,6 +26,10 @@ spring:
       password: ${REDIS_PASSWORD:}
 
 kurly:
+  cors:
+    # 로컬 프론트 오리진. 공통 기본값은 :8080이라 주입하지 않으면 :3000에서 오는
+    # 브라우저 호출이 프리플라이트에서 전부 막힌다.
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000,http://127.0.0.1:3000}
   security:
     # auth-service와 값이 한 글자라도 다르면 모든 토큰이 거부된다.
     issuer: ${JWT_ISSUER:https://auth.kurly.local}
