@@ -37,7 +37,7 @@ public class OutboundOrder {
     private Warehouse warehouse;
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "status", length = 20, nullable = false)
+    @Column(name = "status", length = 30, nullable = false)
     private OutboundOrderStatus status;
 
     @CreationTimestamp
@@ -48,6 +48,16 @@ public class OutboundOrder {
     private OutboundOrder(Long orderId, Warehouse warehouse) {
         this.orderId = orderId;
         this.warehouse = warehouse;
+        this.status = OutboundOrderStatus.ALLOCATED;
+    }
+
+    /** 일부 품목이 FEFO 할당에 실패(피킹존 재고 부족)해 보충 지시 완료를 기다리는 상태로 전환한다. */
+    public void hold() {
+        this.status = OutboundOrderStatus.PENDING_REPLENISHMENT;
+    }
+
+    /** 대기 중이던 마지막 품목까지 재할당이 끝나(모든 OutboundItem이 ALLOCATED) 전표를 되돌린다. */
+    public void allocate() {
         this.status = OutboundOrderStatus.ALLOCATED;
     }
 
@@ -67,11 +77,19 @@ public class OutboundOrder {
         this.status = OutboundOrderStatus.CANCELED;
     }
 
+    /** 포함된 품목 중 하나라도 장시간 재고를 확보하지 못해(UNALLOCATED) 전표 전체를 실패 처리한다. */
+    public void fail() {
+        this.status = OutboundOrderStatus.FAILED;
+    }
+
     public enum OutboundOrderStatus {
+        PENDING_REPLENISHMENT,
         ALLOCATED,
         PICKING,
         PACKING,
         COMPLETED,
-        CANCELED
+        CANCELED,
+        /** 품목 하나라도 장시간 재고를 확보하지 못해 최종 실패 처리됨(배치/스케줄러가 전환). */
+        FAILED
     }
 }

@@ -3,6 +3,8 @@ package com.kurly.wms.application;
 import com.kurly.common.exception.BusinessException;
 import com.kurly.common.exception.EntityNotFoundException;
 import com.kurly.common.exception.InvalidValueException;
+import com.kurly.wms.application.event.PutAwayCompletedEvent;
+import com.kurly.wms.application.event.ReplenishmentCompletedEvent;
 import com.kurly.wms.domain.enums.StorageType;
 import com.kurly.wms.domain.exception.WmsErrorCode;
 import com.kurly.wms.infrastructure.entity.InboundItem;
@@ -26,6 +28,7 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.Objects;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -42,6 +45,7 @@ public class StockMovementQueryService {
     private final LocationJpaRepository locationJpaRepository;
     private final InventoryJpaRepository inventoryJpaRepository;
     private final WarehouseJpaRepository warehouseJpaRepository;
+    private final ApplicationEventPublisher applicationEventPublisher;
 
     @Transactional(readOnly = true)
     public List<StockMovementResponse> list(Long warehouseId, MovementType movementType, MovementStatus status, Integer limit) {
@@ -125,6 +129,12 @@ public class StockMovementQueryService {
         if (movement.getMovementType() == MovementType.PUT_AWAY) {
             InboundItem item = movement.getInboundItem();
             item.putAway(targetLocation);
+            applicationEventPublisher.publishEvent(
+                    new PutAwayCompletedEvent(movement.getWarehouse().getId(), movement.getProduct().getId()));
+        } else if (movement.getMovementType() == MovementType.REPLENISHMENT) {
+            applicationEventPublisher.publishEvent(new ReplenishmentCompletedEvent(
+                    movement.getWarehouse().getId(), movement.getProduct().getId(),
+                    movement.getToLocation().getId(), movement.getLotNo(), movement.getExpiredDate(), movement.getQuantity()));
         }
         return StockMovementResponse.from(movement);
     }

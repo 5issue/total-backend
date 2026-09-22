@@ -15,6 +15,13 @@ namespace WmsService.Events;
   (OMS 주문 수신 및 FEFO 재고 할당)를 대체한다.
 
   이 토픽은 product-service도 이미 구독 중이다(재고 확정/차감). WMS는 새 구독자로 추가된다.
+
+  ⚠️ payload(`OrderEvent`)의 `warehouseId`/`recipientInfo`, `OrderEventItem`의
+  `orderItemId`/`productName`은 출고 지시 생성까지 커버하도록 새로 제안하는 필드다 —
+  별도 이벤트(`order.event.paid` 등)를 새로 만들지 않고 이 계약 하나를 확장하는 쪽을 택했다
+  (재고 확정과 출고 전표 생성이 서로 다른 이벤트에 걸치면 한쪽만 실패했을 때 정합성이
+  깨지기 쉽다). `models/events.dto.tsp`의 `OrderEvent` 참고 — 아직 order-service의 실제
+  클래스에는 반영 전이라 실 연동 전 확인이 필요하다.
   """)
 model OrderInventoryConfirmEvent {
   title: "결제 완료 후 재고 확정(confirm)";

@@ -5,9 +5,19 @@ namespace WmsService.Outbound;
 
 /** `OutboundItem.OutboundItemStatus`와 1:1로 대응한다. */
 enum OutboundItemStatus {
-  PENDING,
+  @doc("피킹존은 물론 보관존에서도 예약조차 못한 상태. StockMovement가 전혀 없다. 입고 적치(PUT_AWAY)로 보관존 재고가 늘면 재시도 대상이며, 장시간 지속되면 FAILED로 전환된다.")
+  UNALLOCATED,
+
+  @doc("보관존 재고 예약 + 보충 지시(StockMovement, REPLENISHMENT)까지는 생성됨. 물리 이동 완료만 기다리면 된다. location/lotNo/expiredDate가 아직 null이다.")
+  PENDING_REPLENISHMENT,
+
+  @doc("피킹존 재고(location, lotNo)에 매핑되고 reserved_quantity 증가까지 끝난 상태.")
+  ALLOCATED,
   PICKED,
   SHORTAGE,
+
+  @doc("장시간 UNALLOCATED으로 남아 있어 최종 실패 처리됨(배치/스케줄러가 전환).")
+  FAILED,
 }
 
 // 참고: 예전에는 여기 "OMS 주문 수신 + FEFO 재고 할당"을 REST(POST /internal/v1/wms/outbounds/orders)로

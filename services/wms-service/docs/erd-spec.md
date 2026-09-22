@@ -321,14 +321,47 @@ OMS(주문 관리 시스템)로부터 전달받은 출고 지시 전표.
 | `id` | Long | PK | 출고 전표 식별자 |
 | `order_id` | Long | | 프론트오피스 주문 ID (OMS/주문 도메인 연계) |
 | `warehouse_id` | Long | FK → Warehouse | 출고 담당 물류 센터 ID |
-| `status` | Enum | | 전표 상태 (`ALLOCATED` 재고할당완료 / `PICKING` 피킹중 / `PACKING` 포장중 / `COMPLETED` 출고완료 / `CANCELED` 취소) |
+| `status` | Enum | | 전표 상태. 하위 OutboundItem들의 상태로부터 도출된다 — 아래 "상태 전이" 참고 |
 | `created_at` | DateTime | | 출고 지시 생성 일시 |
+
+**상태 전이**
+
+| 상태값 | 의미 | 전이 조건 |
+| --- | --- | --- |
+| `PENDING_REPLENISHMENT` | 할당 진행 중 | 포함된 OutboundItem 중 하나라도 `ALLOCATED`가 아닌 경우(`PENDING_REPLENISHMENT` 또는 `UNALLOCATED`) |
+| `ALLOCATED` | 출고 지시 가능 (할당 완료) | 포함된 모든 OutboundItem이 `ALLOCATED` 상태로 완료된 경우 |
+| `PICKING` | 피킹 작업 중 | 현장에서 피킹 지시서 발행 및 피킹 시작 시 |
+| `PACKING` | 포장/검수 중 | 피킹 완료 후 패킹 존으로 이동 시 |
+| `COMPLETED` | 출고 완료 | 송장 부착 및 상차 완료 시 |
+| `CANCELED` | 주문 취소 | 취소 처리 시 |
+| `FAILED` | 재고 확보 실패 | 품목 중 하나라도 `UNALLOCATED`으로 `wms.outbound.allocation-timeout`(기본 2시간) 이상 머무르면 `OutboundOrderFailureScheduler`가 전표 전체를 실패 처리. 품목 하나가 실패해도 전표 전체를 실패시킨다(부분 출고는 미지원). 이때 전표의 다른 ALLOCATED 품목이 쥐고 있던 피킹존 재고 예약도 함께 해제하고, PENDING_REPLENISHMENT 품목도 같이 FAILED로 정리한다 — 아래 "실패 처리 시 재고 정리" 참고 |
+
+**FEFO 하드 할당**: `order.inventory.confirm` 이벤트 소비 시(`OutboundOrderService.createFromOrderEvent`) 품목별로 다음 순서로 재고를 확보한다.
+
+1. 피킹존(`Zone.PICKING`) 가용 재고를 유통기한 오름차순으로 소진해 즉시 할당(`ALLOCATED`). 한 품목이 여러 LOT/로케이션에 걸쳐 분할 할당될 수 있다(OutboundItem이 여러 행으로 나뉨).
+2. 그래도 부족하면 보관존(`Zone.STORAGE`)에서 예약(`Inventory.reserve()`) + 피킹존으로의 보충 지시(StockMovement, `REPLENISHMENT`)를 트리거 — 예약이 걸린 만큼은 `PENDING_REPLENISHMENT` OutboundItem(location/lotNo/expiredDate=null)으로 남는다.
+3. 보관존조차 부족하거나(전체/일부), 이 상품이 피킹존에 한 번도 배치된 적이 없어 보충 지시의 목적지를 정할 수 없으면, 그 남은 만큼은 `UNALLOCATED` OutboundItem으로 남는다 — 어떤 StockMovement도 걸려 있지 않은 상태다.
+
+OutboundOrder 자체는 별도 필드로 계산하지 않고, 생성된 OutboundItem들의 실제 상태로부터 그대로 도출한다(단일 진실 공급원은 OutboundItem) — 하나라도 `ALLOCATED`가 아니면 전표도 `hold()`로 `PENDING_REPLENISHMENT` 전환.
+
+**재시도/최종 할당**: `StockMovementQueryService.confirm()`이 물리 이동 완료 시 발행하는 Spring 애플리케이션 이벤트를, `OutboundReallocationListener`(`@TransactionalEventListener(AFTER_COMMIT)`)가 구독해 `OutboundOrderService`의 대응 메서드를 호출한다. 둘 다 같은 상품을 여러 전표가 동시에 기다릴 수 있어 전표 생성 시각 오름차순(FIFO)으로 처리하고, 한 이동으로 다 못 채우면 커버된 만큼/못 채운 만큼 두 행으로 쪼갠다.
+- `REPLENISHMENT` 완료 → `ReplenishmentCompletedEvent(warehouseId, productId, locationId, lotNo, expiredDate, quantity)` — 이동이 실제로 어디로/어떤 LOT으로 도착했는지까지 실어서, `finalizeReplenishment()`가 다시 FEFO 조회 없이 그대로 채워 `PENDING_REPLENISHMENT` OutboundItem을 `ALLOCATED`로 완성한다. 이걸로 전표의 모든 품목이 ALLOCATED가 되면 전표도 `allocate()`로 되돌린다.
+- `PUT_AWAY` 완료 → `PutAwayCompletedEvent(warehouseId, productId)` — 보관존 재고가 새로 늘었다는 신호. `retryUnallocated()`가 `UNALLOCATED` OutboundItem에 대해 `triggerReplenishment()`(보관존 예약 시도)를 다시 실행한다.
+
+두 소비자 메서드 모두 `@Transactional(propagation = REQUIRES_NEW)`가 필요하다 — `AFTER_COMMIT` 콜백은 원래 트랜잭션이 이미 커밋된 뒤(물리 커넥션은 해제됐지만 동기화 컨텍스트는 아직 열려 있는 애매한 시점)에 실행되므로, 기본(`REQUIRED`) 전파로는 참여할 트랜잭션이 없어 잠금 조회(`PESSIMISTIC_WRITE`)가 `No active transaction`으로 실패한다(`OutboxPublishService.publishOne()`과 동일 패턴).
+
+`OutboundOrderFailureScheduler`(`wms.outbound.failure-check-interval-ms`, 기본 1시간마다)가 `wms.outbound.allocation-timeout`(기본 2시간)을 넘겨서도 `UNALLOCATED` 품목이 남아 있는 전표를 찾아 품목/전표를 전부 `FAILED`로 전환한다. 실패 시 order-service로의 보상(compensating) 이벤트 발행은 아직 하지 않음(WMS 내부 상태만 변경) — 필요해지면 후속 구현.
+
+**실패 처리 시 재고 정리**: 같은 전표 안에 이미 `ALLOCATED`/`PENDING_REPLENISHMENT`인 다른 품목이 있을 수 있어(예: 2개 품목 중 1개만 재고가 없는 경우), `failStuckOrders()`는 UNALLOCATED 품목만이 아니라 전표의 모든 품목을 상태와 무관하게 훑는다.
+- `ALLOCATED` 품목: 피킹존 `Inventory`에서 `reservedQuantity`를 명시적으로 `release()`한다 — 안 풀어주면 실제로 출고되지 않을 재고가 영원히 예약된 채로 남아 다른 주문이 못 쓴다.
+- `PENDING_REPLENISHMENT` 품목: 보관존 쪽 예약은 따로 되돌리지 않는다 — 이미 생성된 REPLENISHMENT `StockMovement`가 실제로 완료되면 `moveInventory()`가 보관존 예약을 알아서 해제·차감하고, 도착한 피킹존 재고는 `finalizeReplenishment()`가 다시 FIFO 조회할 때 이 품목이 더 이상 `PENDING_REPLENISHMENT`가 아니므로(FAILED로 바뀌었으므로) 자연스럽게 다음으로 대기 중인 다른 전표에 재배정된다. 따로 취소 로직이 필요 없다.
+- 모든 품목을 상태와 무관하게 `FAILED`로 남기는 이유: 그냥 두면 `PENDING_REPLENISHMENT`로 남은 품목이 나중에 `finalizeReplenishment()`에 다시 걸려 이미 죽은 전표에 실제 재고를 배정해버릴 수 있다.
 
 ---
 
 ## 9. OutboundItem — 출고 상세 품목 (FEFO 재고 할당)
 
-주문된 상품을 FEFO(`ORDER BY expired_date ASC`) 방식으로 어떤 재고(LOT/로케이션)에서 차감할지 지정하는 상세 내역.
+주문된 상품을 FEFO(`ORDER BY expired_date ASC`) 방식으로 어떤 재고(LOT/로케이션)에서 차감할지 지정하는 상세 내역. 한 주문 품목이 여러 LOT에 걸쳐 할당되거나 할당/보충예약/미확보로 나뉘면 `outbound_order_id`+`product_id`가 같은 행이 여러 개 생길 수 있다.
 
 | 컬럼 | 타입 | 제약 | 설명 |
 | --- | --- | --- | --- |
@@ -336,12 +369,23 @@ OMS(주문 관리 시스템)로부터 전달받은 출고 지시 전표.
 | `outbound_order_id` | Long | FK → OutboundOrder | 출고 전표 ID |
 | `product_id` | Long | FK → WmsProduct | 상품 ID |
 | `lpn_code` | String(50) | | 물류용 바코드 |
-| `lot_no` | String(50) | | FEFO에 의해 할당된 대상 LOT 번호 |
-| `expired_date` | Date | | 할당된 재고의 유통기한 |
-| `location_id` | Long | FK → Location | 피킹할 출발지 로케이션 (주로 `SHELF_BIN`) |
-| `ordered_quantity` | Integer | | 주문 요청 수량 (EA) |
+| `lot_no` | String(50) | | FEFO에 의해 할당된 대상 LOT 번호. 미할당이면 null |
+| `expired_date` | Date | | 할당된 재고의 유통기한. 미할당이면 null |
+| `location_id` | Long | FK → Location | 피킹할 출발지 로케이션 (주로 `SHELF_BIN`). 미할당이면 null |
+| `ordered_quantity` | Integer | | 이 행에 배정된 수량 (EA) |
 | `picked_quantity` | Integer | | 실제 피킹 완료 수량 (EA) |
-| `status` | Enum | | 상세 상태 (`PENDING` / `PICKED` / `SHORTAGE` 결품) |
+| `status` | Enum | | 상세 상태. `location_id`가 채워지는 시점에 엔티티 생성자가 자동으로 ALLOCATED로 판단해 채운다(별도 컬럼이지만 location_id와 항상 일관됨). location이 없을 때의 세부 상태(UNALLOCATED/PENDING_REPLENISHMENT)는 호출부가 명시한다 |
+
+**상태 전이**
+
+| 상태값 | 의미 | 설명 |
+| --- | --- | --- |
+| `UNALLOCATED` | 미확보 | 피킹존은 물론 보관존에서도 예약조차 못한 상태. StockMovement가 전혀 없다. `PutAwayCompletedEvent`로 재시도 대상이며, 장시간 지속되면 `FAILED`로 전환 |
+| `PENDING_REPLENISHMENT` | 보충 예약됨 | 보관존 재고 예약 + 보충 지시(StockMovement, REPLENISHMENT)까지는 생성됨. 물리 이동 완료(`ReplenishmentCompletedEvent`)만 기다리면 됨 |
+| `ALLOCATED` | 할당 완료 | 피킹존 재고(location_id, lot_no) 매핑 및 reserved_quantity 증가 완료 |
+| `PICKED` | 피킹 완료 | 작업자가 로케이션에서 실물 피킹을 완료함 |
+| `SHORTAGE` | 결품 | 물리적으로 재고가 없어 피킹 불가 처리됨(피킹 시점에 발견되는 것으로, UNALLOCATED과는 발생 시점이 다르다) |
+| `FAILED` | 재고 확보 실패 | `UNALLOCATED`으로 장시간(기본 2시간) 남아 있어 `OutboundOrderFailureScheduler`가 최종 실패 처리 |
 
 ---
 
@@ -381,8 +425,8 @@ RabbitMQ 발행용 스키마(`product_outbox`)를 그대로 재사용하는 편�
 | `MovementUnit` | `PALLET`, `BOX`, `EA` | StockMovement |
 | `MovementType` | `PUT_AWAY`, `REPLENISHMENT`, `RELOCATION` | StockMovement |
 | `MovementStatus` | `PENDING`, `IN_PROGRESS`, `COMPLETED`, `CANCELED` | StockMovement |
-| `OutboundOrderStatus` | `ALLOCATED`, `PICKING`, `PACKING`, `COMPLETED`, `CANCELED` | OutboundOrder |
-| `OutboundItemStatus` | `PENDING`, `PICKED`, `SHORTAGE` | OutboundItem |
+| `OutboundOrderStatus` | `PENDING_REPLENISHMENT`, `ALLOCATED`, `PICKING`, `PACKING`, `COMPLETED`, `CANCELED`, `FAILED` | OutboundOrder |
+| `OutboundItemStatus` | `UNALLOCATED`, `PENDING_REPLENISHMENT`, `ALLOCATED`, `PICKED`, `SHORTAGE`, `FAILED` | OutboundItem |
 | `OutboxStatus` | `PENDING`, `PUBLISHED` | WmsOutbox |
 
 ---
@@ -392,5 +436,7 @@ RabbitMQ 발행용 스키마(`product_outbox`)를 그대로 재사용하는 편�
 1. **전체 재고 집계**: 동일 상품 재고가 로케이션별로 분산 관리됨. 전체 재고 조회 시 로케이션별 재고를 합산(`SUM(quantity - reserved_quantity)`)해서 응답하는 방식으로 확정 필요. 별도 상품 단위 집계 테이블/캐시를 둘지 여부 검토.
 2. **재고 선점(예약) 시점과 대상**: 특정 마감 시각까지 주문을 모았다가 피킹을 시작하는 구조. 마감 전에는 실물 재고가 확정되지 않는데 `reserved_quantity`를 언제 증가시킬지 확정 필요. 선점 시 보관존 재고까지 포함해 차감 대상으로 볼지, 피킹존 가용 재고만 대상으로 볼지 결정 필요.
 3. **마감 전 주문 보관 위치**: 마감 전 주문을 MQ(Kafka)에 적재해 두는지, WMS 내부 임시 테이블에 쌓는지 결정 필요. (재처리·조회 요구사항에 따라 달라짐)
-4. **로케이션 배정 전략**: 보관존(STORAGE) 입고 적치는 동적 배정으로 1차 구현 완료 — `InboundOrderService.recommendStorageLocation()`이 같은 warehouse/storageType의 PALLET_RACK 중 유효 재고 없음 + 진행 중인 이동 지시 미선점인 로케이션을 aisle/rack/level/bin 오름차순으로 1건 추천하고, 없으면 `WMS409`(`NO_AVAILABLE_LOCATION`)를 던진다. 상품별 지정 로케이션(고정 슬롯) 방식과의 하이브리드 여부, 그리고 피킹존(PICKING) 보충(REPLENISHMENT) 배정 전략은 여전히 미결.
+4. **로케이션 배정 전략**: 보관존(STORAGE) 입고 적치는 동적 배정으로 1차 구현 완료 — `InboundOrderService.recommendStorageLocation()`이 같은 warehouse/storageType의 PALLET_RACK 중 유효 재고 없음 + 진행 중인 이동 지시 미선점인 로케이션을 aisle/rack/level/bin 오름차순으로 1건 추천하고, 없으면 `WMS409`(`NO_AVAILABLE_LOCATION`)를 던진다. 상품별 지정 로케이션(고정 슬롯) 방식과의 하이브리드 여부, 그리고 피킹존(PICKING) 보충(REPLENISHMENT) 배정 전략은 여전히 미결 — `OutboundOrderService.triggerReplenishment()`는 임시로 "이 상품이 이미 배치돼 있는(그리고 보관 유형이 상품과 일치하는) 피킹존 로케이션을 재사용"만 하고, 한 번도 배치된 적 없는(또는 일치하는 보관 유형으로는 배치된 적 없는) 상품은 보충 지시 자체를 만들지 못한 채 전표를 UNALLOCATED로 남긴다. 실제로는 현재 피킹존 재고를 채우는 흐름이 전혀 없어(입고 적치는 항상 STORAGE로만 감) 이 분기가 상시 발생할 것 — 초기 피킹존 재고를 어떻게 채울지(수동 시딩? 별도 배치?) 결정 필요. (해결됨) 테스트 중 발견했던 storage_type 불일치 문제는 `InventoryJpaRepository.findFirstByWarehouseIdAndProductIdAndLocation_ZoneAndLocation_StorageType()`으로 조회 자체에 `l.storageType = 상품.storageType` 조건을 추가해 막았다 — 잘못 배치된(보관 유형이 다른) 피킹 로케이션은 애초에 후보에서 제외되므로, 확정 불가능한 REPLENISHMENT 이동 지시가 생성될 일이 없다.
 5. **InboundOrder 상태 확장**: 버퍼 하차 완료 상태를 별도 상태로 추가할지.
+6. **재할당/재시도 소비자**: `OutboundReallocationListener`(`@TransactionalEventListener(AFTER_COMMIT)`) → `OutboundOrderService.retryUnallocated()`/`finalizeReplenishment()`로 구현 완료. FIFO(전표 생성 시각 오름차순)로 처리하며 부분 커버리지 시 분할까지 실제 서버로 검증함(8절 "재시도/최종 할당" 참고). 남은 논의: 여러 REPLENISHMENT/PUT_AWAY가 동시다발적으로 발생할 때의 동시성(같은 상품에 대해 두 리스너가 겹쳐 실행될 가능성 — 현재는 낙관적/비관적 락 어느 쪽도 OutboundItem 레벨엔 없음, Inventory 레벨 락으로 간접 보호되는 정도).
+7. **실패 시 order-service 보상 이벤트**: `OutboundOrderFailureScheduler`가 장시간 UNALLOCATED인 전표를 FAILED로 전환하지만, 지금은 WMS 내부 상태만 바꿀 뿐 order-service에 알리지 않는다(사용자 확인: 우선 내부 상태만, 계약 확정되면 추후 구현). 결제/환불 플로우와 연계하려면 별도 이벤트 계약이 필요.
