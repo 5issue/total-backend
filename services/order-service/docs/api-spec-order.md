@@ -21,6 +21,12 @@
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
 | 주문 | `GET` | `/internal/v1/orders/{orderId}/items` | 재고 확정용 주문 품목 조회 | 상 | Internal | 불필요 |
 | 주문 | `GET` | `/internal/v1/orders/{orderId}` | 결제 검증용 주문 조회 | 상 | Internal | 불필요 |
+
+### 3. 관리자 API (Admin/BO)
+| 도메인 | Method | Path | 기능 설명 | 중요도 | Auth | 소유권 확인 |
+| :--- | :--- | :--- | :--- |:----| :--- | :--- |
+| 주문 | `GET` | `/api/v1/admin/orders/returns` | 반품 신청 목록 조회 | 하   | Admin | 불필요 |
+| 주문 | `GET` | `/api/v1/admin/orders/returns/{returnId}` | 반품 신청 상세 조회 | 하   | Admin | 불필요 |
 ---
 
 ## 1. 장바구니 조회
@@ -437,11 +443,11 @@
 * **동기 연동:** 결제 서비스 전용 `GET /internal/v1/orders/{orderId}` 제공
 * **비동기 연동 (RabbitMQ):**
   * Subscribe: `payment.order.completed`, `payment.order.failed`, `product.inventory.exhausted`, `payment.order.refunded`
-  * Publish: `sales.order.created` (Transactional Outbox 패턴)
+  * Publish: `order.payment.completed`, `order.inventory.confirm`
 * **도메인 규칙:**
   * 주문 상태가 `CHECKOUT_CREATED`일 때만 `PENDING_PAYMENT`으로 전이하여 만료 배치 대상에서 격리.
   * 본 API는 상태 전이만 수행하며, 결제창 호출 및 재고 TTL 검증은 결제 서비스가 담당.
-  * 최종 주문 확정(`PAID`)은 `payment.order.completed` 메시지 소비 후 비동기 처리하며, Outbox를 통해 OMS로 `sales.order.created` 이벤트 발행.
+  * 최종 주문 확정(`PAID`)은 Payment의 `POST /internal/v1/orders/{orderId}/complete-pay` 동기 통보로 처리하며, OMS와 Product에 각각 결제 완료·재고 확정 이벤트를 발행.
 
 ---
 
@@ -538,7 +544,7 @@
 * **관련 테이블:** `orders`, `order_claims`, `order_outbox`
 * **동기 연동:** `GET /internal/v1/oms/orders/{orderId}/cancel-eligibility` (OMS 출고 지시 여부 동기 검증)
 * **비동기 연동 (RabbitMQ):**
-  * 커밋 후 처리: 결제 서비스 취소 성공 후 `order.canceled.inventory-restore` 발행
+  * 커밋 후 처리: 결제 서비스 취소 성공 후 `order.inventory.restore` 발행
   * Subscribe: `payment.order.refunded` (결제 환불 완료 수신 시 주문 상태 REFUNDED 갱신)
   * 전달 보장: `event_publication` 기반 at-least-once. 재시도 시 최초 생성한 `eventId`를 유지한다.
   * 소비자 계약: 결제 취소는 `paymentId`, 재고 복구는 `eventId`를 기준으로 중복 반영을 차단한다.
@@ -1245,3 +1251,187 @@
 * **동기 연동:** 내부 호출 주체: 결제 서비스
 * **비동기 연동 (RabbitMQ):** 없음
 * **도메인 규칙:** 결제 모듈에서 PG사 승인 전 주문 유효성, 총 금액 일치 여부 및 재고 선점 토큰 검증을 위한 데이터 제공.
+
+---
+
+## 13. 반품 신청 목록 조회 (Admin/BO)
+
+> BO 관리자가 접수된 주문 반품 신청 건들을 조회하고 검수/승인 대상을 선별한다.
+
+### Path
+
+```
+[GET] /api/v1/admin/orders/returns
+```
+
+### Request
+
+#### Headers
+
+| 이름 | 필수 | 설명 |
+| --- | --- | --- |
+| Authorization | Y | Bearer {Access Token} |
+
+#### Path Parameters
+
+없음
+
+#### Query Parameters
+
+| 이름 | 타입 | 필수 | 기본값 | 설명 |
+| --- | --- | --- | --- | --- |
+| status | String | N | - | 반품 상태 (`REQUESTED`, `APPROVED`, `COMPLETED`, `REJECTED`) |
+| storageType | String | N | - | 보관 온도대. 콤마 구분 복수 선택 가능 (`FROZEN`, `CHILLED`, `ROOM`) |
+| page | Integer | N | 1 | 페이지 번호 (1-based) |
+| size | Integer | N | 20 | 페이지 크기 (최대 100) |
+
+#### Body
+
+없음
+
+### Response
+
+#### 성공 (200 OK)
+
+```json
+{
+  "status": "SUCCESS",
+  "message": "반품 신청 목록 조회에 성공했습니다.",
+  "data": {
+    "total": 1,
+    "page": 1,
+    "size": 20,
+    "items": [
+      {
+        "returnId": 101,
+        "orderId": 501,
+        "orderNo": "O202608260001",
+        "memberId": 1001,
+        "storageTypes": ["FROZEN", "CHILLED"],
+        "reasonCode": "RTN04",
+        "status": "REQUESTED",
+        "requestedAt": "2026-08-27T10:00:00Z"
+      }
+    ]
+  },
+  "error": null,
+  "timestamp": "2026-08-27T10:05:00Z"
+}
+```
+
+#### 실패 (Error Codes)
+
+| HTTP Status | Error Code | Response Message | Description |
+| --- | --- | --- | --- |
+| 401 | UNAUTHORIZED | "로그인이 필요합니다." | 인증 토큰 누락 또는 유효하지 않은 토큰 |
+| 403 | FORBIDDEN | "접근 권한이 없습니다." | 관리자 권한 미보유 |
+| 500 | INTERNAL_SERVER_ERROR | "서버 오류가 발생했습니다." | 서버 내부 오류 |
+
+### Integration & Business Policies
+
+* **관련 테이블:** `order_claims`, `orders`, `order_items`
+* **동기 연동:** 없음
+* **비동기 연동 (RabbitMQ):** 없음
+* **도메인 규칙:**
+    * `claimType = RETURN`인 클레임만 조회.
+    * `storageType` 필터는 주문 내 아이템 온도대 기준. 해당 온도대 아이템을 하나라도 포함하면 매칭.
+    * `storageTypes` 응답 필드는 주문 내 아이템의 고유 온도대 목록 (FROZEN 우선 정렬).
+
+
+
+---
+
+## 14. 반품 신청 상세 조회 (Admin/BO)
+
+> 관리자가 반품 건의 증빙 사진, 상세 사유, 온도대별 상품 정보를 확인하여 환불 승인 여부를 판단한다.
+
+### Path
+
+```
+[GET] /api/v1/admin/orders/returns/{returnId}
+```
+
+### Request
+
+#### Headers
+
+| 이름 | 필수 | 설명 |
+| --- | --- | --- |
+| Authorization | Y | Bearer {Access Token} |
+
+#### Path Parameters
+
+| 이름 | 타입 | 필수 | 설명 |
+| --- | --- | --- | --- |
+| returnId | Integer | Y | 반품 ID (OrderClaim ID) |
+
+#### Query Parameters
+
+없음
+
+#### Body
+
+없음
+
+### Response
+
+#### 성공 (200 OK)
+
+```json
+{
+  "status": "SUCCESS",
+  "message": "반품 상세 조회에 성공했습니다.",
+  "data": {
+    "returnId": 101,
+    "orderId": 501,
+    "paymentId": 9001,
+    "status": "REQUESTED",
+    "reasonCode": "RTN04",
+    "reasonDetail": "해동되어 변질되었습니다.",
+    "attachments": [
+      {
+        "s3Bucket": "oish-storage",
+        "s3ObjectKey": "returns/101/photo1.jpg",
+        "originalFileName": "ice_melted.jpg"
+      }
+    ],
+    "itemGroups": [
+      {
+        "storageType": "FROZEN",
+        "items": [
+          { "productId": 10, "skuId": 1001, "quantity": 2 }
+        ]
+      },
+      {
+        "storageType": "ROOM",
+        "items": [
+          { "productId": 11, "skuId": 1101, "quantity": 1 }
+        ]
+      }
+    ],
+    "refundAmount": 32000,
+    "requestedAt": "2026-08-27T10:00:00Z"
+  },
+  "error": null,
+  "timestamp": "2026-08-27T10:05:00Z"
+}
+```
+
+#### 실패 (Error Codes)
+
+| HTTP Status | Error Code | Response Message | Description |
+| --- | --- | --- | --- |
+| 401 | UNAUTHORIZED | "로그인이 필요합니다." | 인증 토큰 누락 또는 유효하지 않은 토큰 |
+| 403 | FORBIDDEN | "접근 권한이 없습니다." | 관리자 권한 미보유 |
+| 404 | ORD_NOT_FOUND_CLAIM | "반품 정보를 찾을 수 없습니다." | 유효하지 않은 returnId |
+| 500 | INTERNAL_SERVER_ERROR | "서버 오류가 발생했습니다." | 서버 내부 오류 |
+
+### Integration & Business Policies
+
+* **관련 테이블:** `order_claims`, `refund_attachments`, `orders`, `order_items`
+* **동기 연동:** 없음
+* **비동기 연동 (RabbitMQ):** 없음
+* **도메인 규칙:**
+    * `itemGroups`는 주문 아이템을 보관 온도대(`storageType`)별로 그룹핑하여 반환.
+    * `refundAmount`는 반품 접수 시 산정된 예상 환불 금액(`expectedRefundAmount`).
+    * 관리자는 이 정보를 기반으로 콜드체인 자체폐기 환불 승인 또는 역물류 수거 지시를 판단.

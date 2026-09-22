@@ -22,6 +22,8 @@ public class OrderDeliveryInfo extends BaseEntity {
     @JoinColumn(name = "order_id")
     private Order order;
 
+    private Long regionId;
+
     private Long sourceAddressId;
 
     @Column(nullable = false, length = 80)
@@ -52,10 +54,11 @@ public class OrderDeliveryInfo extends BaseEntity {
     private String deliveryMessage;
 
     @Builder(access = AccessLevel.PRIVATE)
-    private OrderDeliveryInfo(Order order, Long sourceAddressId, String recipientName, String phone,
+    private OrderDeliveryInfo(Order order, Long regionId, Long sourceAddressId, String recipientName, String phone,
                               String zipCode, String address, String addressDetail, String addressName,
                               String accessMethod, String accessDetail, String packingType, String deliveryMessage) {
         this.order = order;
+        this.regionId = regionId;
         this.sourceAddressId = sourceAddressId;
         this.recipientName = recipientName;
         this.phone = phone;
@@ -71,6 +74,7 @@ public class OrderDeliveryInfo extends BaseEntity {
 
     public static OrderDeliveryInfo createSnapshot(
             Order order,
+            Long regionId,
             Long sourceAddressId,
             String recipientName,
             String phone,
@@ -91,6 +95,7 @@ public class OrderDeliveryInfo extends BaseEntity {
 
         return OrderDeliveryInfo.builder()
                 .order(order)
+                .regionId(regionId)
                 .sourceAddressId(sourceAddressId)
                 .recipientName(recipientName)
                 .phone(phone)

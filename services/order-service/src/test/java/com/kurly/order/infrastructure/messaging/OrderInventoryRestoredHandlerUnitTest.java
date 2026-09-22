@@ -6,11 +6,10 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.UUID;
 
-import static org.mockito.Mockito.verifyNoMoreInteractions;
-import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
 class OrderInventoryRestoredHandlerUnitTest {
@@ -24,12 +23,12 @@ class OrderInventoryRestoredHandlerUnitTest {
         handler.handle(event("RESTORED"));
         handler.handle(event("ALREADY_RESTORED"));
 
-        verify(orderService).completeCancel(501L, "rsv_test");
+        verify(orderService, times(2)).completeCancel(501L, "rsv_test");
         verifyNoMoreInteractions(orderService);
     }
 
     private ProductInventoryRestoredEvent event(String status) {
         return new ProductInventoryRestoredEvent(UUID.randomUUID(), "product.inventory.restored",
-                "rsv_test", 501L, status, LocalDateTime.now());
+                "rsv_test", 501L, status, Instant.now());
     }
 }

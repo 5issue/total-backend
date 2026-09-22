@@ -10,6 +10,7 @@ import com.kurly.order.domain.claim.*;
 import com.kurly.order.domain.common.OrderErrorCode;
 import com.kurly.order.domain.common.StorageType;
 import com.kurly.order.domain.order.*;
+import com.kurly.order.infrastructure.messaging.*;
 import com.kurly.order.presentation.dto.*;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
@@ -72,16 +73,16 @@ public class OrderService {
 
         CartResponseDto.Address address = externalService.getAddress(memberId, cart.getAddressId());
         if (address == null || address.recipientName() == null || address.recipientName().isBlank()
-                || address.recipientPhone() == null || address.recipientPhone().isBlank()
-                || address.zipCode() == null || address.zipCode().isBlank()
-                || address.address() == null || address.address().isBlank()) {
+            || address.recipientPhone() == null || address.recipientPhone().isBlank()
+            || address.zipCode() == null || address.zipCode().isBlank()
+            || address.address() == null || address.address().isBlank()) {
             throw new BusinessException(OrderErrorCode.ORD_NOT_FOUND_ADDRESS);
         }
 
         orderRepository.findActiveCheckoutForUpdate(memberId).ifPresent(existing -> {
             if (existing.getInventoryReservationToken() != null &&
-                    existing.getInventoryReservedUntil() != null &&
-                    existing.getInventoryReservedUntil().isAfter(LocalDateTime.now())) {
+                existing.getInventoryReservedUntil() != null &&
+                existing.getInventoryReservedUntil().isAfter(LocalDateTime.now())) {
                 externalService.releaseInventory(existing.getInventoryReservationToken());
             }
             existing.markExpired();
@@ -128,6 +129,7 @@ public class OrderService {
 
         OrderDeliveryInfo deliveryInfo = OrderDeliveryInfo.createSnapshot(
                 order,
+                cart.getRegionId(),
                 address.addressId(),
                 address.recipientName(),
                 address.recipientPhone(),
@@ -250,7 +252,7 @@ public class OrderService {
         Order order = getOwnedOrderForUpdate(me, orderId);
 
         if (order.getStatus() == OrderStatus.PAID) {
-            throw new BusinessException(OrderErrorCode.ORD_CONFLICT_ALREADY_PAID);
+            throw new BusinessException(OrderErrorCode.ORD_CONFLICT_ALREADY_PROCESSED, order.getStatus().name());
         }
         if (order.getStatus() != OrderStatus.CHECKOUT_CREATED) {
             throw new BusinessException(OrderErrorCode.ORD_INVALID_STATUS);
@@ -273,28 +275,28 @@ public class OrderService {
 
     @Transactional
     public CompletePayResponseDto completePay(Long orderId, CompletePayRequestDto request) {
-        Order before = getOrder(orderId);
+        Order order = orderRepository.findByIdForUpdate(orderId)
+                .orElseThrow(() -> new BusinessException(OrderErrorCode.ORD_NOT_FOUND_ORDER));
 
-        if (before.getStatus() == OrderStatus.PAID) {
-            throw new BusinessException(OrderErrorCode.ORD_CONFLICT_ALREADY_PAID);
+        if (order.getStatus() != OrderStatus.PENDING_PAYMENT) {
+            throw new BusinessException(OrderErrorCode.ORD_CONFLICT_ALREADY_PROCESSED, order.getStatus().name());
         }
-        if (!before.getPaymentAmount().equals(request.paymentAmount())) {
+        if (!order.getPaymentAmount().equals(request.paymentAmount())) {
             throw new BusinessException(OrderErrorCode.ORD_INVALID_PAYMENT_AMOUNT);
         }
-
-        if (orderRepository.completePayment(orderId, request.paymentId(), request.paidAt(), LocalDateTime.now()) == 0) {
+        if (order.getInventoryReservedUntil().isBefore(request.paidAt())) {
             throw new BusinessException(OrderErrorCode.ORD_EXPIRED_PAYMENT_TIMEOUT);
         }
 
-        Order paidOrder = getOrder(orderId);
-
-        eventPublisher.publishEvent(OrderEvent.of("order.inventory.confirm", paidOrder));
+        order.markPaid(request.paymentId(), request.paidAt());
 
         OrderDeliveryInfo deliveryInfo = orderDeliveryInfoRepository.findById(orderId)
                 .orElseThrow(() -> new BusinessException(OrderErrorCode.ORD_NOT_FOUND_ORDER));
-        eventPublisher.publishEvent(SalesOrderCreatedEvent.of(paidOrder, deliveryInfo));
 
-        return CompletePayResponseDto.from(paidOrder);
+        eventPublisher.publishEvent(OrderPaymentCompletedEvent.of(order, deliveryInfo));
+        eventPublisher.publishEvent(OrderInventoryConfirmEvent.of(order));
+
+        return CompletePayResponseDto.from(order);
     }
 
     @Transactional
@@ -325,7 +327,8 @@ public class OrderService {
                 order.getPaymentAmount()
         ));
 
-        eventPublisher.publishEvent(PaymentCancellationEvent.of(order));
+        externalService.cancelPayment(order.getPaymentId(), "order-cancel-" + orderId, request.reasonCode());
+        eventPublisher.publishEvent(OrderInventoryRestoreEvent.of(order));
         return OrderClaimResponseDto.from(claim);
     }
 
@@ -343,7 +346,7 @@ public class OrderService {
 
         String objectKeyPrefix = "returns/%d/".formatted(me.userId());
         if (attachments.stream().anyMatch(attachment -> !attachment.objectKey().startsWith(objectKeyPrefix)
-                || attachment.objectKey().contains(".."))) {
+                                                        || attachment.objectKey().contains(".."))) {
             throw new BusinessException(OrderErrorCode.ORD_INVALID_RETURN_EVIDENCE);
         }
 
@@ -386,7 +389,7 @@ public class OrderService {
         )));
 
         orderClaimRepository.save(claim);
-        eventPublisher.publishEvent(OrderEvent.of("order.return-requested", order));
+        eventPublisher.publishEvent(OrderReturnRequestedEvent.of(order));
         return OrderClaimResponseDto.from(claim);
     }
 
@@ -395,7 +398,7 @@ public class OrderService {
         if (orderRepository.expirePayment(orderId, now) == 0) {
             return false;
         }
-        eventPublisher.publishEvent(OrderEvent.of("order.inventory.release", getOrder(orderId)));
+        eventPublisher.publishEvent(OrderInventoryReleaseEvent.of(getOrder(orderId)));
         return true;
     }
 
@@ -463,9 +466,6 @@ public class OrderService {
         return requestedItems.equals(receivedItems);
     }
 
-    private record InventoryItemKey(Long productId, Integer quantity) {
-    }
-
     private ClaimType parseClaimType(String value) {
         if (value == null || value.isBlank()) {
             return null;
@@ -486,5 +486,8 @@ public class OrderService {
         } catch (IllegalArgumentException exception) {
             throw new BusinessException(OrderErrorCode.ORD_INVALID_REQUEST_STATUS);
         }
+    }
+
+    private record InventoryItemKey(Long productId, Integer quantity) {
     }
 }

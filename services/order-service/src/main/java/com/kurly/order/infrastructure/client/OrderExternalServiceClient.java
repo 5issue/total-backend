@@ -83,11 +83,16 @@ public class OrderExternalServiceClient implements OrderExternalService, CartExt
     }
 
     @Override
-    public void cancelPayment(Long paymentId) {
+    public void cancelPayment(Long paymentId, String idempotencyKey, String cancelReason) {
         paymentClient.post()
                 .uri("/internal/v1/payments/{paymentId}/cancel", paymentId)
+                .header("Idempotency-Key", idempotencyKey)
+                .body(new CancelPaymentRequest(cancelReason))
                 .retrieve()
                 .toBodilessEntity();
+    }
+
+    private record CancelPaymentRequest(String cancelReason) {
     }
 
     public CartResponseDto.Address getAddress(Long memberId, Long addressId) {

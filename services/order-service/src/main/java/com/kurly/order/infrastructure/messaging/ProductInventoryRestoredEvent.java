@@ -1,6 +1,6 @@
 package com.kurly.order.infrastructure.messaging;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.UUID;
 
 public record ProductInventoryRestoredEvent(
@@ -9,6 +9,6 @@ public record ProductInventoryRestoredEvent(
         String reservationToken,
         Long orderId,
         String status,
-        LocalDateTime restoredAt
+        Instant restoredAt
 ) {
 }

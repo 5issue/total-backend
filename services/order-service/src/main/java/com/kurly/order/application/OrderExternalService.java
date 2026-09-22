@@ -16,6 +16,6 @@ public interface OrderExternalService {
 
     boolean isCancellationEligible(Long orderId);
 
-    void cancelPayment(Long paymentId);
+    void cancelPayment(Long paymentId, String idempotencyKey, String cancelReason);
 
 }
