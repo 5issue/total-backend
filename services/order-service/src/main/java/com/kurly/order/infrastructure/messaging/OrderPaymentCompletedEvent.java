@@ -27,8 +27,8 @@ public record OrderPaymentCompletedEvent(
                 order.getId(),
                 order.getOrderNo(),
                 order.getMemberId(),
-                deliveryInfo.getRegionId(),
                 order.getPaymentId(),
+                deliveryInfo.getRegionId(),
                 order.getPaymentAmount(),
                 order.getPaidAt(),
                 new DeliveryAddress(

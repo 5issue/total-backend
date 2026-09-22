@@ -15,7 +15,7 @@ public record ReturnListResponse(
             Long orderId,
             String orderNo,
             Long memberId,
-            String storageType,
+            List<String> storageTypes,
             String reasonCode,
             String status,
             LocalDateTime requestedAt

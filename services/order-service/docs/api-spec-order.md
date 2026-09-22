@@ -443,11 +443,11 @@
 * **동기 연동:** 결제 서비스 전용 `GET /internal/v1/orders/{orderId}` 제공
 * **비동기 연동 (RabbitMQ):**
   * Subscribe: `payment.order.completed`, `payment.order.failed`, `product.inventory.exhausted`, `payment.order.refunded`
-  * Publish: `sales.order.created` (Transactional Outbox 패턴)
+  * Publish: `order.payment.completed`, `order.inventory.confirm`
 * **도메인 규칙:**
   * 주문 상태가 `CHECKOUT_CREATED`일 때만 `PENDING_PAYMENT`으로 전이하여 만료 배치 대상에서 격리.
   * 본 API는 상태 전이만 수행하며, 결제창 호출 및 재고 TTL 검증은 결제 서비스가 담당.
-  * 최종 주문 확정(`PAID`)은 `payment.order.completed` 메시지 소비 후 비동기 처리하며, Outbox를 통해 OMS로 `sales.order.created` 이벤트 발행.
+  * 최종 주문 확정(`PAID`)은 Payment의 `POST /internal/v1/orders/{orderId}/complete-pay` 동기 통보로 처리하며, OMS와 Product에 각각 결제 완료·재고 확정 이벤트를 발행.
 
 ---
 
@@ -544,7 +544,7 @@
 * **관련 테이블:** `orders`, `order_claims`, `order_outbox`
 * **동기 연동:** `GET /internal/v1/oms/orders/{orderId}/cancel-eligibility` (OMS 출고 지시 여부 동기 검증)
 * **비동기 연동 (RabbitMQ):**
-  * 커밋 후 처리: 결제 서비스 취소 성공 후 `order.canceled.inventory-restore` 발행
+  * 커밋 후 처리: 결제 서비스 취소 성공 후 `order.inventory.restore` 발행
   * Subscribe: `payment.order.refunded` (결제 환불 완료 수신 시 주문 상태 REFUNDED 갱신)
   * 전달 보장: `event_publication` 기반 at-least-once. 재시도 시 최초 생성한 `eventId`를 유지한다.
   * 소비자 계약: 결제 취소는 `paymentId`, 재고 복구는 `eventId`를 기준으로 중복 반영을 차단한다.

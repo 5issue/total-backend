@@ -40,6 +40,11 @@ public class OrderRabbitMqConfig {
         return ExchangeBuilder.topicExchange(EXCHANGE_ORDER).durable(true).build();
     }
 
+    @Bean
+    TopicExchange productTopicExchange() {
+        return ExchangeBuilder.topicExchange(EXCHANGE_PRODUCT).durable(true).build();
+    }
+
     // ==========================================
     // Inventory Restored Flow
     // ==========================================

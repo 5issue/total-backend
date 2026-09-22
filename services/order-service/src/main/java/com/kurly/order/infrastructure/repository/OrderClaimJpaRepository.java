@@ -9,6 +9,8 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.util.Optional;
+import java.util.List;
+import com.kurly.order.domain.order.Order;
 
 public interface OrderClaimJpaRepository extends OrderClaimRepository, JpaRepository<OrderClaim, Long> {
 
@@ -23,25 +25,40 @@ public interface OrderClaimJpaRepository extends OrderClaimRepository, JpaReposi
                                 @Param("status") com.kurly.order.domain.claim.ClaimStatus status, Pageable pageable);
 
 
-    @Query("""
-            SELECT DISTINCT c FROM OrderClaim c
+    @Query(value = """
+            SELECT c FROM OrderClaim c
             JOIN FETCH c.order o
-            LEFT JOIN FETCH o.items
             WHERE c.claimType = 'RETURN'
             AND (:status IS NULL OR CAST(c.status AS string) = :status)
+            AND (:filterStorage = false OR EXISTS (
+                SELECT 1 FROM OrderItem i WHERE i.order = o
+                AND CAST(i.storageType AS string) IN :storageTypes))
             ORDER BY c.requestedAt DESC
+            """,
+            countQuery = """
+            SELECT COUNT(c) FROM OrderClaim c
+            WHERE c.claimType = 'RETURN'
+            AND (:status IS NULL OR CAST(c.status AS string) = :status)
+            AND (:filterStorage = false OR EXISTS (
+                SELECT 1 FROM OrderItem i WHERE i.order = c.order
+                AND CAST(i.storageType AS string) IN :storageTypes))
             """)
     Page<OrderClaim> searchReturns(
             @Param("status") String status,
+            @Param("filterStorage") boolean filterStorage,
+            @Param("storageTypes") List<String> storageTypes,
             Pageable pageable
     );
+
+    @Query("SELECT DISTINCT o FROM Order o LEFT JOIN FETCH o.items WHERE o.id IN :orderIds")
+    List<Order> findOrdersWithItems(@Param("orderIds") List<Long> orderIds);
 
     @Query("""
             SELECT DISTINCT c FROM OrderClaim c
             LEFT JOIN FETCH c.attachments
             JOIN FETCH c.order o
             LEFT JOIN FETCH o.items
-            WHERE c.id = :id
+            WHERE c.id = :id AND c.claimType = 'RETURN'
             """)
     Optional<OrderClaim> findByIdWithAttachments(@Param("id") Long id);
 }

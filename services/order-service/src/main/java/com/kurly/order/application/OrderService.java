@@ -275,7 +275,8 @@ public class OrderService {
 
     @Transactional
     public CompletePayResponseDto completePay(Long orderId, CompletePayRequestDto request) {
-        Order order = getOrder(orderId);
+        Order order = orderRepository.findByIdForUpdate(orderId)
+                .orElseThrow(() -> new BusinessException(OrderErrorCode.ORD_NOT_FOUND_ORDER));
 
         if (order.getStatus() != OrderStatus.PENDING_PAYMENT) {
             throw new BusinessException(OrderErrorCode.ORD_CONFLICT_ALREADY_PROCESSED, order.getStatus().name());
@@ -326,7 +327,7 @@ public class OrderService {
                 order.getPaymentAmount()
         ));
 
-        externalService.cancelPayment(order.getPaymentId());
+        externalService.cancelPayment(order.getPaymentId(), "order-cancel-" + orderId, request.reasonCode());
         eventPublisher.publishEvent(OrderInventoryRestoreEvent.of(order));
         return OrderClaimResponseDto.from(claim);
     }
