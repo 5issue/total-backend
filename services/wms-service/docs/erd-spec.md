@@ -42,6 +42,7 @@ erDiagram
         String  name
         String  address
         Boolean is_active
+        Enum[]  regions
     }
     WMS_PRODUCT {
         Long    id PK
@@ -186,6 +187,10 @@ erDiagram
 | `name` | String | | 센터 이름 (예: 김포 물류센터) |
 | `address` | String | | 주소 |
 | `is_active` | Boolean | | 운영 여부 |
+
+**담당 권역(regions)**: OMS가 배송지 권역별로 창고를 조회/배정할 수 있도록 `warehouse.regions`(PostgreSQL 배열 컬럼 `VARCHAR(20)[]`, `V10__add_warehouse_region.sql`)로 관리한다. 별도 테이블이 아니라 배열 컬럼인 이유는 **한 창고가 여러 권역을 동시에 담당할 수 있어서**다(예: 김포물류센터가 경기서부+수도권을 같이 커버) — PostgreSQL/Hibernate가 네이티브 배열 타입을 지원해 별도 조인 테이블 없이도 표현 가능하다. 원소는 광역자치단체(시/도) 17개를 그대로 쓰지 않고 물류 배정에 의미 있는 단위로 묶은 8개 고정값(`com.kurly.wms.domain.enums.Region`) — 경기도는 이 회사 물류센터가 여러 곳 몰려 있어(김포/평택/안산) 동/서로 쪼갰고, 나머지는 배송 권역 단위로 크게 묶었다(수도권/충청권/강원권/영남권/호남권/제주). `com.kurly.wms.infrastructure.entity.Warehouse.regions: List<Region>`을 `@JdbcTypeCode(SqlTypes.ARRAY)` + `@Enumerated(EnumType.STRING)`으로 매핑하고, 배열 안의 모든 값이 8개 중 하나인지는 `chk_warehouse_regions` CHECK 제약(`<@` 연산자로 부분집합 검증)이 DB 레벨에서 강제한다. 아직 배정 안 된 창고는 빈 배열일 수 있다.
+
+`GET /internal/v1/wms/warehouses?region=&isActive=`로 그 권역을 담당 목록에 포함하는 창고를 전부 조회한다(반대로 여러 창고가 같은 권역을 공유할 수도 있음 — 예: 컬리나우 4곳 전부 SEOUL_METRO). `WarehouseInternalController`→`WarehouseQueryService`→`WarehouseJpaRepository.search()`로 구현돼 있다. Hibernate HQL의 `array_contains(array, element)` 함수로 먼저 시도했다가 enum 파라미터를 `bytea[]`로 잘못 바인딩하는 문제(`character varying[] @> bytea[]` 에러)를 만나 네이티브 쿼리 + PostgreSQL `= ANY(...)` 연산자로 우회했다 — `region`은 Java enum이 아니라 문자열(enum name)로 바인딩한다.
 
 ---
 
@@ -428,6 +433,7 @@ RabbitMQ 발행용 스키마(`product_outbox`)를 그대로 재사용하는 편�
 | `OutboundOrderStatus` | `PENDING_REPLENISHMENT`, `ALLOCATED`, `PICKING`, `PACKING`, `COMPLETED`, `CANCELED`, `FAILED` | OutboundOrder |
 | `OutboundItemStatus` | `UNALLOCATED`, `PENDING_REPLENISHMENT`, `ALLOCATED`, `PICKED`, `SHORTAGE`, `FAILED` | OutboundItem |
 | `OutboxStatus` | `PENDING`, `PUBLISHED` | WmsOutbox |
+| `Region` | `SEOUL_METRO`, `GYEONGGI_EAST`, `GYEONGGI_WEST`, `CHUNGCHEONG`, `GANGWON`, `YEONGNAM`, `HONAM`, `JEJU` | Warehouse (`regions` 배열 컬럼의 원소) |
 
 ---
 
@@ -440,3 +446,4 @@ RabbitMQ 발행용 스키마(`product_outbox`)를 그대로 재사용하는 편�
 5. **InboundOrder 상태 확장**: 버퍼 하차 완료 상태를 별도 상태로 추가할지.
 6. **재할당/재시도 소비자**: `OutboundReallocationListener`(`@TransactionalEventListener(AFTER_COMMIT)`) → `OutboundOrderService.retryUnallocated()`/`finalizeReplenishment()`로 구현 완료. FIFO(전표 생성 시각 오름차순)로 처리하며 부분 커버리지 시 분할까지 실제 서버로 검증함(8절 "재시도/최종 할당" 참고). 남은 논의: 여러 REPLENISHMENT/PUT_AWAY가 동시다발적으로 발생할 때의 동시성(같은 상품에 대해 두 리스너가 겹쳐 실행될 가능성 — 현재는 낙관적/비관적 락 어느 쪽도 OutboundItem 레벨엔 없음, Inventory 레벨 락으로 간접 보호되는 정도).
 7. **실패 시 order-service 보상 이벤트**: `OutboundOrderFailureScheduler`가 장시간 UNALLOCATED인 전표를 FAILED로 전환하지만, 지금은 WMS 내부 상태만 바꿀 뿐 order-service에 알리지 않는다(사용자 확인: 우선 내부 상태만, 계약 확정되면 추후 구현). 결제/환불 플로우와 연계하려면 별도 이벤트 계약이 필요.
+8. (해결됨) **Warehouse.region 값 체계 및 조회 API**: 처음엔 시/도 단위 17개 광역자치단체로 만들었다가, 최종적으로 물류 배정에 의미 있는 8개 값(`SEOUL_METRO`/`GYEONGGI_EAST`/`GYEONGGI_WEST`/`CHUNGCHEONG`/`GANGWON`/`YEONGNAM`/`HONAM`/`JEJU`)으로 재정의했다 — 경기도만 물류센터가 몰려 있어(김포/평택/안산) 동/서로 쪼개고 나머지는 크게 묶었다. 저장 방식도 두 번 바뀌었다: `warehouse.region` 단일 컬럼 → "한 창고가 여러 권역을 담당할 수 있지 않냐"는 지적으로 `warehouse_region` 조인 테이블 → "테이블까지 필요 없지 않냐"는 재지적으로 PostgreSQL 배열 컬럼(`warehouse.regions VARCHAR(20)[]`, `V10__add_warehouse_region.sql`)으로 최종 정리. `GET /internal/v1/wms/warehouses`(region/isActive 쿼리 파라미터) Java 구현도 완료 — `WarehouseInternalController`→`WarehouseQueryService`→`WarehouseJpaRepository.search()`(네이티브 쿼리 + `= ANY(...)`). `seed_wms_warehouse.sql`에 실제 8개 창고의 지리적 인접성을 참고해 매핑(김포=경기서부+수도권, 평택=경기서부+충청권, 창원=영남권, 안산=경기서부, 컬리나우 4곳=수도권 단독) — 여러 창고가 같은 권역을 공유할 수도 있어(경기서부 3곳, 수도권 5곳), 그중 하나를 고르는 기준(거리/부하 분산 등)은 여전히 미결이다. 이 API는 후보 목록을 그대로 반환할 뿐 하나로 좁혀주지 않는다.
