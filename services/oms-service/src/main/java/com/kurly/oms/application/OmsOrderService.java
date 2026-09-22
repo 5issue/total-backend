@@ -14,6 +14,8 @@ import com.kurly.oms.presentation.dto.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.hibernate.exception.ConstraintViolationException;
+import java.util.Set;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -29,13 +31,15 @@ import java.util.stream.Collectors;
 @Slf4j
 public class OmsOrderService {
 
+    private static final Set<String> DUPLICATE_CONSTRAINTS = Set.of(
+            "uk_oms_orders_order_id", "uk_oms_orders_source_event_id");
     private final OmsOrderRepository omsOrderRepository;
+    private final OmsOrderCreator orderCreator;
     private final ShipmentRepository shipmentRepository;
     private final TamRegionRepository tamRegionRepository;
     private final FulfillmentCenterRepository fulfillmentCenterRepository;
     private final DeliverySlotRepository deliverySlotRepository;
 
-    @Transactional
     public void createOrder(OrderPaymentCompletedMessage event) {
 
         if (omsOrderRepository.existsBySourceEventId(event.eventId().toString()) ||
@@ -71,10 +75,24 @@ public class OmsOrderService {
         );
 
         try {
-            omsOrderRepository.save(omsOrder);
+            orderCreator.create(omsOrder);
         } catch (DataIntegrityViolationException e) {
-            log.warn("[OmsOrderService] DB UNIQUE 제약조건 위반 발생. 이미 생성된 주문으로 간주하여 성공 처리합니다. eventId: {}, orderId: {}", event.eventId(), event.orderId());
+            if (!isDuplicateOrderConstraint(e) ||
+                    (!omsOrderRepository.existsBySourceEventId(event.eventId().toString()) &&
+                     !omsOrderRepository.existsByOrderId(event.orderId()))) {
+                throw e;
+            }
+            log.info("[OmsOrderService] 동시 주문 생성 중복 eventId={}, orderId={}", event.eventId(), event.orderId());
         }
+    }
+
+    private boolean isDuplicateOrderConstraint(DataIntegrityViolationException exception) {
+        for (Throwable cause = exception; cause != null; cause = cause.getCause()) {
+            if (cause instanceof ConstraintViolationException violation) {
+                return DUPLICATE_CONSTRAINTS.contains(violation.getConstraintName());
+            }
+        }
+        return false;
     }
 
     @Transactional(readOnly = true)

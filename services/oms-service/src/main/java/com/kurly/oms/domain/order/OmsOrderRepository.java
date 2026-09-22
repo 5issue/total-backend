@@ -11,6 +11,8 @@ import java.util.Optional;
 public interface OmsOrderRepository {
     OmsOrder save(OmsOrder omsOrder);
 
+    OmsOrder saveAndFlush(OmsOrder omsOrder);
+
     Optional<OmsOrder> findById(Long orderId);
 
     Optional<OmsOrder> findByOrderId(Long orderId);

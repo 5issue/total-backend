@@ -44,6 +44,9 @@ class OmsOrderServiceUnitExceptionTest {
     private OmsOrderRepository omsOrderRepository;
 
     @Mock
+    private OmsOrderCreator orderCreator;
+
+    @Mock
     private ShipmentRepository shipmentRepository;
 
     @Mock

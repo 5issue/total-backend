@@ -14,6 +14,10 @@ import com.kurly.oms.presentation.dto.OmsOrderDetailResponse;
 import com.kurly.oms.presentation.dto.OmsOrderListResponse;
 import com.kurly.oms.presentation.dto.OmsOrderSearchCondition;
 import org.junit.jupiter.api.DisplayName;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.hibernate.exception.ConstraintViolationException;
+import java.sql.SQLException;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -40,6 +44,9 @@ class OmsOrderServiceUnitTest {
 
     @Mock
     private OmsOrderRepository omsOrderRepository;
+
+    @Mock
+    private OmsOrderCreator orderCreator;
 
     @Mock
     private ShipmentRepository shipmentRepository;
@@ -95,7 +102,29 @@ class OmsOrderServiceUnitTest {
             omsOrderService.createOrder(event);
 
             // then
-            verify(omsOrderRepository, times(1)).save(any(OmsOrder.class));
+            verify(orderCreator).create(any(OmsOrder.class));
+        }
+
+        @Test
+        void uniqueConflictIsIdempotentOnlyWhenTheOrderExists() {
+            OrderPaymentCompletedMessage event = createDefaultPaymentMessage();
+            DataIntegrityViolationException conflict = new DataIntegrityViolationException("duplicate",
+                    new ConstraintViolationException("duplicate", new SQLException(), "uk_oms_orders_order_id"));
+            doThrow(conflict).when(orderCreator).create(any(OmsOrder.class));
+            when(omsOrderRepository.existsByOrderId(event.orderId())).thenReturn(false, true);
+
+            omsOrderService.createOrder(event);
+            verify(orderCreator).create(any(OmsOrder.class));
+        }
+
+        @Test
+        void foreignKeyViolationIsNotTreatedAsDuplicate() {
+            OrderPaymentCompletedMessage event = createDefaultPaymentMessage();
+            DataIntegrityViolationException conflict = new DataIntegrityViolationException("foreign key",
+                    new ConstraintViolationException("foreign key", new SQLException(), "fk_oms_orders_region"));
+            doThrow(conflict).when(orderCreator).create(any(OmsOrder.class));
+
+            assertThatThrownBy(() -> omsOrderService.createOrder(event)).isSameAs(conflict);
         }
     }
 
