@@ -41,6 +41,9 @@ class OmsReturnServiceUnitTest {
     @Mock
     private ApplicationEventPublisher eventPublisher;
 
+    @Mock
+    private OmsReturnCreator returnCreator;
+
     @InjectMocks
     private OmsReturnService omsReturnService;
 
@@ -51,12 +54,9 @@ class OmsReturnServiceUnitTest {
         @Test
         void 반품_접수_메시지_수신시_OmsReturn을_정상_생성한다(CapturedOutput output) {
             // given
-            OmsOrderItem itemMock = mock(OmsOrderItem.class);
 
             OmsOrder orderMock = mock(OmsOrder.class);
             when(orderMock.getId()).thenReturn(10L);
-            when(orderMock.getOrderId()).thenReturn(500L);
-            when(orderMock.getItems()).thenReturn(List.of(itemMock));
 
             OrderReturnRequestedMessage event = new OrderReturnRequestedMessage(
                     UUID.randomUUID(), 500L, 1L, LocalDateTime.now()
@@ -64,12 +64,13 @@ class OmsReturnServiceUnitTest {
 
             when(omsOrderRepository.findByOrderId(500L)).thenReturn(Optional.of(orderMock));
             when(omsReturnRepository.existsByOmsOrderId(10L)).thenReturn(false);
+            when(returnCreator.create(eq(500L), anyString())).thenReturn(mock(OmsReturn.class));
 
             // when
             omsReturnService.receiveReturn(event);
 
             // then
-            verify(omsReturnRepository, times(1)).save(any(OmsReturn.class));
+            verify(returnCreator).create(eq(500L), eq(event.eventId().toString()));
             assertThat(output.getAll()).contains("[OmsReturnService] OmsReturn 생성 완료");
         }
 
@@ -90,7 +91,7 @@ class OmsReturnServiceUnitTest {
             omsReturnService.receiveReturn(event);
 
             // then
-            verify(omsReturnRepository, never()).save(any());
+            verify(returnCreator, never()).create(any(), any());
             assertThat(output.getAll()).contains("이미 반품 접수된 주문입니다");
         }
     }
@@ -396,8 +397,8 @@ class OmsReturnServiceUnitTest {
             when(orderMock.getOrderId()).thenReturn(500L);
             when(orderMock.getItems()).thenReturn(List.of(orderItemMock));
 
-            OmsReturn omsReturn = OmsReturn.createFromOrder(orderMock);
-            ReflectionTestUtils.setField(omsReturn, "totalRefundAmount", 10000L);
+            OmsReturn omsReturn = OmsReturn.createFromOrder(orderMock, "test-event");
+            omsReturn.recordRefund(10000L, 0L);
 
             PaymentRefundCompletedMessage message = new PaymentRefundCompletedMessage(
                     UUID.randomUUID(), 1L, 10000L, System.currentTimeMillis()

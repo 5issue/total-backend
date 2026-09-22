@@ -20,8 +20,8 @@ class OmsReturnUnitExceptionTest {
 
         static Stream<Arguments> invalidReturnParameters() {
             return Stream.of(
-                    Arguments.of("omsOrder 필수 누락", (Runnable) () -> OmsReturn.createFromOrder(null), "omsOrder는 필수입니다."),
-                    Arguments.of("orderOmsItems 빈 리스트 예외", (Runnable) () -> OmsReturn.createFromOrder(mock(OmsOrder.class)), "주문 품목이 비어있습니다.")
+                    Arguments.of("omsOrder 필수 누락", (Runnable) () -> OmsReturn.createFromOrder(null, "test-event"), "omsOrder는 필수입니다."),
+                    Arguments.of("orderOmsItems 빈 리스트 예외", (Runnable) () -> OmsReturn.createFromOrder(mock(OmsOrder.class), "test-event"), "주문 품목이 비어있습니다.")
             );
         }
 

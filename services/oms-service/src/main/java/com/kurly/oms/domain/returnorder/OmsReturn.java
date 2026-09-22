@@ -35,6 +35,9 @@ public class OmsReturn extends BaseEntity {
     @Column(nullable = false, length = 30)
     private OmsReturnStatus status;
 
+    @Column(nullable = false, unique = true, length = 64)
+    private String sourceEventId;
+
     @Column(length = 500)
     private String adminNote;
 
@@ -44,17 +47,19 @@ public class OmsReturn extends BaseEntity {
     @Column
     private Long deductedShippingFee;
 
-    private OmsReturn(Long omsOrderId, Long orderId) {
+    private OmsReturn(Long omsOrderId, Long orderId, String sourceEventId) {
         this.omsOrderId = omsOrderId;
         this.orderId = orderId;
         this.status = OmsReturnStatus.REQUESTED;
+        this.sourceEventId = sourceEventId;
     }
 
-    public static OmsReturn createFromOrder(OmsOrder omsOrder) {
+    public static OmsReturn createFromOrder(OmsOrder omsOrder, String sourceEventId) {
         Assert.notNull(omsOrder, "omsOrder는 필수입니다.");
         Assert.notEmpty(omsOrder.getItems(), "주문 품목이 비어있습니다.");
+        Assert.hasText(sourceEventId, "sourceEventId는 필수입니다.");
 
-        OmsReturn omsReturn = new OmsReturn(omsOrder.getId(), omsOrder.getOrderId());
+        OmsReturn omsReturn = new OmsReturn(omsOrder.getId(), omsOrder.getOrderId(), sourceEventId);
 
         for (OmsOrderItem orderItem : omsOrder.getItems()) {
             OmsReturnItem returnItem = OmsReturnItem.create(orderItem);
@@ -71,7 +76,7 @@ public class OmsReturn extends BaseEntity {
         if (hasLogisticsApproval) {
             this.status = OmsReturnStatus.PROCESSING;
         } else if (hasColdApproval) {
-            this.status = OmsReturnStatus.COMPLETED;
+            this.status = OmsReturnStatus.REFUND_PENDING;
         } else {
             this.status = OmsReturnStatus.REJECTED;
         }
@@ -84,7 +89,7 @@ public class OmsReturn extends BaseEntity {
     public void recordRefund(Long refundAmount, Long deductedFee) {
         this.totalRefundAmount = refundAmount;
         this.deductedShippingFee = deductedFee;
-        this.status = OmsReturnStatus.COMPLETED;
+        this.status = OmsReturnStatus.REFUND_PENDING;
     }
 
     public void recordInspectionFailure() {

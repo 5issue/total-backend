@@ -32,7 +32,7 @@ class OmsReturnUnitTest {
             ReflectionTestUtils.setField(order, "id", 10L);
 
             // when
-            OmsReturn omsReturn = OmsReturn.createFromOrder(order);
+            OmsReturn omsReturn = OmsReturn.createFromOrder(order, "test-event");
 
             // then
             assertThat(omsReturn.getOmsOrderId()).isEqualTo(10L);
@@ -47,18 +47,18 @@ class OmsReturnUnitTest {
     class ApplyJudgementTest {
 
         @Test
-        void 자체_폐기_승인만_있으면_COMPLETED_상태가_된다() {
+        void 자체_폐기_승인만_있으면_REFUND_PENDING_상태가_된다() {
             // given
             OmsOrder omsOrderMock = mock(OmsOrder.class);
             OmsOrderItem omsOrderItemMock = mock(OmsOrderItem.class);
             when(omsOrderMock.getItems()).thenReturn(List.of(omsOrderItemMock));
-            OmsReturn omsReturn = OmsReturn.createFromOrder(omsOrderMock);
+            OmsReturn omsReturn = OmsReturn.createFromOrder(omsOrderMock, "test-event");
 
             // when
             omsReturn.applyJudgement("냉동/냉장 제품 폐기 승인", true, false);
 
             // then
-            assertThat(omsReturn.getStatus()).isEqualTo(OmsReturnStatus.COMPLETED);
+            assertThat(omsReturn.getStatus()).isEqualTo(OmsReturnStatus.REFUND_PENDING);
             assertThat(omsReturn.getAdminNote()).isEqualTo("냉동/냉장 제품 폐기 승인");
         }
 
@@ -68,7 +68,7 @@ class OmsReturnUnitTest {
             OmsOrder omsOrderMock = mock(OmsOrder.class);
             OmsOrderItem omsOrderItemMock = mock(OmsOrderItem.class);
             when(omsOrderMock.getItems()).thenReturn(List.of(omsOrderItemMock));
-            OmsReturn omsReturn = OmsReturn.createFromOrder(omsOrderMock);
+            OmsReturn omsReturn = OmsReturn.createFromOrder(omsOrderMock, "test-event");
 
             // when
             omsReturn.applyJudgement("상온 제품 수거 승인", true, true);
@@ -84,7 +84,7 @@ class OmsReturnUnitTest {
             OmsOrder omsOrderMock = mock(OmsOrder.class);
             OmsOrderItem omsOrderItemMock = mock(OmsOrderItem.class);
             when(omsOrderMock.getItems()).thenReturn(List.of(omsOrderItemMock));
-            OmsReturn omsReturn = OmsReturn.createFromOrder(omsOrderMock);
+            OmsReturn omsReturn = OmsReturn.createFromOrder(omsOrderMock, "test-event");
 
             // when
             omsReturn.applyJudgement("전 제품 반려", false, false);
@@ -100,18 +100,18 @@ class OmsReturnUnitTest {
     class RefundTest {
 
         @Test
-        void 검수_성공_시_COMPLETED_상태로_전환된다() {
+        void 검수_성공_시_REFUND_PENDING_상태로_전환된다() {
             // given
             OmsOrder omsOrderMock = mock(OmsOrder.class);
             OmsOrderItem omsOrderItemMock = mock(OmsOrderItem.class);
             when(omsOrderMock.getItems()).thenReturn(List.of(omsOrderItemMock));
-            OmsReturn omsReturn = OmsReturn.createFromOrder(omsOrderMock);
+            OmsReturn omsReturn = OmsReturn.createFromOrder(omsOrderMock, "test-event");
 
             // when
             omsReturn.recordRefund(4000L, 1000L);
 
             // then
-            assertThat(omsReturn.getStatus()).isEqualTo(OmsReturnStatus.COMPLETED);
+            assertThat(omsReturn.getStatus()).isEqualTo(OmsReturnStatus.REFUND_PENDING);
             assertThat(omsReturn.getTotalRefundAmount()).isEqualTo(4000L);
             assertThat(omsReturn.getDeductedShippingFee()).isEqualTo(1000L);
         }
@@ -122,7 +122,7 @@ class OmsReturnUnitTest {
             OmsOrder omsOrderMock = mock(OmsOrder.class);
             OmsOrderItem omsOrderItemMock = mock(OmsOrderItem.class);
             when(omsOrderMock.getItems()).thenReturn(List.of(omsOrderItemMock));
-            OmsReturn omsReturn = OmsReturn.createFromOrder(omsOrderMock);
+            OmsReturn omsReturn = OmsReturn.createFromOrder(omsOrderMock, "test-event");
 
             // when
             omsReturn.recordInspectionFailure();

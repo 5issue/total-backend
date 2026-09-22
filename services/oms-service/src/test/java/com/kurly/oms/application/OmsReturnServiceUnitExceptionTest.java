@@ -187,6 +187,32 @@ class OmsReturnServiceUnitExceptionTest {
         }
     }
 
+    @Test
+    void duplicateJudgementIsRejectedBeforeMutatingItems() {
+        OmsReturn omsReturn = mock(OmsReturn.class);
+        when(omsReturnRepository.findByOmsOrderIdWithDetails(10L)).thenReturn(Optional.of(omsReturn));
+        ReturnJudgementRequest request = new ReturnJudgementRequest(null, List.of(
+                new ReturnJudgementRequest.ItemJudgement(1L, ReturnDecision.APPROVE_LOGISTICS, null),
+                new ReturnJudgementRequest.ItemJudgement(1L, ReturnDecision.REJECT, "duplicate")
+        ));
+        assertThatThrownBy(() -> omsReturnService.judgeReturn(10L, request))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode").isEqualTo(OmsErrorCode.OMS_INVALID_STATUS);
+    }
+
+    @Test
+    void wmsApprovalOutsideReturnIsRejected() {
+        OmsReturn omsReturn = mock(OmsReturn.class);
+        when(omsReturn.getStatus()).thenReturn(OmsReturnStatus.PROCESSING);
+        when(omsReturn.getItems()).thenReturn(List.of());
+        when(omsReturnRepository.findByIdWithDetails(1L)).thenReturn(Optional.of(omsReturn));
+        WmsReturnInspectedMessage message = new WmsReturnInspectedMessage(
+                UUID.randomUUID(), 1L, 10L, "APPROVED", "CUSTOMER", List.of(999L), List.of(), null, LocalDateTime.now());
+        assertThatThrownBy(() -> omsReturnService.processInspectionResult(message))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode").isEqualTo(OmsErrorCode.OMS_INVALID_STATUS);
+    }
+
     @Nested
     @DisplayName("환불 완료 처리 예외 (completeRefund)")
     class CompleteRefundExceptionTest {

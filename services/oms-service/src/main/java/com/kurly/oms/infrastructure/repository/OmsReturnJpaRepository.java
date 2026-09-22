@@ -12,6 +12,8 @@ public interface OmsReturnJpaRepository extends JpaRepository<OmsReturn, Long>, 
 
     boolean existsByOmsOrderId(Long omsOrderId);
 
+    boolean existsBySourceEventId(String sourceEventId);
+
     @Query("""
             SELECT DISTINCT r FROM OmsReturn r
             LEFT JOIN FETCH r.items ri

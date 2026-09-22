@@ -7,6 +7,10 @@ public interface OmsReturnRepository {
 
     boolean existsByOmsOrderId(Long omsOrderId);
 
+    boolean existsBySourceEventId(String sourceEventId);
+
+    OmsReturn saveAndFlush(OmsReturn omsReturn);
+
     Optional<OmsReturn> findByOmsOrderIdWithDetails(Long omsOrderId);
 
     Optional<OmsReturn> findByIdWithDetails(Long returnId);

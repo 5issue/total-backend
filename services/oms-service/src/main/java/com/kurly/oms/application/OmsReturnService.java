@@ -17,6 +17,9 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.Set;
+import org.springframework.dao.DataIntegrityViolationException;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -30,22 +33,30 @@ public class OmsReturnService {
     private final OmsOrderRepository omsOrderRepository;
     private final OmsReturnRepository omsReturnRepository;
     private final ApplicationEventPublisher eventPublisher;
+    private final OmsReturnCreator returnCreator;
 
-    @Transactional
     public void receiveReturn(OrderReturnRequestedMessage event) {
-        OmsOrder omsOrder = omsOrderRepository.findByOrderId(event.orderId())
-                .orElseThrow(() -> new BusinessException(OmsErrorCode.OMS_ORDER_NOT_FOUND));
-
-        if (omsReturnRepository.existsByOmsOrderId(omsOrder.getId())) {
-            log.warn("[OmsReturnService] 이미 반품 접수된 주문입니다. omsOrderId={}", omsOrder.getId());
+        String sourceEventId = event.eventId().toString();
+        if (omsReturnRepository.existsBySourceEventId(sourceEventId)) {
+            log.info("[OmsReturnService] 이미 처리된 반품 이벤트 sourceEventId={}", sourceEventId);
             return;
         }
-
-        OmsReturn omsReturn = OmsReturn.createFromOrder(omsOrder);
-        omsReturnRepository.save(omsReturn);
-
-        log.info("[OmsReturnService] OmsReturn 생성 완료 omsOrderId={}, returnId={}",
-                omsOrder.getId(), omsReturn.getId());
+        OmsOrder omsOrder = omsOrderRepository.findByOrderId(event.orderId())
+                .orElseThrow(() -> new BusinessException(OmsErrorCode.OMS_ORDER_NOT_FOUND));
+        if (omsReturnRepository.existsByOmsOrderId(omsOrder.getId())) {
+            log.info("[OmsReturnService] 이미 반품 접수된 주문입니다. omsOrderId={}", omsOrder.getId());
+            return;
+        }
+        try {
+            OmsReturn omsReturn = returnCreator.create(event.orderId(), sourceEventId);
+            log.info("[OmsReturnService] OmsReturn 생성 완료 omsOrderId={}, returnId={}", omsOrder.getId(), omsReturn.getId());
+        } catch (DataIntegrityViolationException duplicate) {
+            if (!omsReturnRepository.existsBySourceEventId(sourceEventId)
+                    && !omsReturnRepository.existsByOmsOrderId(omsOrder.getId())) {
+                throw duplicate;
+            }
+            log.info("[OmsReturnService] 동시 반품 접수 중복 omsOrderId={}", omsOrder.getId());
+        }
     }
 
     @Transactional
@@ -55,6 +66,13 @@ public class OmsReturnService {
 
         Map<Long, OmsReturnItem> returnItemMap = omsReturn.getItems().stream()
                 .collect(Collectors.toMap(OmsReturnItem::getOmsOrderItemId, item -> item));
+
+        Set<Long> judgedIds = new HashSet<>();
+        for (ReturnJudgementRequest.ItemJudgement judgement : request.judgements()) {
+            if (!judgedIds.add(judgement.omsOrderItemId())) {
+                throw new BusinessException(OmsErrorCode.OMS_INVALID_STATUS, "중복 판정 품목 ID: " + judgement.omsOrderItemId());
+            }
+        }
 
         List<Long> coldApprovedItemIds = new ArrayList<>();
         List<Long> logisticsApprovedItemIds = new ArrayList<>();
@@ -127,7 +145,16 @@ public class OmsReturnService {
             throw new BusinessException(OmsErrorCode.OMS_INVALID_STATUS);
         }
 
-        if (message.approvedItemIds().isEmpty()) {
+        Set<Long> eligibleIds = omsReturn.getItems().stream()
+                .filter(item -> item.getDecision() == ReturnDecision.APPROVE_LOGISTICS)
+                .map(OmsReturnItem::getOmsOrderItemId).collect(Collectors.toSet());
+        Set<Long> approvedIds = new HashSet<>(message.approvedItemIds());
+        if (approvedIds.size() != message.approvedItemIds().size() || !eligibleIds.containsAll(approvedIds)) {
+            log.warn("[OmsReturnService] 반품 대상이 아닌 WMS 승인 품목: returnId={}, approvedIds={}", message.omsReturnId(), approvedIds);
+            throw new BusinessException(OmsErrorCode.OMS_INVALID_STATUS);
+        }
+
+        if (approvedIds.isEmpty()) {
             log.warn("[OmsReturnService] 검수 전량 불합격 처리: returnId={}, note={}", message.omsReturnId(), message.wmsNote());
 
             // 기존 APPROVE_COLDCHAIN 승인된 건만 발행
@@ -153,7 +180,7 @@ public class OmsReturnService {
         // 통합 환불 대상 = 기존 APPROVE_COLDCHAIN 품목 금액 + WMS 검수 합격(APPROVE_LOGISTICS) 품목 금액
         List<OmsReturnItem> allApprovedItems = omsReturn.getItems().stream()
                 .filter(item -> item.getDecision() == ReturnDecision.APPROVE_COLDCHAIN
-                                || (item.getDecision() == ReturnDecision.APPROVE_LOGISTICS && message.approvedItemIds().contains(item.getOmsOrderItemId())))
+                                || (item.getDecision() == ReturnDecision.APPROVE_LOGISTICS && approvedIds.contains(item.getOmsOrderItemId())))
                 .toList();
 
         long totalApprovedAmount = allApprovedItems.stream()
@@ -161,7 +188,7 @@ public class OmsReturnService {
                 .sum();
 
         // 귀책 사유에 따른 배송비 차감 (고객 변심 시 3,000원)
-        long deductedFee = "CUSTOMER".equalsIgnoreCase(message.faultType()) ? RETURN_SHIPPING_FEE : 0L;
+        long deductedFee = ReturnFaultType.from(message.faultType()) == ReturnFaultType.CUSTOMER ? RETURN_SHIPPING_FEE : 0L;
         long finalRefundAmount = Math.max(0L, totalApprovedAmount - deductedFee);
 
         omsReturn.recordRefund(finalRefundAmount, deductedFee);
@@ -187,10 +214,15 @@ public class OmsReturnService {
         OmsReturn omsReturn = omsReturnRepository.findByIdWithDetails(message.omsReturnId())
                 .orElseThrow(() -> new BusinessException(OmsErrorCode.OMS_RETURN_NOT_FOUND));
 
-        if (!omsReturn.getTotalRefundAmount().equals(message.refundAmount())) {
+        if (!java.util.Objects.equals(omsReturn.getTotalRefundAmount(), message.refundAmount())) {
             throw new IllegalStateException("환불 금액이 일치하지 않습니다.");
         }
-
+        if (omsReturn.getStatus() == OmsReturnStatus.COMPLETED) {
+            return;
+        }
+        if (omsReturn.getStatus() != OmsReturnStatus.REFUND_PENDING) {
+            throw new BusinessException(OmsErrorCode.OMS_INVALID_STATUS);
+        }
         omsReturn.completeRefund();
     }
 }
