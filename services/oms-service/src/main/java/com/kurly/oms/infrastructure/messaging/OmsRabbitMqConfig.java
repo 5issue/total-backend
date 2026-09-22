@@ -12,6 +12,7 @@ public class OmsRabbitMqConfig {
     // ==========================================
     public static final String EXCHANGE_ORDER = "order.topic.exchange";
     public static final String EXCHANGE_OMS = "oms.topic.exchange";
+    public static final String EXCHANGE_PAYMENT = "payment.topic.exchange";
 
     // ==========================================
     // Routing Keys
@@ -67,10 +68,8 @@ public class OmsRabbitMqConfig {
     }
 
     @Bean
-    Binding paymentCompletedBinding(Queue paymentCompletedQueue, TopicExchange orderTopicExchange) {
-        return BindingBuilder.bind(paymentCompletedQueue)
-                .to(orderTopicExchange)
-                .with(ROUTING_KEY_ORDER_PAYMENT_COMPLETED);
+    Binding paymentCompletedBinding() {
+        return new Binding(QUEUE_PAYMENT_COMPLETED, Binding.DestinationType.QUEUE, EXCHANGE_ORDER, ROUTING_KEY_ORDER_PAYMENT_COMPLETED, null);
     }
 
     // ==========================================
@@ -90,10 +89,8 @@ public class OmsRabbitMqConfig {
     }
 
     @Bean
-    Binding returnRequestedBinding(Queue returnRequestedQueue, TopicExchange orderTopicExchange) {
-        return BindingBuilder.bind(returnRequestedQueue)
-                .to(orderTopicExchange)
-                .with(ROUTING_KEY_ORDER_RETURN_REQUESTED);
+    Binding returnRequestedBinding() {
+        return new Binding(QUEUE_RETURN_REQUESTED, Binding.DestinationType.QUEUE, EXCHANGE_ORDER, ROUTING_KEY_ORDER_RETURN_REQUESTED, null);
     }
 
     // ==========================================
@@ -113,10 +110,8 @@ public class OmsRabbitMqConfig {
     }
 
     @Bean
-    Binding wmsInspectedBinding(Queue wmsInspectedQueue, TopicExchange omsTopicExchange) {
-        return BindingBuilder.bind(wmsInspectedQueue)
-                .to(omsTopicExchange)
-                .with(ROUTING_KEY_WMS_INSPECTED);
+    Binding wmsInspectedBinding() {
+        return new Binding(QUEUE_WMS_INSPECTED, Binding.DestinationType.QUEUE, EXCHANGE_OMS, ROUTING_KEY_WMS_INSPECTED, null);
     }
 
     // ==========================================
@@ -136,9 +131,7 @@ public class OmsRabbitMqConfig {
     }
 
     @Bean
-    Binding paymentRefundedBinding(Queue paymentRefundedQueue, TopicExchange omsTopicExchange) {
-        return BindingBuilder.bind(paymentRefundedQueue)
-                .to(omsTopicExchange)
-                .with(ROUTING_KEY_PAYMENT_REFUNDED);
+    Binding paymentRefundedBinding() {
+        return new Binding(QUEUE_PAYMENT_REFUNDED, Binding.DestinationType.QUEUE, EXCHANGE_PAYMENT, ROUTING_KEY_PAYMENT_REFUNDED, null);
     }
 }

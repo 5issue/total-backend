@@ -219,7 +219,7 @@ class OmsOrderServiceUnitTest {
             OmsOrderItem orderItem = createDefaultOrderItem();
             OmsOrder order = createDefaultOrder(orderId, "001", 10L, 5000L, List.of(orderItem));
 
-            when(omsOrderRepository.findById(orderId)).thenReturn(Optional.of(order));
+            when(omsOrderRepository.findByOrderId(orderId)).thenReturn(Optional.of(order));
 
             // when
             CancelEligibilityResponseDto response = omsOrderService.checkCancelEligibility(orderId);
@@ -227,7 +227,7 @@ class OmsOrderServiceUnitTest {
             // then
             assertThat(response).isNotNull();
             assertThat(response.cancelable()).isTrue();
-            verify(omsOrderRepository).findById(orderId);
+            verify(omsOrderRepository).findByOrderId(orderId);
         }
     }
 }

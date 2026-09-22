@@ -157,6 +157,7 @@ CREATE TABLE shipment_items
     oms_order_item_id BIGINT      NOT NULL,
     quantity          INT         NOT NULL,
     created_at        TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at        TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT fk_shipment_items_shipment FOREIGN KEY (shipment_id) REFERENCES shipments (id) ON DELETE CASCADE,
     CONSTRAINT fk_shipment_items_order_item FOREIGN KEY (oms_order_item_id) REFERENCES oms_order_items (id)
 );

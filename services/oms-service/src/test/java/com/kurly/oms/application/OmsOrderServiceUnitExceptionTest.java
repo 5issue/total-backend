@@ -189,7 +189,7 @@ class OmsOrderServiceUnitExceptionTest {
         void 주문이_존재하지_않으면_OMS_ORDER_NOT_FOUND_예외가_발생한다() {
             // given
             Long orderId = 999L;
-            when(omsOrderRepository.findById(orderId)).thenReturn(Optional.empty());
+            when(omsOrderRepository.findByOrderId(orderId)).thenReturn(Optional.empty());
 
             // when & then
             assertThatThrownBy(() -> omsOrderService.checkCancelEligibility(orderId))

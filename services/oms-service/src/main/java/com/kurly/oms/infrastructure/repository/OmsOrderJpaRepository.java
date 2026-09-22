@@ -20,9 +20,9 @@ public interface OmsOrderJpaRepository extends JpaRepository<OmsOrder, Long>, Om
                 o.orderId,
                 o.orderNo,
                 CAST(o.status AS string),
-                COUNT(s.id),
+                COUNT(DISTINCT s.id),
                 r.regionName,
-                fc.centerName
+                CASE WHEN COUNT(DISTINCT fc.id) > 1 THEN '복수 센터' ELSE MIN(fc.centerName) END
             )
             FROM OmsOrder o
             LEFT JOIN Shipment s ON s.omsOrderId = o.id
@@ -31,10 +31,10 @@ public interface OmsOrderJpaRepository extends JpaRepository<OmsOrder, Long>, Om
             WHERE (:orderNo IS NULL OR o.orderNo = :orderNo)
             AND (:status IS NULL OR CAST(o.status AS string) = :status)
             AND (:regionId IS NULL OR o.regionId = :regionId)
-            AND (:centerId IS NULL OR s.centerId = :centerId)
+            AND (:centerId IS NULL OR EXISTS (SELECT 1 FROM Shipment filtered WHERE filtered.omsOrderId = o.id AND filtered.centerId = :centerId))
             AND (CAST(:startAt AS timestamp) IS NULL OR o.createdAt >= :startAt)
             AND (CAST(:endAt AS timestamp) IS NULL OR o.createdAt <= :endAt)
-            GROUP BY o.id, o.orderId, o.orderNo, o.status, r.regionName, fc.centerName
+            GROUP BY o.id, o.orderId, o.orderNo, o.status, r.regionName
             ORDER BY o.id DESC
             """,
             countQuery = """
@@ -44,7 +44,7 @@ public interface OmsOrderJpaRepository extends JpaRepository<OmsOrder, Long>, Om
                     WHERE (:orderNo IS NULL OR o.orderNo = :orderNo)
                     AND (:status IS NULL OR CAST(o.status AS string) = :status)
                     AND (:regionId IS NULL OR o.regionId = :regionId)
-                    AND (:centerId IS NULL OR s.centerId = :centerId)
+                    AND (:centerId IS NULL OR EXISTS (SELECT 1 FROM Shipment filtered WHERE filtered.omsOrderId = o.id AND filtered.centerId = :centerId))
                     AND (CAST(:startAt AS timestamp) IS NULL OR o.createdAt >= :startAt)
                     AND (CAST(:endAt AS timestamp) IS NULL OR o.createdAt <= :endAt)
                     """)
