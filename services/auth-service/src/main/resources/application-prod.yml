@@ -71,9 +71,10 @@ user-service:
   base-url: ${USER_SERVICE_BASE_URL}
 
 oauth:
-  allowed-redirect-uris:
-    - ${OAUTH_REDIRECT_URI_KAKAO}
-    - ${OAUTH_REDIRECT_URI_NAVER}
+  # 인가 코드 가로채기를 막기 위한 화이트리스트(BE-01). 콘솔 등록값과 완전 일치해야 한다.
+  # 콤마 구분(CORS_ALLOWED_ORIGINS와 같은 형식). 프론트 콜백으로 전환하는 동안
+  # 기존 백엔드 콜백도 함께 나열하면 두 방식이 동시에 동작한다.
+  allowed-redirect-uris: ${OAUTH_ALLOWED_REDIRECT_URIS}
   frontend-redirect-uri: ${OAUTH_FRONTEND_REDIRECT_URI}
   providers:
     kakao:
