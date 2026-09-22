@@ -1,6 +1,8 @@
 spring:
   application:
     name: oms-service
+  profiles:
+    default: local
   rabbitmq:
     host: ${RABBITMQ_HOST:localhost}
     port: ${RABBITMQ_PORT:5672}
