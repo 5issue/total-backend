@@ -41,7 +41,7 @@ public class OmsOrderService {
         if (omsOrderRepository.existsBySourceEventId(event.eventId().toString()) ||
             omsOrderRepository.existsByOrderId(event.orderId())
         ) {
-            log.info("[OMS_ORDER_CREATE] 이미 처리된 주문 이벤트입니다. eventId: {}, orderId: {}", event.eventId(), event.orderId());
+            log.info("[OmsOrderService] 이미 처리된 주문 이벤트입니다. eventId: {}, orderId: {}", event.eventId(), event.orderId());
             return;
         }
 
@@ -73,7 +73,7 @@ public class OmsOrderService {
         try {
             omsOrderRepository.save(omsOrder);
         } catch (DataIntegrityViolationException e) {
-            log.warn("[Idempotent Concurrent] DB UNIQUE 제약조건 위반 발생. 이미 생성된 주문으로 간주하여 성공 처리합니다. eventId: {}, orderId: {}", event.eventId(), event.orderId());
+            log.warn("[OmsOrderService] DB UNIQUE 제약조건 위반 발생. 이미 생성된 주문으로 간주하여 성공 처리합니다. eventId: {}, orderId: {}", event.eventId(), event.orderId());
         }
     }
 
@@ -99,7 +99,7 @@ public class OmsOrderService {
         TamRegion region = tamRegionRepository.findById(order.getRegionId())
                 .orElseThrow(() -> {
                     log.error(
-                            "[데이터 정합성 오류] OmsOrder={}의 TamRegion={}이 존재하지 않습니다.",
+                            "[OmsOrderService] [데이터 정합성 오류] OmsOrder={}의 TamRegion={}이 존재하지 않습니다.",
                             order.getId(),
                             order.getRegionId()
                     );
@@ -118,7 +118,7 @@ public class OmsOrderService {
                                       .map(FulfillmentCenter::getCenterName)
                                       .orElseThrow(() -> {
                                           log.error(
-                                                  "[데이터 정합성 오류] Shipment={}의 FulfillmentCenter={}가 존재하지 않습니다.",
+                                                  "[OmsOrderService] [데이터 정합성 오류] Shipment={}의 FulfillmentCenter={}가 존재하지 않습니다.",
                                                   shipment.getId(),
                                                   shipment.getCenterId()
                                           );
@@ -131,7 +131,7 @@ public class OmsOrderService {
                                       .map(DeliverySlot::getSlotName)
                                       .orElseThrow(() -> {
                                           log.error(
-                                                  "[데이터 정합성 오류] Shipment={}의 DeliverySlot={}이 존재하지 않습니다.",
+                                                  "[OmsOrderService] [데이터 정합성 오류] Shipment={}의 DeliverySlot={}이 존재하지 않습니다.",
                                                   shipment.getId(),
                                                   shipment.getSlotId()
                                           );
@@ -145,7 +145,7 @@ public class OmsOrderService {
 
                                                 if (orderItem == null) {
                                                     log.error(
-                                                            "[데이터 정합성 오류] ShipmentItem={}이 참조하는 OmsOrderItem={}이 주문에 존재하지 않습니다.",
+                                                            "[OmsOrderService] [데이터 정합성 오류] ShipmentItem={}이 참조하는 OmsOrderItem={}이 주문에 존재하지 않습니다.",
                                                             shipmentItem.getId(),
                                                             shipmentItem.getOmsOrderItemId()
                                                     );
