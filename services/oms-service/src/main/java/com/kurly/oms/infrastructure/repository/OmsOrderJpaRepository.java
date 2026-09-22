@@ -64,4 +64,8 @@ public interface OmsOrderJpaRepository extends JpaRepository<OmsOrder, Long>, Om
             WHERE o.id = :omsOrderId
             """)
     Optional<OmsOrder> findByIdWithItems(@Param("omsOrderId") Long omsOrderId);
+
+    boolean existsBySourceEventId(String sourceEventId);
+
+    boolean existsByOrderId(Long orderId);
 }

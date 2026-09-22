@@ -13,6 +13,7 @@ import com.kurly.oms.infrastructure.messaging.OrderPaymentCompletedMessage;
 import com.kurly.oms.presentation.dto.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -36,6 +37,14 @@ public class OmsOrderService {
 
     @Transactional
     public void createOrder(OrderPaymentCompletedMessage event) {
+
+        if (omsOrderRepository.existsBySourceEventId(event.eventId().toString()) ||
+            omsOrderRepository.existsByOrderId(event.orderId())
+        ) {
+            log.info("[OMS_ORDER_CREATE] 이미 처리된 주문 이벤트입니다. eventId: {}, orderId: {}", event.eventId(), event.orderId());
+            return;
+        }
+
         List<OmsOrderItem> items = event.items().stream()
                 .map(item -> OmsOrderItem.create(
                         item.orderItemId(),
@@ -61,7 +70,11 @@ public class OmsOrderService {
                 items
         );
 
-        omsOrderRepository.save(omsOrder);
+        try {
+            omsOrderRepository.save(omsOrder);
+        } catch (DataIntegrityViolationException e) {
+            log.warn("[Idempotent Concurrent] DB UNIQUE 제약조건 위반 발생. 이미 생성된 주문으로 간주하여 성공 처리합니다. eventId: {}, orderId: {}", event.eventId(), event.orderId());
+        }
     }
 
     @Transactional(readOnly = true)

@@ -26,4 +26,8 @@ public interface OmsOrderRepository {
     );
 
     Optional<OmsOrder> findByIdWithItems(Long omsOrderId);
+
+    boolean existsBySourceEventId(String sourceEventId);
+
+    boolean existsByOrderId(Long orderId);
 }
