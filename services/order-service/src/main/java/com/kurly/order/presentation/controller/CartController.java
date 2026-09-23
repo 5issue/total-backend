@@ -6,7 +6,7 @@ import com.kurly.common.security.Authenticated;
 import com.kurly.common.security.AuthenticatedPrincipal;
 import com.kurly.order.application.CartService;
 import com.kurly.order.presentation.api.CartApi;
-import com.kurly.order.presentation.dto.AddCartItemRequestDto;
+import com.kurly.order.presentation.dto.AddCartItemsRequestDto;
 import com.kurly.order.presentation.dto.CartResponseDto;
 import com.kurly.order.presentation.dto.DeliveryAddressRequestDto;
 import com.kurly.order.presentation.dto.DeliveryAddressResponseDto;
@@ -24,12 +24,12 @@ public class CartController implements CartApi {
 
     @Override
     @PostMapping("/items")
-    public ApiResponse<CartResponseDto> addItem(
+    public ApiResponse<CartResponseDto> addItems(
             @AuthPrincipal AuthenticatedPrincipal me,
-            @Valid @RequestBody AddCartItemRequestDto request
+            @Valid @RequestBody AddCartItemsRequestDto request
     ) {
         return ApiResponse.success("장바구니에 상품을 추가했습니다.",
-                cartService.addItem(me, request));
+                cartService.addItems(me, request));
     }
 
     @Override

@@ -21,6 +21,8 @@ public enum OrderErrorCode implements ErrorCode {
     ORD_MISSING_RETURN_EVIDENCE(HttpStatus.BAD_REQUEST, "사진 증빙이 필요한 반품 사유입니다."),
     ORD_INVALID_RETURN_EVIDENCE(HttpStatus.BAD_REQUEST, "유효하지 않은 반품 사진입니다."),
     ORD_INVALID_PAGE(HttpStatus.BAD_REQUEST, "페이지 번호 및 크기가 올바르지 않습니다."),
+    ORD_ITEM_SOLD_OUT(HttpStatus.BAD_REQUEST, "품절된 상품입니다."),
+    ORD_EXCEED_MAX_QUANTITY(HttpStatus.BAD_REQUEST, "1회 최대 주문 가능 수량을 초과했습니다."),
 
     // 404 NOT_FOUND
     ORD_NOT_FOUND_ADDRESS(HttpStatus.NOT_FOUND, "배송지를 먼저 설정해 주세요."),

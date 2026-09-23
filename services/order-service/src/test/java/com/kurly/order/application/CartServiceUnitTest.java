@@ -9,8 +9,9 @@ import com.kurly.order.domain.cart.CartRepository;
 import com.kurly.order.domain.cart.DeliveryType;
 import com.kurly.order.domain.common.OrderErrorCode;
 import com.kurly.order.domain.common.StorageType;
+import com.kurly.order.infrastructure.dto.CartProductInfo;
+import com.kurly.order.presentation.dto.AddCartItemsRequestDto;
 import com.kurly.order.presentation.dto.CartResponseDto;
-import com.kurly.order.presentation.dto.AddCartItemRequestDto;
 import com.kurly.order.presentation.dto.DeliveryAddressResponseDto;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -35,8 +36,10 @@ class CartServiceUnitTest {
 
     @Mock
     CartRepository cartRepository;
+
     @Mock
     CartExternalService externalService;
+
     @InjectMocks
     CartService cartService;
 
@@ -49,17 +52,33 @@ class CartServiceUnitTest {
 
     @Test
     void 이미_담긴_상품은_수량을_합산한다() {
+        // given
         Cart cart = Cart.create(1L);
         CartItem cartItem = CartItem.create(100L, StorageType.REFRIGERATED, 1);
         cart.addItem(cartItem);
-        CartResponseDto.Product product = new CartResponseDto.Product(
-                100L, 100L, "샐러드", null, 1000L, 10, true,
-                null, StorageType.REFRIGERATED, null, null, 0L);
+
+        CartProductInfo productInfo = new CartProductInfo(
+                100L,
+                "샐러드",
+                1000L,
+                null,
+                StorageType.REFRIGERATED,
+                "SALE",
+                "그린팜",
+                new CartProductInfo.InventoryInfo(10, false, 10)
+        );
+
         when(cartRepository.findByMemberIdForUpdate(1L)).thenReturn(Optional.of(cart));
-        when(externalService.getProducts(List.of(100L))).thenReturn(List.of(product));
+        when(externalService.getProducts(List.of(100L))).thenReturn(List.of(productInfo));
 
-        cartService.addItem(me, new AddCartItemRequestDto(100L, 2));
+        AddCartItemsRequestDto request = new AddCartItemsRequestDto(
+                List.of(new AddCartItemsRequestDto.CartItemRequest(100L, 2))
+        );
 
+        // when
+        cartService.addItems(me, request);
+
+        // then
         assertThat(cartItem.getQuantity()).isEqualTo(3);
     }
 
@@ -69,29 +88,36 @@ class CartServiceUnitTest {
 
         @Test
         void 장바구니가_없으면_생성하고_기본_배송지를_적용한다() {
+            // given
             CartResponseDto.Address address = new CartResponseDto.Address(
                     10L, "집", "홍길동", "01000000000", "12345", "서울시", "101호");
             Cart cart = Cart.create(1L);
+
             when(cartRepository.findByMemberIdForUpdate(1L)).thenReturn(Optional.of(cart));
             when(externalService.getAddress(1L, null)).thenReturn(address);
             when(externalService.getProducts(List.of())).thenReturn(List.of());
 
+            // when
             var response = cartService.getByMemberId(me);
 
+            // then
             assertThat(response.selectedAddress()).isEqualTo(address);
             verify(cartRepository).createIfAbsent(1L);
         }
 
         @Test
         void 상품_응답이_누락되면_합계를_반환하지_않는다() {
+            // given
             Cart cart = Cart.create(1L);
             cart.addItem(CartItem.create(100L, StorageType.ROOM_TEMPERATURE, 1));
             CartResponseDto.Address address = new CartResponseDto.Address(
                     10L, "집", "홍길동", "01000000000", "12345", "서울시", "101호");
+
             when(cartRepository.findByMemberIdForUpdate(1L)).thenReturn(Optional.of(cart));
             when(externalService.getAddress(1L, null)).thenReturn(address);
             when(externalService.getProducts(List.of(100L))).thenReturn(List.of());
 
+            // when & then
             assertThatThrownBy(() -> cartService.getByMemberId(me))
                     .isInstanceOf(BusinessException.class)
                     .extracting("errorCode")
@@ -105,18 +131,22 @@ class CartServiceUnitTest {
 
         @Test
         void 회원_배송지를_검증하고_배송약속을_갱신한다() {
+            // given
             Cart cart = Cart.create(1L);
             CartResponseDto.Address address = new CartResponseDto.Address(
                     10L, "집", "홍길동", "01000000000", "12345", "서울시", "101호");
             LocalDateTime expectedAt = LocalDateTime.now().plusDays(1);
             DeliveryAddressResponseDto.Promise promise = new DeliveryAddressResponseDto.Promise(
                     true, 20L, DeliveryType.DAWN, LocalDateTime.now().plusHours(2), expectedAt);
+
             when(cartRepository.findByMemberIdForUpdate(1L)).thenReturn(Optional.of(cart));
             when(externalService.getAddress(1L, 10L)).thenReturn(address);
             when(externalService.getDeliveryPromise(address)).thenReturn(promise);
 
+            // when
             var response = cartService.updateDeliveryAddress(me, 10L);
 
+            // then
             assertThat(response.expectedDeliveryAt()).isEqualTo(expectedAt);
             assertThat(cart.getAddressId()).isEqualTo(10L);
             assertThat(cart.getRegionId()).isEqualTo(20L);
