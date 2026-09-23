@@ -16,10 +16,11 @@ class OrderEventPublisherUnitTest {
         RabbitTemplate rabbitTemplate = mock(RabbitTemplate.class);
         OrderEventPublisher publisher = new OrderEventPublisher(rabbitTemplate);
         UUID eventId = UUID.randomUUID();
+        UUID reservationToken = UUID.randomUUID();
         LocalDateTime now = LocalDateTime.now();
-        var restore = new OrderInventoryRestoreEvent(eventId, "rsv", 1L, 2L, List.of(), now);
-        var release = new OrderInventoryReleaseEvent(eventId, "rsv", 1L, 2L, List.of(), now);
-        var confirm = new OrderInventoryConfirmEvent(eventId, "rsv", 1L, 2L, List.of(), now);
+        var restore = new OrderInventoryRestoreEvent(eventId, reservationToken, 1L, 2L, List.of(), now);
+        var release = new OrderInventoryReleaseEvent(eventId, reservationToken, 1L, 2L, List.of(), now);
+        var confirm = new OrderInventoryConfirmEvent(eventId, reservationToken, 1L, 2L, List.of(), now);
 
         publisher.publishInventoryRestore(restore);
         publisher.publishInventoryRelease(release);

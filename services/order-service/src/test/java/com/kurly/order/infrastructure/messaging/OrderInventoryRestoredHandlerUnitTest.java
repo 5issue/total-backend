@@ -23,7 +23,8 @@ class OrderInventoryRestoredHandlerUnitTest {
         handler.handle(event("RESTORED"));
         handler.handle(event("ALREADY_RESTORED"));
 
-        verify(orderService, times(2)).completeCancel(501L, "rsv_test");
+        verify(orderService).completeCancel(501L, "RESTORED");
+        verify(orderService).completeCancel(501L, "ALREADY_RESTORED");
         verifyNoMoreInteractions(orderService);
     }
 

@@ -5,13 +5,14 @@ import com.kurly.common.security.AuthenticatedPrincipal;
 import com.kurly.common.security.Role;
 import com.kurly.order.domain.cart.Cart;
 import com.kurly.order.domain.cart.CartItem;
+import com.kurly.order.domain.cart.CartItemRepository;
 import com.kurly.order.domain.cart.CartRepository;
 import com.kurly.order.domain.claim.OrderClaimRepository;
 import com.kurly.order.domain.common.OrderErrorCode;
 import com.kurly.order.domain.common.StorageType;
 import com.kurly.order.domain.order.*;
 import com.kurly.order.infrastructure.dto.AddressResponse;
-import com.kurly.order.presentation.dto.CheckoutInventoryResponseDto;
+import com.kurly.order.infrastructure.dto.CartProductInfo;
 import com.kurly.order.presentation.dto.CheckoutRequestDto;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -27,11 +28,11 @@ import org.springframework.test.util.ReflectionTestUtils;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyList;
-import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -44,6 +45,9 @@ class OrderServiceUnitTest {
     CartRepository cartRepository;
 
     @Mock
+    CartItemRepository cartItemRepository;
+
+    @Mock
     OrderClaimRepository orderClaimRepository;
 
     @Mock
@@ -54,6 +58,9 @@ class OrderServiceUnitTest {
 
     @Mock
     OrderExternalService externalService;
+
+    @Mock
+    CartExternalService cartExternalService;
 
     @InjectMocks
     OrderService orderService;
@@ -79,7 +86,7 @@ class OrderServiceUnitTest {
                     .isInstanceOf(BusinessException.class)
                     .extracting("errorCode")
                     .isEqualTo(OrderErrorCode.ORD_NOT_FOUND_ADDRESS);
-            verify(externalService, never()).holdInventory(anyString(), anyList());
+            verify(externalService, never()).holdInventory(any(), anyList());
         }
 
         @Test
@@ -87,13 +94,13 @@ class OrderServiceUnitTest {
             Cart cart = cartWithItems(new CartItemSpec(1L, 10L, 1), new CartItemSpec(2L, 11L, 1));
             AddressResponse address = new AddressResponse(
                     100L, "집", "홍길동", "01000000000", "12345", "서울시", "101호");
-            CheckoutInventoryResponseDto.Item duplicate = new CheckoutInventoryResponseDto.Item(
-                    10L, 101L, 1001L, "샐러드", null, StorageType.REFRIGERATED, 1, 1000L);
             when(cartRepository.findByMemberIdForUpdate(1L)).thenReturn(Optional.of(cart));
             when(externalService.getAddress(1L, 100L)).thenReturn(address);
             when(orderRepository.findActiveCheckoutForUpdate(1L)).thenReturn(Optional.empty());
-            when(externalService.holdInventory(anyString(), anyList()))
-                    .thenReturn(new CheckoutInventoryResponseDto(null, null, 0L, List.of(duplicate, duplicate)));
+            CartProductInfo duplicate = new CartProductInfo(
+                    10L, "샐러드", 1000L, null, StorageType.REFRIGERATED, "ON_SALE", null, null);
+            when(cartExternalService.getProducts(List.of(10L, 11L)))
+                    .thenReturn(List.of(duplicate, duplicate));
 
             assertThatThrownBy(() -> orderService.checkout(me, new CheckoutRequestDto(List.of(1L, 2L))))
                     .isInstanceOf(BusinessException.class)
@@ -126,19 +133,23 @@ class OrderServiceUnitTest {
             Order order = Order.createCheckout(
                     "O202609080001",
                     1L,
-                    "reservation",
+                    UUID.randomUUID(),
                     LocalDateTime.now().plusMinutes(15),
                     0L,
                     List.of(OrderItem.create(10L, 20L, 30L, "샐러드", null, StorageType.REFRIGERATED, 2, 16000L))
             );
             // 비관적 락 조회 Mocking
             when(orderRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(order));
+            Cart cart = Cart.create(1L);
+            cart.addItem(CartItem.create(10L, StorageType.REFRIGERATED, 2));
+            when(cartRepository.findByMemberIdForUpdate(1L)).thenReturn(Optional.of(cart));
 
             var response = orderService.placeOrder(me, 1L);
 
             assertThat(response.status()).isEqualTo(OrderStatus.PENDING_PAYMENT);
             assertThat(response.expiresAt()).isAfter(LocalDateTime.now().plusMinutes(4));
             assertThat(response.expiresAt()).isBefore(LocalDateTime.now().plusMinutes(6));
+            assertThat(cart.getItems()).isEmpty();
         }
     }
 }
