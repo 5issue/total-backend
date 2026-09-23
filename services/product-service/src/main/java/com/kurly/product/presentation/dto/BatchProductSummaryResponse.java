@@ -8,6 +8,7 @@ public record BatchProductSummaryResponse(
 ) {
     public record ProductSummaryItem(
             Long productId,
+            String skuId,
             String name,
             Long salePrice,
             String thumbnailUrl,
