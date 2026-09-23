@@ -15,7 +15,10 @@ spring:
 
 kurly:
   security:
-    enabled: false
+    enabled: true
+    issuer: ${JWT_ISSUER:https://auth.kurly.local}
+    audience: ${JWT_AUDIENCE:kurly-api}
+    jwks-uri: ${JWT_JWKS_URI:http://localhost:8081/.well-known/jwks.json}
 
 server:
   port: 8086
