@@ -1,15 +1,14 @@
 package com.kurly.order.infrastructure.client;
 
+import com.kurly.common.exception.BusinessException;
 import com.kurly.common.response.ApiResponse;
 import com.kurly.order.application.CartExternalService;
 import com.kurly.order.application.OrderExternalService;
 import com.kurly.order.domain.cart.CartItem;
+import com.kurly.order.domain.common.OrderErrorCode;
 import com.kurly.order.domain.common.StorageType;
-import com.kurly.order.infrastructure.dto.AddressResponse;
-import com.kurly.order.infrastructure.dto.CartProductInfo;
-import com.kurly.order.infrastructure.dto.DeliveryAddressResponseDto;
+import com.kurly.order.infrastructure.dto.*;
 import com.kurly.order.presentation.dto.CartResponseDto;
-import com.kurly.order.presentation.dto.CheckoutInventoryResponseDto;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -25,6 +24,7 @@ import org.springframework.web.context.request.ServletRequestAttributes;
 
 import java.time.Duration;
 import java.util.List;
+import java.util.UUID;
 
 @Component
 @Slf4j
@@ -50,26 +50,30 @@ public class OrderExternalServiceClient implements OrderExternalService, CartExt
     }
 
     @Override
-    public CheckoutInventoryResponseDto holdInventory(String reservationToken, List<CartItem> items) {
+    public void holdInventory(UUID reservationToken, List<CartItem> items) {
         var request = new InventoryHoldRequest(
                 reservationToken,
-                items.stream().map(item -> new InventoryHoldItem(item.getProductId(), item.getQuantity())).toList()
+                items.stream().map(item ->
+                        new InventoryHoldRequest.InventoryHoldItem(
+                                item.getProductId(),
+                                item.getQuantity())
+                ).toList()
         );
 
-        InventoryHoldApiResponse response = productClient.post()
+        ApiResponse<Void> response = productClient.post()
                 .uri("/internal/v1/products/inventory/hold")
                 .body(request)
                 .retrieve()
-                .body(InventoryHoldApiResponse.class);
+                .body(new ParameterizedTypeReference<ApiResponse<Void>>() {
+                });
 
-        if (response == null || response.data() == null) {
-            throw new IllegalStateException("상품 서비스의 재고 선점 응답이 비어 있습니다.");
+        if (response == null) {
+            throw new IllegalStateException("상품 서비스의 재고 선점 처리에 실패했습니다.");
         }
-        return response.data();
     }
 
     @Override
-    public void releaseInventory(String reservationToken) {
+    public void releaseInventory(UUID reservationToken) {
         productClient.post()
                 .uri("/internal/v1/products/inventory/release")
                 .body(new InventoryReleaseRequest(reservationToken))
@@ -78,12 +82,18 @@ public class OrderExternalServiceClient implements OrderExternalService, CartExt
     }
 
     @Override
-    public boolean isCancellationEligible(Long orderId) {
-        CancelEligibilityResponse response = omsClient.get()
+    public CancelEligibilityResponse getCancelEligibility(Long orderId) {
+        ApiResponse<CancelEligibilityResponse> response = omsClient.get()
                 .uri("/internal/v1/oms/orders/{orderId}/cancel-eligibility", orderId)
                 .retrieve()
-                .body(CancelEligibilityResponse.class);
-        return response != null && response.data() != null && "CANCELLABLE".equals(response.data().status());
+                .body(new ParameterizedTypeReference<ApiResponse<CancelEligibilityResponse>>() {
+                });
+
+        if (response == null || response.getData() == null) {
+            throw new BusinessException(OrderErrorCode.ORD_INCOMPLETE_PRODUCT_RESPONSE, "OMS 서비스 응답이 올바르지 않습니다.");
+        }
+
+        return response.getData();
     }
 
     @Override
@@ -193,22 +203,7 @@ public class OrderExternalServiceClient implements OrderExternalService, CartExt
     private record CancelPaymentRequest(String cancelReason) {
     }
 
-    private record CancelEligibility(String status) {
-    }
-
-    private record CancelEligibilityResponse(CancelEligibility data) {
-    }
-
-    private record InventoryHoldRequest(String reservationToken, List<InventoryHoldItem> items) {
-    }
-
-    private record InventoryHoldItem(Long productId, Integer quantity) {
-    }
-
-    private record InventoryReleaseRequest(String reservationToken) {
-    }
-
-    private record InventoryHoldApiResponse(CheckoutInventoryResponseDto data) {
+    private record InventoryReleaseRequest(UUID reservationToken) {
     }
 
     private record ProductRequest(List<Long> productIds) {

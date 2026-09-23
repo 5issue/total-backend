@@ -9,6 +9,8 @@ import com.kurly.order.presentation.dto.*;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.Positive;
 
 @Tag(name = "주문 API", description = "주문서 생성, 결제 요청, 취소 및 반품 관리")
 public interface OrderApi {
@@ -19,7 +21,7 @@ public interface OrderApi {
     @ApiErrorCodeExample(status = OrderErrorCode.class, code = "ORD_INSUFFICIENT_STOCK")
     ApiResponse<CheckoutResponseDto> checkout(
             @Parameter(hidden = true) AuthenticatedPrincipal me,
-            CheckoutRequestDto request
+            @Valid CheckoutRequestDto request
     );
 
     @Operation(summary = "내 주문 목록 페이징 조회", description = "기간 및 상품명 조건으로 주문 목록을 조회합니다.")
@@ -39,7 +41,7 @@ public interface OrderApi {
     @ApiErrorCodeExample(status = OrderErrorCode.class, code = "ORD_NOT_FOUND_ORDER")
     ApiResponse<OrderDetailResponseDto> detail(
             @Parameter(hidden = true) AuthenticatedPrincipal me,
-            @Parameter(description = "주문 ID") Long orderId
+            @Parameter(description = "주문 ID") @Positive Long orderId
     );
 
     @Operation(summary = "취소·반품 내역 조회", description = "신청된 취소 및 반품 클레임 목록을 조회합니다.")
@@ -62,7 +64,7 @@ public interface OrderApi {
     @ApiErrorCodeExample(status = OrderErrorCode.class, code = "ORD_EXPIRED_RETURN_PERIOD")
     ApiResponse<ReturnPreviewResponseDto> returnPreview(
             @Parameter(hidden = true) AuthenticatedPrincipal me,
-            @Parameter(description = "주문 ID") Long orderId
+            @Parameter(description = "주문 ID") @Positive Long orderId
     );
 
     @Operation(summary = "주문 결제 진행 요청", description = "주문을 결제 대기 상태(PAYMENT_PENDING)로 전이합니다.")
@@ -72,7 +74,7 @@ public interface OrderApi {
     @ApiErrorCodeExample(status = OrderErrorCode.class, code = "ORD_INVALID_STATUS")
     ApiResponse<PlaceOrderResponseDto> placeOrder(
             @Parameter(hidden = true) AuthenticatedPrincipal me,
-            PlaceOrderRequestDto request
+            @Valid PlaceOrderRequestDto request
     );
 
     @Operation(summary = "주문 취소 신청", description = "출고 지시 이전 상태인 주문의 전체 취소를 접수합니다.")
@@ -85,8 +87,8 @@ public interface OrderApi {
     @ApiErrorCodeExample(status = OrderErrorCode.class, code = "ORD_CONFLICT_RELEASE_STARTED")
     ApiResponse<OrderClaimResponseDto> cancel(
             @Parameter(hidden = true) AuthenticatedPrincipal me,
-            @Parameter(description = "주문 ID") Long orderId,
-            ClaimRequestDto request
+            @Parameter(description = "주문 ID") @Positive Long orderId,
+            @Valid ClaimRequestDto request
     );
 
     @Operation(summary = "반품 접수 신청", description = "배송 완료된 주문에 대해 사진 증빙과 함께 반품을 접수합니다.")
@@ -102,7 +104,7 @@ public interface OrderApi {
     @ApiErrorCodeExample(status = OrderErrorCode.class, code = "ORD_EXPIRED_RETURN_PERIOD")
     ApiResponse<OrderClaimResponseDto> createReturn(
             @Parameter(hidden = true) AuthenticatedPrincipal me,
-            @Parameter(description = "주문 ID") Long orderId,
-            ReturnRequestDto request
+            @Parameter(description = "주문 ID") @Positive Long orderId,
+            @Valid ReturnRequestDto request
     );
 }
