@@ -20,28 +20,28 @@ class OmsOrderItemUnitExceptionTest {
         static Stream<Arguments> invalidItemParameters() {
             return Stream.of(
                     Arguments.of("orderItemId 필수 누락", (Runnable) () ->
-                                    OmsOrderItem.create(null, 1001L, 2001L, StorageType.ROOM, 1, 1000L),
+                                    OmsOrderItem.create(null, 1001L, 2001L, StorageType.ROOM_TEMPERATURE, 1, 1000L),
                             "원 주문 상품 ID는 필수입니다."),
                     Arguments.of("productId 필수 누락", (Runnable) () ->
-                                    OmsOrderItem.create(101L, null, 2001L, StorageType.ROOM, 1, 1000L),
+                                    OmsOrderItem.create(101L, null, 2001L, StorageType.ROOM_TEMPERATURE, 1, 1000L),
                             "상품 ID는 필수입니다."),
                     Arguments.of("skuId 필수 누락", (Runnable) () ->
-                                    OmsOrderItem.create(101L, 1001L, null, StorageType.ROOM, 1, 1000L),
+                                    OmsOrderItem.create(101L, 1001L, null, StorageType.ROOM_TEMPERATURE, 1, 1000L),
                             "SKU ID는 필수입니다."),
                     Arguments.of("storageType 필수 누락", (Runnable) () ->
                                     OmsOrderItem.create(101L, 1001L, 2001L, null, 1, 1000L),
                             "보관 온도대는 필수입니다."),
                     Arguments.of("quantity 0 이하 예외", (Runnable) () ->
-                                    OmsOrderItem.create(101L, 1001L, 2001L, StorageType.ROOM, 0, 1000L),
+                                    OmsOrderItem.create(101L, 1001L, 2001L, StorageType.ROOM_TEMPERATURE, 0, 1000L),
                             "수량은 1개 이상이어야 합니다."),
                     Arguments.of("quantity 필수 누락", (Runnable) () ->
-                                    OmsOrderItem.create(101L, 1001L, 2001L, StorageType.ROOM, null, 1000L),
+                                    OmsOrderItem.create(101L, 1001L, 2001L, StorageType.ROOM_TEMPERATURE, null, 1000L),
                             "수량은 1개 이상이어야 합니다."),
                     Arguments.of("unitPrice 0 이하 예외", (Runnable) () ->
-                                    OmsOrderItem.create(101L, 1001L, 2001L, StorageType.ROOM, 1, 0L),
+                                    OmsOrderItem.create(101L, 1001L, 2001L, StorageType.ROOM_TEMPERATURE, 1, 0L),
                             "단가는 필수이며 0보다 커야 합니다."),
                     Arguments.of("unitPrice 필수 누락", (Runnable) () ->
-                                    OmsOrderItem.create(101L, 1001L, 2001L, StorageType.ROOM, 1, null),
+                                    OmsOrderItem.create(101L, 1001L, 2001L, StorageType.ROOM_TEMPERATURE, 1, null),
                             "단가는 필수이며 0보다 커야 합니다.")
             );
         }

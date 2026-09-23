@@ -55,7 +55,7 @@ class OmsReturnItemUnitTest {
         @Test
         void REJECT_판정_시_사유가_정상_기록된다() {
             // given
-            OmsOrderItem orderItem = OmsOrderItem.create(101L, 1001L, 2001L, StorageType.ROOM, 1, 5000L);
+            OmsOrderItem orderItem = OmsOrderItem.create(101L, 1001L, 2001L, StorageType.ROOM_TEMPERATURE, 1, 5000L);
             OmsReturnItem returnItem = OmsReturnItem.create(orderItem);
 
             // when

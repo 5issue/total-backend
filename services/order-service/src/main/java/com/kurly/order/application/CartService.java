@@ -4,8 +4,10 @@ import com.kurly.common.exception.BusinessException;
 import com.kurly.common.exception.GlobalErrorCode;
 import com.kurly.common.security.AuthenticatedPrincipal;
 import com.kurly.order.domain.cart.Cart;
+import com.kurly.order.domain.cart.CartItem;
 import com.kurly.order.domain.cart.CartRepository;
 import com.kurly.order.domain.common.OrderErrorCode;
+import com.kurly.order.presentation.dto.AddCartItemRequestDto;
 import com.kurly.order.presentation.dto.CartResponseDto;
 import com.kurly.order.presentation.dto.DeliveryAddressResponseDto;
 import lombok.RequiredArgsConstructor;
@@ -24,6 +26,30 @@ public class CartService {
 
     private final CartRepository cartRepository;
     private final CartExternalService externalService;
+
+    @Transactional
+    public CartResponseDto addItem(AuthenticatedPrincipal me, AddCartItemRequestDto request) {
+        CartResponseDto.Product product = externalService.getProducts(List.of(request.productId())).stream()
+                .findFirst()
+                .filter(item -> item.available() && item.storageType() != null)
+                .orElseThrow(() -> new BusinessException(OrderErrorCode.ORD_INVALID_CART_ITEMS));
+
+        Cart cart = getOrCreateForUpdate(me.userId());
+        CartItem item = cart.getItems().stream()
+                .filter(cartItem -> cartItem.getProductId().equals(request.productId()))
+                .findFirst()
+                .orElse(null);
+        if (item == null) {
+            item = CartItem.create(request.productId(), product.storageType(), request.quantity());
+            cart.addItem(item);
+        } else {
+            item.changeQuantity(item.getQuantity() + request.quantity());
+        }
+        if (item.getQuantity() > product.maxQuantity()) {
+            throw new BusinessException(OrderErrorCode.ORD_INVALID_CART_ITEMS);
+        }
+        return getByMemberId(me);
+    }
 
     @Transactional
     public CartResponseDto getByMemberId(AuthenticatedPrincipal me) {

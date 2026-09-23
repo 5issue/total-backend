@@ -4,6 +4,7 @@ import com.kurly.common.response.ApiResponse;
 import com.kurly.order.application.CartExternalService;
 import com.kurly.order.application.OrderExternalService;
 import com.kurly.order.domain.cart.CartItem;
+import com.kurly.order.domain.common.StorageType;
 import com.kurly.order.presentation.dto.CartResponseDto;
 import com.kurly.order.presentation.dto.CheckoutInventoryResponseDto;
 import com.kurly.order.presentation.dto.DeliveryAddressResponseDto;
@@ -35,7 +36,7 @@ public class OrderExternalServiceClient implements OrderExternalService, CartExt
             @Value("${services.oms.base-url:http://localhost:8085}") String omsBaseUrl,
             @Value("${services.payment.base-url:http://localhost:8083}") String paymentBaseUrl,
             @Value("${services.product.base-url:http://localhost:8081}") String productBaseUrl,
-            @Value("${services.member.base-url:http://localhost:8080}") String memberBaseUrl,
+            @Value("${services.member.base-url:http://localhost:8088}") String memberBaseUrl,
             @Value("${services.http.connect-timeout:2s}") Duration connectTimeout,
             @Value("${services.http.read-timeout:5s}") Duration readTimeout
     ) {
@@ -92,9 +93,6 @@ public class OrderExternalServiceClient implements OrderExternalService, CartExt
                 .toBodilessEntity();
     }
 
-    private record CancelPaymentRequest(String cancelReason) {
-    }
-
     public CartResponseDto.Address getAddress(Long memberId, Long addressId) {
         try {
             ApiResponse<CartResponseDto.Address> response = memberClient.get()
@@ -115,10 +113,10 @@ public class OrderExternalServiceClient implements OrderExternalService, CartExt
         }
         ProductApiResponse response = productClient.post().uri("/internal/v1/products/batch-summary")
                 .body(new ProductRequest(productIds)).retrieve().body(ProductApiResponse.class);
-        if (response == null || response.data() == null) {
+        if (response == null || response.data() == null || response.data().products() == null) {
             throw new IllegalStateException("상품 서비스의 상품 응답이 비어 있습니다.");
         }
-        return response.data();
+        return response.data().products().stream().map(ProductSummary::toProduct).toList();
     }
 
     @Override
@@ -155,6 +153,9 @@ public class OrderExternalServiceClient implements OrderExternalService, CartExt
                 .build();
     }
 
+    private record CancelPaymentRequest(String cancelReason) {
+    }
+
     private record CancelEligibility(String status) {
     }
 
@@ -179,7 +180,23 @@ public class OrderExternalServiceClient implements OrderExternalService, CartExt
     private record ProductRequest(List<Long> productIds) {
     }
 
-    private record ProductApiResponse(List<CartResponseDto.Product> data) {
+    private record ProductApiResponse(ProductData data) {
+    }
+
+    private record ProductData(List<ProductSummary> products) {
+    }
+
+    private record ProductSummary(Long productId, String name, Long salePrice, String thumbnailUrl,
+                                  StorageType storageType, String status, String seller,
+                                  InventoryInfo inventory) {
+        private CartResponseDto.Product toProduct() {
+            return new CartResponseDto.Product(productId, productId, name, thumbnailUrl, salePrice,
+                    inventory.maxQuantityPerOrder(), !inventory.isSoldOut() && inventory.availableQuantity() > 0,
+                    null, storageType, null, seller, 0L);
+        }
+    }
+
+    private record InventoryInfo(int availableQuantity, boolean isSoldOut, int maxQuantityPerOrder) {
     }
 
     private record PromiseApiResponse(DeliveryAddressResponseDto.Promise data) {

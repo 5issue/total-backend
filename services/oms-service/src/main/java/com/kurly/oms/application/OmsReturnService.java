@@ -85,7 +85,7 @@ public class OmsReturnService {
                 throw new BusinessException(OmsErrorCode.OMS_ORDER_NOT_FOUND, "주문에 속하지 않은 품목 ID: " + judgement.omsOrderItemId());
             }
 
-            if (judgement.decision() == ReturnDecision.APPROVE_COLDCHAIN && item.getOmsOrderStorageType() == StorageType.ROOM) {
+            if (judgement.decision() == ReturnDecision.APPROVE_COLDCHAIN && item.getOmsOrderStorageType() == StorageType.ROOM_TEMPERATURE) {
                 throw new BusinessException(OmsErrorCode.OMS_CONFLICT_TEMPERATURE);
             }
 

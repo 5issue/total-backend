@@ -71,14 +71,14 @@ class OmsOrderServiceUnitTest {
     }
 
     private OmsOrderItem createDefaultOrderItem() {
-        OmsOrderItem item = OmsOrderItem.create(10L, 100L, 200L, StorageType.ROOM, 2, 5000L);
+        OmsOrderItem item = OmsOrderItem.create(10L, 100L, 200L, StorageType.ROOM_TEMPERATURE, 2, 5000L);
         ReflectionTestUtils.setField(item, "id", 10L);
         return item;
     }
 
     private OrderPaymentCompletedMessage createDefaultPaymentMessage() {
         OrderPaymentCompletedMessage.Item itemMsg = new OrderPaymentCompletedMessage.Item(
-                10L, 100L, 200L, 2, 5000L, "ROOM"
+                10L, 100L, 200L, 2, 5000L, "ROOM_TEMPERATURE"
         );
         OrderPaymentCompletedMessage.DeliveryAddress addressMsg = new OrderPaymentCompletedMessage.DeliveryAddress(
                 "홍길동", "010-1234-5678", "06234", "서울시 강남구", "101호"
@@ -163,7 +163,7 @@ class OmsOrderServiceUnitTest {
             TamRegion region = TamRegion.create("SE01", "서울권역", DeliveryType.DAWN);
 
             ShipmentItem shipmentItem = ShipmentItem.create(10L, 2);
-            Shipment shipment = Shipment.create(100L, "S001", StorageType.ROOM, 10L, 20L, LocalDate.now(), List.of(shipmentItem));
+            Shipment shipment = Shipment.create(100L, "S001", StorageType.ROOM_TEMPERATURE, 10L, 20L, LocalDate.now(), List.of(shipmentItem));
             shipment.getItems().add(shipmentItem);
 
             FulfillmentCenter center = FulfillmentCenter.create(101L, "GP01", "김포센터");
@@ -197,7 +197,7 @@ class OmsOrderServiceUnitTest {
             TamRegion region = TamRegion.create("SE01", "서울권역", DeliveryType.DAWN);
 
             ShipmentItem shipmentItem = ShipmentItem.create(10L, 2);
-            Shipment shipment = Shipment.create(100L, "S001", StorageType.ROOM, null, null, LocalDate.now(), List.of(shipmentItem));
+            Shipment shipment = Shipment.create(100L, "S001", StorageType.ROOM_TEMPERATURE, null, null, LocalDate.now(), List.of(shipmentItem));
 
             when(omsOrderRepository.findByIdWithItems(omsOrderId)).thenReturn(Optional.of(order));
             when(tamRegionRepository.findById(10L)).thenReturn(Optional.of(region));

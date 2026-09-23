@@ -88,7 +88,7 @@ class OrderServiceUnitTest {
             CartResponseDto.Address address = new CartResponseDto.Address(
                     100L, "집", "홍길동", "01000000000", "12345", "서울시", "101호");
             CheckoutInventoryResponseDto.Item duplicate = new CheckoutInventoryResponseDto.Item(
-                    10L, 101L, 1001L, "샐러드", null, StorageType.CHILLED, 1, 1000L);
+                    10L, 101L, 1001L, "샐러드", null, StorageType.REFRIGERATED, 1, 1000L);
             when(cartRepository.findByMemberIdForUpdate(1L)).thenReturn(Optional.of(cart));
             when(externalService.getAddress(1L, 100L)).thenReturn(address);
             when(orderRepository.findActiveCheckoutForUpdate(1L)).thenReturn(Optional.empty());
@@ -106,7 +106,7 @@ class OrderServiceUnitTest {
             Cart cart = Cart.create(1L);
             cart.updateDeliveryAddress(100L, null, null);
             for (CartItemSpec spec : specs) {
-                CartItem item = CartItem.create(spec.productId(), StorageType.CHILLED, spec.quantity());
+                CartItem item = CartItem.create(spec.productId(), StorageType.REFRIGERATED, spec.quantity());
                 ReflectionTestUtils.setField(item, "id", spec.id());
                 cart.addItem(item);
             }
@@ -129,7 +129,7 @@ class OrderServiceUnitTest {
                     "reservation",
                     LocalDateTime.now().plusMinutes(15),
                     0L,
-                    List.of(OrderItem.create(10L, 20L, 30L, "샐러드", null, StorageType.CHILLED, 2, 16000L))
+                    List.of(OrderItem.create(10L, 20L, 30L, "샐러드", null, StorageType.REFRIGERATED, 2, 16000L))
             );
             // 비관적 락 조회 Mocking
             when(orderRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(order));

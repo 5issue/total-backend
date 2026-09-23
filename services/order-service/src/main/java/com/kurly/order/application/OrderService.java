@@ -229,10 +229,10 @@ public class OrderService {
         StorageType policy = hasColdItem
                 ? order.getItems().stream()
                   .map(OrderItem::getStorageType)
-                  .filter(type -> type != StorageType.ROOM)
+                  .filter(type -> type != StorageType.ROOM_TEMPERATURE)
                   .findFirst()
-                  .orElse(StorageType.CHILLED)
-                : StorageType.ROOM;
+                  .orElse(StorageType.REFRIGERATED)
+                : StorageType.ROOM_TEMPERATURE;
 
         return new ReturnPreviewResponseDto(
                 orderId,
@@ -452,7 +452,7 @@ public class OrderService {
 
     private boolean hasColdItem(Order order) {
         return order.getItems().stream()
-                .anyMatch(item -> item.getStorageType() == StorageType.CHILLED || item.getStorageType() == StorageType.FROZEN);
+                .anyMatch(item -> item.getStorageType() == StorageType.REFRIGERATED || item.getStorageType() == StorageType.FROZEN);
     }
 
     private boolean inventoryItemsMatch(List<CartItem> requested,

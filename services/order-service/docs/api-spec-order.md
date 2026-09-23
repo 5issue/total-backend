@@ -5,6 +5,7 @@
 ### 1. 외부 API (User)
 | 도메인 | Method | Path | 기능 설명 | 중요도 | Auth | 소유권 확인 |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| 주문 | `POST` | `/api/v1/carts/items` | 장바구니 상품 추가 | 상 | User | 필요 |
 | 주문 | `GET` | `/api/v1/carts` | 장바구니 조회 | 상 | User | 필요 |
 | 주문 | `PUT` | `/api/v1/carts/delivery-address` | 장바구니 배송지 변경 및 배송 약속 재조회 | 상 | User | 필요 |
 | 주문 | `POST` | `/api/v1/orders/checkout` | 주문서 생성 및 논리 재고 예약 | 상 | User | 필요 |
@@ -27,6 +28,23 @@
 | :--- | :--- | :--- | :--- |:----| :--- | :--- |
 | 주문 | `GET` | `/api/v1/admin/orders/returns` | 반품 신청 목록 조회 | 하   | Admin | 불필요 |
 | 주문 | `GET` | `/api/v1/admin/orders/returns/{returnId}` | 반품 신청 상세 조회 | 하   | Admin | 불필요 |
+---
+
+## 0. 장바구니 상품 추가
+
+```http
+POST /api/v1/carts/items
+Authorization: Bearer {Access Token}
+Content-Type: application/json
+
+{
+  "productId": 10,
+  "quantity": 2
+}
+```
+
+상품의 판매 가능 여부·최대 주문 수량·보관 온도대를 product-service에서 확인한 뒤 추가합니다. 이미 담긴 상품은 요청 수량만큼 합산하며, 성공 응답은 장바구니 상세 조회와 동일합니다.
+
 ---
 
 ## 1. 장바구니 조회
@@ -78,7 +96,7 @@
     "groups": [
       {
         "deliveryType": "DAWN",
-        "temperatureType": "CHILLED",
+        "temperatureType": "REFRIGERATED",
         "seller": null,
         "items": [
           {
@@ -98,7 +116,7 @@
       },
       {
         "deliveryType": "SELLER",
-        "temperatureType": "ROOM",
+        "temperatureType": "ROOM_TEMPERATURE",
         "seller": {
           "sellerId": 31,
           "sellerName": "맛있는농장"
@@ -138,7 +156,7 @@
 * **비동기 연동 (RabbitMQ):** 없음
 * **도메인 규칙:**
   * 장바구니의 `maxQuantity`와 `available`은 단순 안내값이며 재고 선점을 보장하지 않음.
-  * 공급 주체(`seller`) 및 보관 온도대(`storage_type`: `ROOM`, `CHILLED`, `FROZEN`) 기준으로 그룹 분할.
+  * 공급 주체(`seller`) 및 보관 온도대(`storage_type`: `ROOM_TEMPERATURE`, `REFRIGERATED`, `FROZEN`) 기준으로 그룹 분할.
   * 장바구니 DB에는 금액을 저장하지 않으며, 실시간 `sale_price × quantity` 연산을 통해 `amountSummary` 동적 생성.
 
 
@@ -314,7 +332,7 @@
     "groups": [
       {
         "deliveryType": "DAWN",
-        "temperatureType": "CHILLED",
+        "temperatureType": "REFRIGERATED",
         "items": [
           {
             "orderItemId": 1,
@@ -672,7 +690,7 @@
 * **도메인 규칙:**
   * 전체 반품만 지원 (부분 반품 불가).
   * 배송 완료(`DELIVERED`) 후 7일 이내 건만 접수 허용.
-  * 주문 품목 중 신선식품(`CHILLED`, `FROZEN`)이 1건이라도 포함된 경우 단순 변심(`RTN01`) 반품 차단.
+  * 주문 품목 중 신선식품(`REFRIGERATED`, `FROZEN`)이 1건이라도 포함된 경우 단순 변심(`RTN01`) 반품 차단.
   
 ---
 
@@ -851,7 +869,7 @@
   "data": {
     "orderId": 501,
     "returnable": true,
-    "temperaturePolicy": "CHILLED",
+    "temperaturePolicy": "REFRIGERATED",
     "reasonOptions": [
       {
         "code": "RTN01",
@@ -893,7 +911,7 @@
 * **비동기 연동 (RabbitMQ):** 없음
 * **도메인 규칙:**
   * 화면 구성을 위한 단순 조회 API로 주문 및 클레임 데이터를 변경하지 않음.
-  * 주문 품목 중 냉장(`CHILLED`) 또는 냉동(`FROZEN`) 상품 포함 시 `reasonOptions`에서 `RTN01`(단순 변심) 제외.
+  * 주문 품목 중 냉장(`REFRIGERATED`) 또는 냉동(`FROZEN`) 상품 포함 시 `reasonOptions`에서 `RTN01`(단순 변심) 제외.
   * 결제 총액(`payment_amount`)을 기준으로 차감액과 예상 환불금액 동적 산출.
 
 ---
@@ -1281,7 +1299,7 @@
 | 이름 | 타입 | 필수 | 기본값 | 설명 |
 | --- | --- | --- | --- | --- |
 | status | String | N | - | 반품 상태 (`REQUESTED`, `APPROVED`, `COMPLETED`, `REJECTED`) |
-| storageType | String | N | - | 보관 온도대. 콤마 구분 복수 선택 가능 (`FROZEN`, `CHILLED`, `ROOM`) |
+| storageType | String | N | - | 보관 온도대. 콤마 구분 복수 선택 가능 (`FROZEN`, `REFRIGERATED`, `ROOM_TEMPERATURE`) |
 | page | Integer | N | 1 | 페이지 번호 (1-based) |
 | size | Integer | N | 20 | 페이지 크기 (최대 100) |
 
@@ -1307,7 +1325,7 @@
         "orderId": 501,
         "orderNo": "O202608260001",
         "memberId": 1001,
-        "storageTypes": ["FROZEN", "CHILLED"],
+        "storageTypes": ["FROZEN", "REFRIGERATED"],
         "reasonCode": "RTN04",
         "status": "REQUESTED",
         "requestedAt": "2026-08-27T10:00:00Z"
@@ -1403,7 +1421,7 @@
         ]
       },
       {
-        "storageType": "ROOM",
+        "storageType": "ROOM_TEMPERATURE",
         "items": [
           { "productId": 11, "skuId": 1101, "quantity": 1 }
         ]
