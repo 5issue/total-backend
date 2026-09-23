@@ -42,7 +42,8 @@ public enum OrderErrorCode implements ErrorCode {
     ORD_INVALID_FRESH_RETURN(HttpStatus.UNPROCESSABLE_CONTENT, "냉장·냉동 상품은 단순 변심으로 반품할 수 없습니다."),
 
     // 502 BAD_GATEWAY
-    ORD_INCOMPLETE_PRODUCT_RESPONSE(HttpStatus.BAD_GATEWAY, "상품 정보를 완전하게 조회하지 못했습니다.");
+    ORD_INCOMPLETE_PRODUCT_RESPONSE(HttpStatus.BAD_GATEWAY, "상품 서비스 응답이 올바르지 않습니다."),
+    ORD_INCOMPLETE_OMS_RESPONSE(HttpStatus.BAD_GATEWAY, "OMS 서비스 응답이 올바르지 않습니다.");
 
     private final HttpStatus status;
     private final String message;

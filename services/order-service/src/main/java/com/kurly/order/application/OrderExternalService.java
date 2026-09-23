@@ -2,19 +2,20 @@ package com.kurly.order.application;
 
 import com.kurly.order.domain.cart.CartItem;
 import com.kurly.order.infrastructure.dto.AddressResponse;
-import com.kurly.order.presentation.dto.CheckoutInventoryResponseDto;
+import com.kurly.order.infrastructure.dto.CancelEligibilityResponse;
 
 import java.util.List;
+import java.util.UUID;
 
 public interface OrderExternalService {
 
-    CheckoutInventoryResponseDto holdInventory(String reservationToken, List<CartItem> items);
+    void holdInventory(UUID reservationToken, List<CartItem> items);
 
     AddressResponse getAddress(Long memberId, Long addressId);
 
-    void releaseInventory(String reservationToken);
+    void releaseInventory(UUID reservationToken);
 
-    boolean isCancellationEligible(Long orderId);
+    CancelEligibilityResponse getCancelEligibility(Long orderId);
 
     void cancelPayment(Long paymentId, String idempotencyKey, String cancelReason);
 

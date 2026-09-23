@@ -2,6 +2,7 @@ package com.kurly.order.infrastructure.repository;
 
 import com.kurly.order.domain.order.Order;
 import com.kurly.order.domain.order.OrderRepository;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -10,7 +11,6 @@ import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
-import jakarta.persistence.LockModeType;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
@@ -32,19 +32,19 @@ public interface OrderJpaRepository extends OrderRepository, JpaRepository<Order
 
     @Override
     @Query(value = "select distinct o from Order o join o.items i where o.memberId = :memberId " +
-            "and o.createdAt >= :from and o.status not in ('CHECKOUT_CREATED', 'PENDING_PAYMENT') " +
-            "and (:productName is null or lower(i.productName) like lower(concat('%', :productName, '%')))",
+                   "and o.createdAt >= :from and o.status not in ('CHECKOUT_CREATED', 'PENDING_PAYMENT', 'EXPIRED') " +
+                   "and (:productName is null or lower(i.productName) like lower(concat('%', :productName, '%')))",
             countQuery = "select count(distinct o) from Order o join o.items i where o.memberId = :memberId " +
-                    "and o.createdAt >= :from and o.status not in ('CHECKOUT_CREATED', 'PENDING_PAYMENT') " +
-                    "and (:productName is null or lower(i.productName) like lower(concat('%', :productName, '%')))")
+                         "and o.createdAt >= :from and o.status not in ('CHECKOUT_CREATED', 'PENDING_PAYMENT', 'EXPIRED') " +
+                         "and (:productName is null or lower(i.productName) like lower(concat('%', :productName, '%')))")
     Page<Order> findOrders(@Param("memberId") Long memberId, @Param("from") LocalDateTime from,
                            @Param("productName") String productName, Pageable pageable);
 
     @Override
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("update Order o set o.status = 'PAID', o.paymentId = :paymentId, o.paidAt = :paidAt " +
-            "where o.id = :orderId and o.status = 'PENDING_PAYMENT' " +
-            "and o.inventoryReservedUntil >= :now")
+           "where o.id = :orderId and o.status = 'PENDING_PAYMENT' " +
+           "and o.inventoryReservedUntil >= :now")
     int completePayment(@Param("orderId") Long orderId, @Param("paymentId") Long paymentId,
                         @Param("paidAt") LocalDateTime paidAt, @Param("now") LocalDateTime now);
 
@@ -55,6 +55,6 @@ public interface OrderJpaRepository extends OrderRepository, JpaRepository<Order
     @Override
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("update Order o set o.status = 'EXPIRED' where o.id = :orderId " +
-            "and o.status = 'PENDING_PAYMENT' and o.inventoryReservedUntil < :now")
+           "and o.status = 'PENDING_PAYMENT' and o.inventoryReservedUntil < :now")
     int expirePayment(@Param("orderId") Long orderId, @Param("now") LocalDateTime now);
 }

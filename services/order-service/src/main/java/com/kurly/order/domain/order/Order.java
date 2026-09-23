@@ -12,6 +12,7 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.UUID;
 
 @Getter
 @Entity
@@ -59,8 +60,8 @@ public class Order extends BaseEntity {
 
     private LocalDateTime deliveredAt;
 
-    @Column(length = 64)
-    private String inventoryReservationToken;
+    @Column(columnDefinition = "binary(16)")
+    private UUID inventoryReservationToken;
 
     private LocalDateTime inventoryReservedUntil;
 
@@ -72,7 +73,7 @@ public class Order extends BaseEntity {
 
     @Builder(access = AccessLevel.PRIVATE)
     private Order(String orderNo, Long memberId, OrderStatus status, Long itemAmount,
-                  Long shippingFee, Long paymentAmount, String inventoryReservationToken,
+                  Long shippingFee, Long paymentAmount, UUID inventoryReservationToken,
                   LocalDateTime inventoryReservedUntil) {
         this.orderNo = orderNo;
         this.memberId = memberId;
@@ -87,7 +88,7 @@ public class Order extends BaseEntity {
     public static Order createCheckout(
             String orderNo,
             Long memberId,
-            String reservationToken,
+            UUID reservationToken,
             LocalDateTime reservedUntil,
             Long shippingFee,
             List<OrderItem> items
@@ -134,11 +135,6 @@ public class Order extends BaseEntity {
     }
 
     public void completeCancel() {
-        if (this.status == OrderStatus.CANCELLED) {
-            return;
-        }
-        Assert.isTrue(this.status == OrderStatus.CANCEL_PROCESSING,
-                "CANCEL_PROCESSING 상태에서만 취소 완료 처리가 가능합니다.");
         this.status = OrderStatus.CANCELLED;
     }
 
