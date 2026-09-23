@@ -37,12 +37,6 @@ services:
     base-url: ${PRODUCT_SERVICE_BASE_URL}
   member:
     base-url: ${MEMBER_SERVICE_BASE_URL}
-  payment:
-    base-url: ${PAYMENT_SERVICE_BASE_URL}
-  product:
-    base-url: ${PRODUCT_SERVICE_BASE_URL}
-  member:
-    base-url: ${MEMBER_SERVICE_BASE_URL}
 
 kurly:
   cors:
