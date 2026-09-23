@@ -41,9 +41,9 @@ auth:
 
 kurly:
   cors:
-    # 로컬 프론트 오리진. 공통 기본값은 :8080이라 주입하지 않으면 :3000에서 오는
-    # 브라우저 호출이 프리플라이트에서 전부 막힌다(frontend-redirect-uri와 맞춘다).
-    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000,http://127.0.0.1:3000}
+    # :3000은 로컬 프론트, :8080은 통합 Swagger UI 컨테이너다. 둘 다 있어야 한다 —
+    # :3000만 두면 Swagger UI가, :8080만 두면 프론트가 프리플라이트에서 막힌다.
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000,http://127.0.0.1:3000,http://localhost:8080,http://127.0.0.1:8080}
   security:
     issuer: ${JWT_ISSUER:https://auth.kurly.local}
     audience: ${JWT_AUDIENCE:kurly-api}
