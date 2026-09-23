@@ -12,12 +12,15 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 
 import java.time.Duration;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -34,8 +37,9 @@ class RabbitSessionActivityRecorderUnitTest {
     private final AtomicLong nanos = new AtomicLong();
     private final Ticker ticker = nanos::get;
 
+    /** 발행은 전용 실행기로 넘어간다. 테스트에서는 같은 스레드에서 돌려 결정적으로 만든다. */
     private RabbitSessionActivityRecorder recorder() {
-        return new RabbitSessionActivityRecorder(rabbitTemplate, "order-service", WINDOW, ticker);
+        return new RabbitSessionActivityRecorder(rabbitTemplate, "order-service", WINDOW, ticker, Runnable::run);
     }
 
     private void advance(Duration amount) {
@@ -113,5 +117,29 @@ class RabbitSessionActivityRecorderUnitTest {
         recorder().record(new AuthenticatedPrincipal(null, Role.USER));
 
         verify(rabbitTemplate, never()).convertAndSend(any(String.class), any(String.class), any(Object.class));
+    }
+
+    @Test
+    void 발행이_요청_스레드를_막지_않는다() throws Exception {
+        // 브로커에 연결할 수 없으면 convertAndSend가 connection timeout까지 호출 스레드를 붙잡는다.
+        // 그 대기가 요청 스레드에서 일어나면 브로커 장애가 곧바로 인증 지연이 된다.
+        CountDownLatch publishing = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        doAnswer(invocation -> {
+            publishing.countDown();
+            release.await(5, TimeUnit.SECONDS);   // 브로커가 막힌 상황을 흉내 낸다
+            return null;
+        }).when(rabbitTemplate).convertAndSend(any(String.class), any(String.class), any(Object.class));
+
+        try (RabbitSessionActivityRecorder recorder =
+                     new RabbitSessionActivityRecorder(rabbitTemplate, "order-service", WINDOW)) {
+            long startedAt = System.nanoTime();
+            recorder.record(principal(1001L, Role.USER));
+            Duration elapsed = Duration.ofNanos(System.nanoTime() - startedAt);
+
+            assertThat(publishing.await(5, TimeUnit.SECONDS)).isTrue();  // 발행은 다른 스레드에서 진행 중
+            assertThat(elapsed).isLessThan(Duration.ofMillis(500));      // 호출은 즉시 반환
+            release.countDown();
+        }
     }
 }

@@ -36,7 +36,7 @@ class SessionActivityListenerUnitTest {
 
     @Mock SessionActivityService sessionActivityService;
     @Mock AmqpAdmin amqpAdmin;
-    @org.mockito.Spy SessionActivityLag sessionActivityLag = new SessionActivityLag();
+    @org.mockito.Spy SessionActivityLag sessionActivityLag = new SessionActivityLag(java.time.Duration.ofSeconds(60));
 
     @InjectMocks SessionActivityListener listener;
 

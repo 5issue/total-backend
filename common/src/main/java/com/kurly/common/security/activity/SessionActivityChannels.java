@@ -14,7 +14,6 @@ public final class SessionActivityChannels {
     public static final String EXCHANGE = "session.topic.exchange";
     public static final String ROUTING_KEY = "session.user.activity";
     public static final String QUEUE = "auth.user-activity.queue";
-    public static final String DLQ = "auth.user-activity.dlq";
 
     /** 큐 상한. 넘치면 가장 오래된 것부터 버린다. */
     public static final int MAX_LENGTH = 100_000;

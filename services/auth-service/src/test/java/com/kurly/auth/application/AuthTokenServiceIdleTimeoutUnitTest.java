@@ -64,7 +64,7 @@ class AuthTokenServiceIdleTimeoutUnitTest {
     }
 
     private AuthTokenService service(boolean enabled) {
-        return service(enabled, new SessionActivityLag());
+        return service(enabled, new SessionActivityLag(Duration.ofSeconds(60)));
     }
 
     private AuthTokenService service(boolean enabled, SessionActivityLag lag) {
@@ -75,7 +75,7 @@ class AuthTokenServiceIdleTimeoutUnitTest {
 
     /** 컨슈머가 {@code behind}만큼 밀려 있고 큐에 적체가 남은 상태. */
     private SessionActivityLag laggingBy(Duration behind) {
-        SessionActivityLag lag = new SessionActivityLag();
+        SessionActivityLag lag = new SessionActivityLag(Duration.ofSeconds(60));
         lag.onFlush(Instant.now().minus(behind), 1L);
         return lag;
     }

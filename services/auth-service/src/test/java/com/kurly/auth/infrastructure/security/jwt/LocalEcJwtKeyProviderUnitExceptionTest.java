@@ -14,7 +14,7 @@ class LocalEcJwtKeyProviderUnitExceptionTest {
 
     private static JwtProperties properties(String privateJwk) {
         return new JwtProperties("https://auth.kurly.local", "kurly-api",
-                Duration.ofMinutes(30), Duration.ofDays(14), privateJwk);
+                Duration.ofMinutes(30), Duration.ofMinutes(15), Duration.ofDays(14), privateJwk);
     }
 
     private static MockEnvironment profile(String name) {

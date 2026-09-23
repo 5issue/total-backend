@@ -16,6 +16,9 @@ server:
 jwt:
   # 인증인가_설계서 1.3 — access 30분 / refresh 14일
   access-token-ttl: ${JWT_ACCESS_TOKEN_TTL:30m}
+  # 관리자는 유휴 한도(15분) 이하로 둔다. 유휴 판정이 갱신 시점에만 일어나므로,
+  # 수명이 한도보다 길면 한도를 넘긴 뒤에도 만료 전까지 보호 API를 호출할 수 있다.
+  admin-access-token-ttl: ${JWT_ADMIN_ACCESS_TOKEN_TTL:15m}
   refresh-token-ttl: ${JWT_REFRESH_TOKEN_TTL:14d}
 
 auth:
