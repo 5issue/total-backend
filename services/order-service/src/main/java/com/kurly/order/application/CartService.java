@@ -5,12 +5,14 @@ import com.kurly.common.exception.GlobalErrorCode;
 import com.kurly.common.security.AuthenticatedPrincipal;
 import com.kurly.order.domain.cart.Cart;
 import com.kurly.order.domain.cart.CartItem;
+import com.kurly.order.domain.cart.CartItemRepository;
 import com.kurly.order.domain.cart.CartRepository;
 import com.kurly.order.domain.common.OrderErrorCode;
+import com.kurly.order.infrastructure.dto.AddressResponse;
 import com.kurly.order.infrastructure.dto.CartProductInfo;
+import com.kurly.order.infrastructure.dto.DeliveryAddressResponseDto;
 import com.kurly.order.presentation.dto.AddCartItemsRequestDto;
 import com.kurly.order.presentation.dto.CartResponseDto;
-import com.kurly.order.presentation.dto.DeliveryAddressResponseDto;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -29,6 +31,7 @@ import java.util.stream.Collectors;
 public class CartService {
 
     private final CartRepository cartRepository;
+    private final CartItemRepository cartItemRepository;
     private final CartExternalService externalService;
 
     @Transactional
@@ -77,10 +80,10 @@ public class CartService {
             int updatedQuantity = existingItem.map(CartItem::getQuantity).orElse(0) + itemReq.quantity();
 
             if (updatedQuantity > product.inventory().maxQuantityPerOrder()) {
-                throw new BusinessException(OrderErrorCode.ORD_EXCEED_MAX_QUANTITY);
+                throw new BusinessException(OrderErrorCode.ORD_EXCEED_MAX_QUANTITY, "품번: " + product.productId() + ", 최대 수량: " + product.inventory().maxQuantityPerOrder());
             }
             if (updatedQuantity > product.inventory().availableQuantity()) {
-                throw new BusinessException(OrderErrorCode.ORD_INSUFFICIENT_STOCK);
+                throw new BusinessException(OrderErrorCode.ORD_INSUFFICIENT_STOCK, "품번: " + product.productId() + ", 최대 가용 수량: " + product.inventory().availableQuantity());
             }
 
             CartItem item = existingItem.orElseGet(() -> {
@@ -100,7 +103,7 @@ public class CartService {
     public CartResponseDto getByMemberId(AuthenticatedPrincipal me) {
         Long memberId = me.userId();
         Cart cart = getOrCreateForUpdate(memberId);
-        CartResponseDto.Address address = externalService.getAddress(memberId, cart.getAddressId());
+        AddressResponse address = externalService.getAddress(memberId, cart.getAddressId());
 
         if (cart.getAddressId() == null && address != null) {
             cart.updateDeliveryAddress(address.addressId(), null, null);
@@ -147,7 +150,7 @@ public class CartService {
 
         Long memberId = me.userId();
         Cart cart = getOrCreateForUpdate(memberId);
-        CartResponseDto.Address address = externalService.getAddress(memberId, addressId);
+        AddressResponse address = externalService.getAddress(memberId, addressId);
 
         if (address == null) {
             throw new BusinessException(OrderErrorCode.ORD_NOT_FOUND_ADDRESS);
@@ -167,6 +170,74 @@ public class CartService {
                 promise.cutoffAt(),
                 promise.expectedDeliveryAt()
         );
+    }
+
+    @Transactional
+    public void updateItemQuantity(AuthenticatedPrincipal me, Long productId, int quantity) {
+        Long memberId = me.userId();
+        Cart cart = getOrCreateForUpdate(memberId);
+
+        CartItem cartItem = cartItemRepository.findByCartIdAndProductId(cart.getId(), productId)
+                .orElseThrow(() -> new BusinessException(GlobalErrorCode.RESOURCE_NOT_FOUND, "장바구니 항목을 찾을 수 없습니다."));
+
+        List<CartProductInfo> products = externalService.getProducts(List.of(productId));
+        if (products.isEmpty() || products.get(0).inventory() == null) {
+            throw new BusinessException(OrderErrorCode.ORD_INVALID_CART_ITEMS);
+        }
+
+        CartProductInfo product = products.get(0);
+        CartProductInfo.InventoryInfo inventory = product.inventory();
+
+        if ("SOLDOUT".equals(product.status()) || inventory.isSoldOut()) {
+            throw new BusinessException(OrderErrorCode.ORD_ITEM_SOLD_OUT, productId.toString());
+        }
+
+        if (!"SALE".equals(product.status())) {
+            throw new BusinessException(OrderErrorCode.ORD_INVALID_CART_ITEMS, productId.toString());
+        }
+
+        if (quantity > inventory.maxQuantityPerOrder()) {
+            throw new BusinessException(OrderErrorCode.ORD_EXCEED_MAX_QUANTITY, "품번: " + product.productId() + ", 최대 수량: " + inventory.maxQuantityPerOrder());
+        }
+
+        if (quantity > inventory.availableQuantity()) {
+            throw new BusinessException(OrderErrorCode.ORD_INSUFFICIENT_STOCK, "품번: " + product.productId() + ", 최대 가용 수량: " + inventory.availableQuantity());
+        }
+
+        cartItem.changeQuantity(quantity);
+    }
+
+    @Transactional
+    public void deleteItem(AuthenticatedPrincipal me, Long productId) {
+        Long memberId = me.userId();
+        Cart cart = getOrCreateForUpdate(memberId);
+
+        cartItemRepository.findByCartIdAndProductId(cart.getId(), productId)
+                .orElseThrow(() -> new BusinessException(GlobalErrorCode.RESOURCE_NOT_FOUND, "장바구니 항목을 찾을 수 없습니다."));
+
+        cart.removeItemByProductId(productId);
+        cartItemRepository.deleteByCartIdAndProductId(cart.getId(), productId);
+    }
+
+    @Transactional
+    public List<Long> deleteSelectedItems(AuthenticatedPrincipal me, List<Long> productIds) {
+        if (productIds == null || productIds.isEmpty()) {
+            return List.of();
+        }
+        Long memberId = me.userId();
+        Cart cart = getOrCreateForUpdate(memberId);
+
+        List<Long> targetProductIds = cart.getItems().stream()
+                .map(CartItem::getProductId)
+                .filter(productIds::contains)
+                .toList();
+
+        if (!targetProductIds.isEmpty()) {
+            cart.removeItemsByProductIds(targetProductIds);
+            cartItemRepository.deleteAllByCartIdAndProductIdIn(cart.getId(), targetProductIds);
+        }
+
+        return targetProductIds;
     }
 
     private Cart getOrCreateForUpdate(Long memberId) {

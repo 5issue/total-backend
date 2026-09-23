@@ -5,10 +5,8 @@ import com.kurly.common.response.ApiResponse;
 import com.kurly.common.security.AuthenticatedPrincipal;
 import com.kurly.common.swagger.ApiErrorCodeExample;
 import com.kurly.order.domain.common.OrderErrorCode;
-import com.kurly.order.presentation.dto.AddCartItemsRequestDto;
-import com.kurly.order.presentation.dto.CartResponseDto;
-import com.kurly.order.presentation.dto.DeliveryAddressRequestDto;
-import com.kurly.order.presentation.dto.DeliveryAddressResponseDto;
+import com.kurly.order.infrastructure.dto.DeliveryAddressResponseDto;
+import com.kurly.order.presentation.dto.*;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -35,5 +33,28 @@ public interface CartApi {
     ApiResponse<DeliveryAddressResponseDto> edit(
             @Parameter(hidden = true) AuthenticatedPrincipal me,
             DeliveryAddressRequestDto request
+    );
+
+    @Operation(summary = "장바구니 상품 수량 변경", description = "장바구니에 담긴 특정 상품(productId)의 수량을 변경합니다.")
+    @ApiErrorCodeExample(status = GlobalErrorCode.class, code = "INVALID_INPUT_VALUE", message = "수량은 최소 1개 이상이어야 합니다.")
+    @ApiErrorCodeExample(status = GlobalErrorCode.class, code = "RESOURCE_NOT_FOUND", message = "장바구니 항목을 찾을 수 없습니다.")
+    ApiResponse<Void> updateItemQuantity(
+            @Parameter(hidden = true) AuthenticatedPrincipal me,
+            @Parameter(description = "상품 ID (productId)", example = "301") Long productId,
+            CartQuantityUpdateRequest request
+    );
+
+    @Operation(summary = "장바구니 단일 상품 삭제", description = "장바구니에서 특정 상품(productId) 1건을 삭제합니다.")
+    @ApiErrorCodeExample(status = GlobalErrorCode.class, code = "RESOURCE_NOT_FOUND", message = "장바구니 항목을 찾을 수 없습니다.")
+    ApiResponse<Void> deleteItem(
+            @Parameter(hidden = true) AuthenticatedPrincipal me,
+            @Parameter(description = "상품 ID (productId)", example = "301") Long productId
+    );
+
+    @Operation(summary = "장바구니 선택 상품 다중 삭제", description = "장바구니에서 선택된 여러 상품(productIds) 목록을 Body로 전달받아 삭제하고, 실제 삭제 처리된 상품 ID 목록을 반환합니다.")
+    @ApiErrorCodeExample(status = GlobalErrorCode.class, code = "INVALID_INPUT_VALUE")
+    ApiResponse<DeleteCartItemsResponseDto> deleteSelectedItems(
+            @Parameter(hidden = true) AuthenticatedPrincipal me,
+            DeleteCartItemsRequestDto request
     );
 }

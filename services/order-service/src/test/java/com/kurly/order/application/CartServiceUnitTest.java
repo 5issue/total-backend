@@ -9,10 +9,10 @@ import com.kurly.order.domain.cart.CartRepository;
 import com.kurly.order.domain.cart.DeliveryType;
 import com.kurly.order.domain.common.OrderErrorCode;
 import com.kurly.order.domain.common.StorageType;
+import com.kurly.order.infrastructure.dto.AddressResponse;
 import com.kurly.order.infrastructure.dto.CartProductInfo;
+import com.kurly.order.infrastructure.dto.DeliveryAddressResponseDto;
 import com.kurly.order.presentation.dto.AddCartItemsRequestDto;
-import com.kurly.order.presentation.dto.CartResponseDto;
-import com.kurly.order.presentation.dto.DeliveryAddressResponseDto;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -22,7 +22,8 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Optional;
 
@@ -89,7 +90,7 @@ class CartServiceUnitTest {
         @Test
         void 장바구니가_없으면_생성하고_기본_배송지를_적용한다() {
             // given
-            CartResponseDto.Address address = new CartResponseDto.Address(
+            AddressResponse address = new AddressResponse(
                     10L, "집", "홍길동", "01000000000", "12345", "서울시", "101호");
             Cart cart = Cart.create(1L);
 
@@ -110,7 +111,7 @@ class CartServiceUnitTest {
             // given
             Cart cart = Cart.create(1L);
             cart.addItem(CartItem.create(100L, StorageType.ROOM_TEMPERATURE, 1));
-            CartResponseDto.Address address = new CartResponseDto.Address(
+            AddressResponse address = new AddressResponse(
                     10L, "집", "홍길동", "01000000000", "12345", "서울시", "101호");
 
             when(cartRepository.findByMemberIdForUpdate(1L)).thenReturn(Optional.of(cart));
@@ -133,11 +134,11 @@ class CartServiceUnitTest {
         void 회원_배송지를_검증하고_배송약속을_갱신한다() {
             // given
             Cart cart = Cart.create(1L);
-            CartResponseDto.Address address = new CartResponseDto.Address(
+            AddressResponse address = new AddressResponse(
                     10L, "집", "홍길동", "01000000000", "12345", "서울시", "101호");
-            LocalDateTime expectedAt = LocalDateTime.now().plusDays(1);
+            Instant expectedAt = Instant.now().plus(1, ChronoUnit.DAYS);
             DeliveryAddressResponseDto.Promise promise = new DeliveryAddressResponseDto.Promise(
-                    true, 20L, DeliveryType.DAWN, LocalDateTime.now().plusHours(2), expectedAt);
+                    true, 20L, DeliveryType.DAWN, Instant.now().plus(2, ChronoUnit.HOURS), expectedAt);
 
             when(cartRepository.findByMemberIdForUpdate(1L)).thenReturn(Optional.of(cart));
             when(externalService.getAddress(1L, 10L)).thenReturn(address);

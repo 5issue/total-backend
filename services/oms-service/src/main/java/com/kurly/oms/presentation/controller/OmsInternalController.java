@@ -6,6 +6,9 @@ import com.kurly.oms.application.OmsFulfillmentService;
 import com.kurly.oms.application.OmsOrderService;
 import com.kurly.oms.presentation.api.OmsInternalApi;
 import com.kurly.oms.presentation.dto.CancelEligibilityResponseDto;
+import com.kurly.oms.presentation.dto.DeliveryPromiseRequest;
+import com.kurly.oms.presentation.dto.DeliveryPromiseResponse;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
@@ -20,8 +23,9 @@ public class OmsInternalController implements OmsInternalApi {
 
     @Override
     @PostMapping("/delivery-promises")
-    public ApiResponse<Object> getDeliveryPromises() {
-        return ApiResponse.success(fulfillmentService.getDeliveryPromises());
+    public ApiResponse<DeliveryPromiseResponse> getDeliveryPromises(
+            @Valid @RequestBody DeliveryPromiseRequest request) {
+        return ApiResponse.success(fulfillmentService.getDeliveryPromises(request));
     }
 
     @Override

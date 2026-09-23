@@ -1,20 +1,16 @@
 package com.kurly.order.application;
 
+import com.kurly.common.exception.BusinessException;
 import com.kurly.common.security.AuthenticatedPrincipal;
 import com.kurly.common.security.Role;
-import com.kurly.common.exception.BusinessException;
 import com.kurly.order.domain.cart.Cart;
 import com.kurly.order.domain.cart.CartItem;
 import com.kurly.order.domain.cart.CartRepository;
 import com.kurly.order.domain.claim.OrderClaimRepository;
 import com.kurly.order.domain.common.OrderErrorCode;
 import com.kurly.order.domain.common.StorageType;
-import com.kurly.order.domain.order.Order;
-import com.kurly.order.domain.order.OrderDeliveryInfoRepository;
-import com.kurly.order.domain.order.OrderItem;
-import com.kurly.order.domain.order.OrderRepository;
-import com.kurly.order.domain.order.OrderStatus;
-import com.kurly.order.presentation.dto.CartResponseDto;
+import com.kurly.order.domain.order.*;
+import com.kurly.order.infrastructure.dto.AddressResponse;
 import com.kurly.order.presentation.dto.CheckoutInventoryResponseDto;
 import com.kurly.order.presentation.dto.CheckoutRequestDto;
 import org.junit.jupiter.api.BeforeEach;
@@ -36,25 +32,29 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
 class OrderServiceUnitTest {
 
     @Mock
     OrderRepository orderRepository;
+
     @Mock
     CartRepository cartRepository;
+
     @Mock
     OrderClaimRepository orderClaimRepository;
+
     @Mock
     OrderDeliveryInfoRepository orderDeliveryInfoRepository;
+
     @Mock
     ApplicationEventPublisher eventPublisher;
+
     @Mock
     OrderExternalService externalService;
+
     @InjectMocks
     OrderService orderService;
 
@@ -85,7 +85,7 @@ class OrderServiceUnitTest {
         @Test
         void 응답에_중복_품목이_있으면_불완전한_응답으로_거부한다() {
             Cart cart = cartWithItems(new CartItemSpec(1L, 10L, 1), new CartItemSpec(2L, 11L, 1));
-            CartResponseDto.Address address = new CartResponseDto.Address(
+            AddressResponse address = new AddressResponse(
                     100L, "집", "홍길동", "01000000000", "12345", "서울시", "101호");
             CheckoutInventoryResponseDto.Item duplicate = new CheckoutInventoryResponseDto.Item(
                     10L, 101L, 1001L, "샐러드", null, StorageType.REFRIGERATED, 1, 1000L);
