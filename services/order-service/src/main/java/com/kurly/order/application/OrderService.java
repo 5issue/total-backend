@@ -81,37 +81,23 @@ public class OrderService {
         }
 
         AddressResponse address = externalService.getAddress(memberId, cart.getAddressId());
-        if (address == null || address.addressId() == null || address.address() == null || address.address().isBlank()) {
+        if (address == null || address.addressId() == null
+            || address.recipientName() == null || address.recipientName().isBlank()
+            || address.recipientPhone() == null || address.recipientPhone().isBlank()
+            || address.address() == null || address.address().isBlank()) {
             throw new BusinessException(OrderErrorCode.ORD_NOT_FOUND_ADDRESS);
         }
 
-        orderRepository.findActiveCheckoutForUpdate(memberId).ifPresent(existing -> {
-            if (existing.getInventoryReservationToken() != null &&
-                existing.getInventoryReservedUntil() != null &&
-                existing.getInventoryReservedUntil().isAfter(LocalDateTime.now())) {
-                externalService.releaseInventory(existing.getInventoryReservationToken());
-            }
-            existing.markExpired();
-        });
-
-        UUID reservationToken = UUID.randomUUID();
-        LocalDateTime expiresAt = LocalDateTime.now().plusMinutes(15);
-
-        try {
-            externalService.holdInventory(reservationToken, selectedItems);
-        } catch (HttpClientErrorException.Conflict e) {
-            throw new BusinessException(OrderErrorCode.ORD_INSUFFICIENT_STOCK);
-        } catch (RestClientException | IllegalStateException e) {
-            throw new BusinessException(OrderErrorCode.ORD_INCOMPLETE_PRODUCT_RESPONSE, "상품 재고 서비스 통신에 실패했습니다.");
-        }
-
         List<Long> productIds = selectedItems.stream().map(CartItem::getProductId).toList();
-        List<CartProductInfo> productInfos = cartExternalService.getProducts(productIds);
         Map<Long, CartProductInfo> productMap;
         try {
+            List<CartProductInfo> productInfos = cartExternalService.getProducts(productIds);
+            if (productInfos == null) {
+                throw new IllegalStateException("상품 서비스의 상품 응답이 비어 있습니다.");
+            }
             productMap = productInfos.stream()
                     .collect(Collectors.toMap(CartProductInfo::productId, Function.identity()));
-        } catch (IllegalStateException e) {
+        } catch (RestClientException | IllegalStateException e) {
             throw new BusinessException(OrderErrorCode.ORD_INCOMPLETE_PRODUCT_RESPONSE);
         }
 
@@ -134,6 +120,26 @@ public class OrderService {
                     );
                 })
                 .toList();
+
+        orderRepository.findActiveCheckoutForUpdate(memberId).ifPresent(existing -> {
+            if (existing.getInventoryReservationToken() != null &&
+                existing.getInventoryReservedUntil() != null &&
+                existing.getInventoryReservedUntil().isAfter(LocalDateTime.now())) {
+                externalService.releaseInventory(existing.getInventoryReservationToken());
+            }
+            existing.markExpired();
+        });
+
+        UUID reservationToken = UUID.randomUUID();
+        LocalDateTime expiresAt = LocalDateTime.now().plusMinutes(15);
+
+        try {
+            externalService.holdInventory(reservationToken, selectedItems);
+        } catch (HttpClientErrorException.Conflict e) {
+            throw new BusinessException(OrderErrorCode.ORD_INSUFFICIENT_STOCK);
+        } catch (RestClientException | IllegalStateException e) {
+            throw new BusinessException(OrderErrorCode.ORD_INCOMPLETE_PRODUCT_RESPONSE, "상품 재고 서비스 통신에 실패했습니다.");
+        }
 
         String orderNo = "O" + reservationToken.toString().replace("-", "").substring(0, 20).toUpperCase();
 

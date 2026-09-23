@@ -7,9 +7,16 @@ ALTER TABLE orders ADD COLUMN new_token BINARY(16);
 UPDATE orders
 SET new_token = CASE
                     WHEN inventory_reservation_token IS NULL OR TRIM(inventory_reservation_token) = '' THEN NULL
-                    WHEN inventory_reservation_token LIKE 'rsv_%' AND CHAR_LENGTH(SUBSTRING(inventory_reservation_token, 5)) = 36
-                        THEN UUID_TO_BIN(SUBSTRING(inventory_reservation_token, 5))
-                    WHEN CHAR_LENGTH(inventory_reservation_token) = 36
+                    WHEN LEFT(inventory_reservation_token, 4) = 'rsv_'
+                         AND SUBSTRING(inventory_reservation_token, 5) REGEXP '^[0-9a-fA-F]{32}$'
+                        THEN UUID_TO_BIN(CONCAT(
+                            SUBSTRING(inventory_reservation_token, 5, 8), '-',
+                            SUBSTRING(inventory_reservation_token, 13, 4), '-',
+                            SUBSTRING(inventory_reservation_token, 17, 4), '-',
+                            SUBSTRING(inventory_reservation_token, 21, 4), '-',
+                            SUBSTRING(inventory_reservation_token, 25, 12)
+                        ))
+                    WHEN IS_UUID(inventory_reservation_token) = 1
                         THEN UUID_TO_BIN(inventory_reservation_token)
                     ELSE NULL
     END;

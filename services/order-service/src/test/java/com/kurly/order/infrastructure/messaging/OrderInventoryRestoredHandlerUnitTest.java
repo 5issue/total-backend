@@ -5,10 +5,12 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.amqp.AmqpRejectAndDontRequeueException;
 
 import java.time.Instant;
 import java.util.UUID;
 
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -26,6 +28,17 @@ class OrderInventoryRestoredHandlerUnitTest {
         verify(orderService).completeCancel(501L, "RESTORED");
         verify(orderService).completeCancel(501L, "ALREADY_RESTORED");
         verifyNoMoreInteractions(orderService);
+    }
+
+    @Test
+    void 처리할_수_없는_복구_이벤트는_재전달하지_않는다() {
+        OrderInventoryRestoredHandler handler = new OrderInventoryRestoredHandler(orderService);
+        doThrow(new IllegalStateException("invalid status"))
+                .when(orderService).completeCancel(501L, "FAILED");
+
+        assertThatThrownBy(() -> handler.handle(event("FAILED")))
+                .isInstanceOf(AmqpRejectAndDontRequeueException.class)
+                .hasCauseInstanceOf(IllegalStateException.class);
     }
 
     private ProductInventoryRestoredEvent event(String status) {

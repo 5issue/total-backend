@@ -90,7 +90,7 @@ public class OrderExternalServiceClient implements OrderExternalService, CartExt
                 });
 
         if (response == null || response.getData() == null) {
-            throw new BusinessException(OrderErrorCode.ORD_INCOMPLETE_PRODUCT_RESPONSE, "OMS 서비스 응답이 올바르지 않습니다.");
+            throw new BusinessException(OrderErrorCode.ORD_INCOMPLETE_OMS_RESPONSE);
         }
 
         return response.getData();

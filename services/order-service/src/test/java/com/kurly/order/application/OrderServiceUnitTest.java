@@ -96,7 +96,6 @@ class OrderServiceUnitTest {
                     100L, "집", "홍길동", "01000000000", "12345", "서울시", "101호");
             when(cartRepository.findByMemberIdForUpdate(1L)).thenReturn(Optional.of(cart));
             when(externalService.getAddress(1L, 100L)).thenReturn(address);
-            when(orderRepository.findActiveCheckoutForUpdate(1L)).thenReturn(Optional.empty());
             CartProductInfo duplicate = new CartProductInfo(
                     10L, "샐러드", 1000L, null, StorageType.REFRIGERATED, "ON_SALE", null, null);
             when(cartExternalService.getProducts(List.of(10L, 11L)))
@@ -106,6 +105,7 @@ class OrderServiceUnitTest {
                     .isInstanceOf(BusinessException.class)
                     .extracting("errorCode")
                     .isEqualTo(OrderErrorCode.ORD_INCOMPLETE_PRODUCT_RESPONSE);
+            verify(externalService, never()).holdInventory(any(), anyList());
             verify(orderRepository, never()).save(org.mockito.ArgumentMatchers.any());
         }
 
