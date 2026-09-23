@@ -7,7 +7,6 @@ import java.util.UUID;
 
 public record InventoryEvent(
         UUID eventId,
-        String routingKey,
         String reservationToken,
         Long orderId,
         Long memberId,
