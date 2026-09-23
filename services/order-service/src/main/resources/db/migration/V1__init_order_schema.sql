@@ -112,14 +112,26 @@ CREATE TABLE refund_attachments
 
 CREATE TABLE IF NOT EXISTS event_publication
 (
-    id               VARCHAR(36)  NOT NULL,
+    id               BINARY(16)   NOT NULL,
     listener_id      VARCHAR(512) NOT NULL,
     event_type       VARCHAR(512) NOT NULL,
-    serialized_event TEXT         NOT NULL,
-    publication_date TIMESTAMP(6) NOT NULL,
-    completion_date  TIMESTAMP(6) NULL DEFAULT NULL,
+    serialized_event VARCHAR(4000) NOT NULL,
+    publication_date DATETIME(6)  NOT NULL,
+    completion_date  DATETIME(6)  NULL DEFAULT NULL,
     PRIMARY KEY (id),
     INDEX idx_event_publication_completion_date (completion_date),
     INDEX idx_event_publication_publication_date (publication_date)
-) ENGINE = InnoDB
-  DEFAULT CHARSET = utf8mb4;
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4;
+
+CREATE TABLE IF NOT EXISTS event_publication_archive
+(
+    id               BINARY(16)   NOT NULL,
+    listener_id      VARCHAR(512) NOT NULL,
+    event_type       VARCHAR(512) NOT NULL,
+    serialized_event VARCHAR(4000) NOT NULL,
+    publication_date DATETIME(6)  NOT NULL,
+    completion_date  DATETIME(6)  NULL DEFAULT NULL,
+    PRIMARY KEY (id),
+    INDEX idx_event_pub_arch_completion_date (completion_date),
+    INDEX idx_event_pub_arch_publication_date (publication_date)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4;
