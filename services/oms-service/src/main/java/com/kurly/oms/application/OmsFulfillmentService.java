@@ -13,11 +13,13 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
-import java.time.ZoneOffset;
+import java.time.ZoneId;
 
 @Service
 @RequiredArgsConstructor
 public class OmsFulfillmentService {
+
+    private static final ZoneId DELIVERY_ZONE = ZoneId.of("Asia/Seoul");
 
     private final CapacityPlanRepository capacityPlanRepository;
     private final TamRegionRepository tamRegionRepository;
@@ -61,16 +63,16 @@ public class OmsFulfillmentService {
                 .findFirst()
                 .orElseThrow(() -> new BusinessException(OmsErrorCode.ORD_NOT_FOUND_ADDRESS));
 
-        LocalDate today = LocalDate.now(ZoneOffset.UTC);
-        LocalTime nowTime = LocalTime.now(ZoneOffset.UTC);
+        LocalDate today = LocalDate.now(DELIVERY_ZONE);
+        LocalTime nowTime = LocalTime.now(DELIVERY_ZONE);
 
         LocalDate deliveryDate = today.plusDays(slot.getLeadDays());
         if (nowTime.isAfter(slot.getCutoffTime())) {
             deliveryDate = deliveryDate.plusDays(1);
         }
 
-        Instant cutoffAt = slot.getCutoffTime().atDate(today).toInstant(ZoneOffset.UTC);
-        Instant expectedDeliveryAt = slot.getDeliveryEndTime().atDate(deliveryDate).toInstant(ZoneOffset.UTC);
+        Instant cutoffAt = slot.getCutoffTime().atDate(today).atZone(DELIVERY_ZONE).toInstant();
+        Instant expectedDeliveryAt = slot.getDeliveryEndTime().atDate(deliveryDate).atZone(DELIVERY_ZONE).toInstant();
 
         return new DeliveryPromiseResponse(
                 true,

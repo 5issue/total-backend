@@ -2,12 +2,12 @@ package com.kurly.order.infrastructure.dto;
 
 import com.kurly.order.domain.cart.DeliveryType;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 public record DeliveryAddressResponseDto(AddressResponse selectedAddress, boolean deliverable,
-                                         DeliveryType deliveryType, LocalDateTime cutoffAt,
-                                         LocalDateTime expectedDeliveryAt) {
+                                         DeliveryType deliveryType, Instant cutoffAt,
+                                         Instant expectedDeliveryAt) {
     public record Promise(boolean deliverable, Long regionId, DeliveryType deliveryType,
-                          LocalDateTime cutoffAt, LocalDateTime expectedDeliveryAt) {
+                          Instant cutoffAt, Instant expectedDeliveryAt) {
     }
 }

@@ -153,12 +153,16 @@ public class OrderExternalServiceClient implements OrderExternalService, CartExt
 
     @Override
     public DeliveryAddressResponseDto.Promise getDeliveryPromise(AddressResponse address) {
-        PromiseApiResponse response = omsClient.post().uri("/internal/v1/oms/delivery-promises")
-                .body(address).retrieve().body(PromiseApiResponse.class);
-        if (response == null || response.data() == null) {
-            throw new IllegalStateException("OMS의 배송 가능 여부 응답이 비어 있습니다.");
+        try {
+            PromiseApiResponse response = omsClient.post().uri("/internal/v1/oms/delivery-promises")
+                    .body(address).retrieve().body(PromiseApiResponse.class);
+            if (response == null || response.data() == null) {
+                throw new IllegalStateException("OMS의 배송 가능 여부 응답이 비어 있습니다.");
+            }
+            return response.data();
+        } catch (HttpClientErrorException.NotFound e) {
+            return null;
         }
-        return response.data();
     }
 
     private RestClient securedClient(String baseUrl, Duration connectTimeout, Duration readTimeout) {

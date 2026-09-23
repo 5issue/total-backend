@@ -22,7 +22,8 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Optional;
 
@@ -135,9 +136,9 @@ class CartServiceUnitTest {
             Cart cart = Cart.create(1L);
             AddressResponse address = new AddressResponse(
                     10L, "집", "홍길동", "01000000000", "12345", "서울시", "101호");
-            LocalDateTime expectedAt = LocalDateTime.now().plusDays(1);
+            Instant expectedAt = Instant.now().plus(1, ChronoUnit.DAYS);
             DeliveryAddressResponseDto.Promise promise = new DeliveryAddressResponseDto.Promise(
-                    true, 20L, DeliveryType.DAWN, LocalDateTime.now().plusHours(2), expectedAt);
+                    true, 20L, DeliveryType.DAWN, Instant.now().plus(2, ChronoUnit.HOURS), expectedAt);
 
             when(cartRepository.findByMemberIdForUpdate(1L)).thenReturn(Optional.of(cart));
             when(externalService.getAddress(1L, 10L)).thenReturn(address);

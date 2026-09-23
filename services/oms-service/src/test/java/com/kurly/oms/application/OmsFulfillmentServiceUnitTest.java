@@ -18,7 +18,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
-import java.time.ZoneOffset;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.Optional;
 
@@ -28,6 +28,8 @@ import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class OmsFulfillmentServiceUnitTest {
+
+    private static final ZoneId DELIVERY_ZONE = ZoneId.of("Asia/Seoul");
 
     @Mock
     private TamRegionRepository tamRegionRepository;
@@ -124,9 +126,9 @@ class OmsFulfillmentServiceUnitTest {
             when(deliverySlotRepository.findByRegionIdAndIsActiveTrue(region.getId()))
                     .thenReturn(List.of(slot));
 
-            LocalDate today = LocalDate.now(ZoneOffset.UTC);
-            Instant expectedCutoffAt = slot.getCutoffTime().atDate(today).toInstant(ZoneOffset.UTC);
-            Instant expectedDeliveryAt = slot.getDeliveryEndTime().atDate(today.plusDays(1)).toInstant(ZoneOffset.UTC);
+            LocalDate today = LocalDate.now(DELIVERY_ZONE);
+            Instant expectedCutoffAt = slot.getCutoffTime().atDate(today).atZone(DELIVERY_ZONE).toInstant();
+            Instant expectedDeliveryAt = slot.getDeliveryEndTime().atDate(today.plusDays(1)).atZone(DELIVERY_ZONE).toInstant();
 
             // when
             DeliveryPromiseResponse response = omsFulfillmentService.getDeliveryPromises(request);
@@ -148,9 +150,9 @@ class OmsFulfillmentServiceUnitTest {
             when(deliverySlotRepository.findByRegionIdAndIsActiveTrue(region.getId()))
                     .thenReturn(List.of(slot));
 
-            LocalDate today = LocalDate.now(ZoneOffset.UTC);
-            Instant expectedCutoffAt = slot.getCutoffTime().atDate(today).toInstant(ZoneOffset.UTC);
-            Instant expectedDeliveryAt = slot.getDeliveryEndTime().atDate(today.plusDays(1 + 1)).toInstant(ZoneOffset.UTC);
+            LocalDate today = LocalDate.now(DELIVERY_ZONE);
+            Instant expectedCutoffAt = slot.getCutoffTime().atDate(today).atZone(DELIVERY_ZONE).toInstant();
+            Instant expectedDeliveryAt = slot.getDeliveryEndTime().atDate(today.plusDays(1 + 1)).atZone(DELIVERY_ZONE).toInstant();
 
             // when
             DeliveryPromiseResponse response = omsFulfillmentService.getDeliveryPromises(request);
