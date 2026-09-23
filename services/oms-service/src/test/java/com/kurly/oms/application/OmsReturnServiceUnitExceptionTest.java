@@ -126,7 +126,7 @@ class OmsReturnServiceUnitExceptionTest {
 
             OmsOrderItem orderItemMock = mock(OmsOrderItem.class);
             when(orderItemMock.getId()).thenReturn(1L);
-            when(orderItemMock.getStorageType()).thenReturn(StorageType.ROOM);
+            when(orderItemMock.getStorageType()).thenReturn(StorageType.ROOM_TEMPERATURE);
             OmsReturnItem returnItem = OmsReturnItem.create(orderItemMock);
 
             OmsReturn returnMock = mock(OmsReturn.class);

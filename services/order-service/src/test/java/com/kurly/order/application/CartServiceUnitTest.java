@@ -10,6 +10,7 @@ import com.kurly.order.domain.cart.DeliveryType;
 import com.kurly.order.domain.common.OrderErrorCode;
 import com.kurly.order.domain.common.StorageType;
 import com.kurly.order.presentation.dto.CartResponseDto;
+import com.kurly.order.presentation.dto.AddCartItemRequestDto;
 import com.kurly.order.presentation.dto.DeliveryAddressResponseDto;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -46,6 +47,22 @@ class CartServiceUnitTest {
         me = new AuthenticatedPrincipal(1L, Role.USER);
     }
 
+    @Test
+    void 이미_담긴_상품은_수량을_합산한다() {
+        Cart cart = Cart.create(1L);
+        CartItem cartItem = CartItem.create(100L, StorageType.REFRIGERATED, 1);
+        cart.addItem(cartItem);
+        CartResponseDto.Product product = new CartResponseDto.Product(
+                100L, 100L, "샐러드", null, 1000L, 10, true,
+                null, StorageType.REFRIGERATED, null, null, 0L);
+        when(cartRepository.findByMemberIdForUpdate(1L)).thenReturn(Optional.of(cart));
+        when(externalService.getProducts(List.of(100L))).thenReturn(List.of(product));
+
+        cartService.addItem(me, new AddCartItemRequestDto(100L, 2));
+
+        assertThat(cartItem.getQuantity()).isEqualTo(3);
+    }
+
     @Nested
     @DisplayName("장바구니 조회")
     class GetCartTest {
@@ -68,7 +85,7 @@ class CartServiceUnitTest {
         @Test
         void 상품_응답이_누락되면_합계를_반환하지_않는다() {
             Cart cart = Cart.create(1L);
-            cart.addItem(CartItem.create(100L, StorageType.ROOM, 1));
+            cart.addItem(CartItem.create(100L, StorageType.ROOM_TEMPERATURE, 1));
             CartResponseDto.Address address = new CartResponseDto.Address(
                     10L, "집", "홍길동", "01000000000", "12345", "서울시", "101호");
             when(cartRepository.findByMemberIdForUpdate(1L)).thenReturn(Optional.of(cart));

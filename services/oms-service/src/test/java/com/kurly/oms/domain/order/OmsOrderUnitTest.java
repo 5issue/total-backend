@@ -29,7 +29,7 @@ class OmsOrderUnitTest {
         @Test
         void 초기_상태가_ORDER_RECEIVED로_저장된다() {
             // given
-            OmsOrderItem item1 = OmsOrderItem.create(101L, 1001L, 2001L, StorageType.ROOM, 2, 5000L);
+            OmsOrderItem item1 = OmsOrderItem.create(101L, 1001L, 2001L, StorageType.ROOM_TEMPERATURE, 2, 5000L);
             OmsOrderItem item2 = OmsOrderItem.create(102L, 1002L, 2002L, StorageType.FROZEN, 1, 12000L);
 
             // when

@@ -1,7 +1,7 @@
 package com.kurly.order.domain.common;
 
 public enum StorageType {
-    ROOM,
-    CHILLED,
+    ROOM_TEMPERATURE,
+    REFRIGERATED,
     FROZEN
 }

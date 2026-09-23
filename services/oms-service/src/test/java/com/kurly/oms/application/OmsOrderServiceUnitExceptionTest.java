@@ -69,7 +69,7 @@ class OmsOrderServiceUnitExceptionTest {
     }
 
     private OmsOrderItem createDefaultOrderItem() {
-        OmsOrderItem item = OmsOrderItem.create(500L, 100L, 200L, StorageType.ROOM, 2, 5000L);
+        OmsOrderItem item = OmsOrderItem.create(500L, 100L, 200L, StorageType.ROOM_TEMPERATURE, 2, 5000L);
         ReflectionTestUtils.setField(item, "id", 10L);
         return item;
     }

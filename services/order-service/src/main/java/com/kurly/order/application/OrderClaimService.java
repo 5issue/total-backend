@@ -28,7 +28,7 @@ public class OrderClaimService {
     public ReturnListResponse listReturns(String status, List<String> storageTypes, Pageable pageable) {
         boolean filterStorage = storageTypes != null && !storageTypes.isEmpty();
         Page<OrderClaim> claims = orderClaimJpaRepository.searchReturns(
-                status, filterStorage, filterStorage ? storageTypes : List.of("ROOM"), pageable);
+                status, filterStorage, filterStorage ? storageTypes : List.of("ROOM_TEMPERATURE"), pageable);
         if (!claims.isEmpty()) {
             orderClaimJpaRepository.findOrdersWithItems(claims.getContent().stream()
                     .map(claim -> claim.getOrder().getId()).toList());
