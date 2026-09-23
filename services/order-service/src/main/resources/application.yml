@@ -12,11 +12,11 @@ management:
 
 services:
   oms:
-    base-url: ${OMS_SERVICE_BASE_URL:http://localhost:8085}
+    base-url: ${OMS_SERVICE_BASE_URL:http://localhost:8086}
   payment:
     base-url: ${PAYMENT_SERVICE_BASE_URL:http://localhost:8083}
   product:
-    base-url: ${PRODUCT_SERVICE_BASE_URL:http://localhost:8081}
+    base-url: ${PRODUCT_SERVICE_BASE_URL:http://localhost:8084}
   member:
     base-url: ${MEMBER_SERVICE_BASE_URL:http://localhost:8088}
   http:

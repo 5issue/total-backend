@@ -5,6 +5,7 @@ import com.kurly.order.application.CartExternalService;
 import com.kurly.order.application.OrderExternalService;
 import com.kurly.order.domain.cart.CartItem;
 import com.kurly.order.domain.common.StorageType;
+import com.kurly.order.infrastructure.dto.CartProductInfo;
 import com.kurly.order.presentation.dto.CartResponseDto;
 import com.kurly.order.presentation.dto.CheckoutInventoryResponseDto;
 import com.kurly.order.presentation.dto.DeliveryAddressResponseDto;
@@ -33,9 +34,9 @@ public class OrderExternalServiceClient implements OrderExternalService, CartExt
     private final RestClient memberClient;
 
     public OrderExternalServiceClient(
-            @Value("${services.oms.base-url:http://localhost:8085}") String omsBaseUrl,
+            @Value("${services.oms.base-url:http://localhost:8086}") String omsBaseUrl,
             @Value("${services.payment.base-url:http://localhost:8083}") String paymentBaseUrl,
-            @Value("${services.product.base-url:http://localhost:8081}") String productBaseUrl,
+            @Value("${services.product.base-url:http://localhost:8084}") String productBaseUrl,
             @Value("${services.member.base-url:http://localhost:8088}") String memberBaseUrl,
             @Value("${services.http.connect-timeout:2s}") Duration connectTimeout,
             @Value("${services.http.read-timeout:5s}") Duration readTimeout
@@ -107,16 +108,38 @@ public class OrderExternalServiceClient implements OrderExternalService, CartExt
     }
 
     @Override
-    public List<CartResponseDto.Product> getProducts(List<Long> productIds) {
+    public List<CartProductInfo> getProducts(List<Long> productIds) {
         if (productIds.isEmpty()) {
             return List.of();
         }
-        ProductApiResponse response = productClient.post().uri("/internal/v1/products/batch-summary")
-                .body(new ProductRequest(productIds)).retrieve().body(ProductApiResponse.class);
+
+        ProductApiResponse response = productClient.post()
+                .uri("/internal/v1/products/batch-summary")
+                .body(new ProductRequest(productIds))
+                .retrieve()
+                .body(ProductApiResponse.class);
+
         if (response == null || response.data() == null || response.data().products() == null) {
             throw new IllegalStateException("상품 서비스의 상품 응답이 비어 있습니다.");
         }
-        return response.data().products().stream().map(ProductSummary::toProduct).toList();
+
+        // BatchProductSummaryResponse.ProductSummaryItem -> CartProductInfo 변환
+        return response.data().products().stream()
+                .map(item -> new CartProductInfo(
+                        item.productId(),
+                        item.name(),
+                        item.salePrice(),
+                        item.thumbnailUrl(),
+                        item.storageType(),
+                        item.status(),
+                        item.seller(),
+                        item.inventory() != null ? new CartProductInfo.InventoryInfo(
+                                item.inventory().availableQuantity(),
+                                item.inventory().isSoldOut(),
+                                item.inventory().maxQuantityPerOrder()
+                        ) : null
+                ))
+                .toList();
     }
 
     @Override

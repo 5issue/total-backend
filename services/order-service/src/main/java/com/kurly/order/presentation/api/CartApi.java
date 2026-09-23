@@ -5,7 +5,7 @@ import com.kurly.common.response.ApiResponse;
 import com.kurly.common.security.AuthenticatedPrincipal;
 import com.kurly.common.swagger.ApiErrorCodeExample;
 import com.kurly.order.domain.common.OrderErrorCode;
-import com.kurly.order.presentation.dto.AddCartItemRequestDto;
+import com.kurly.order.presentation.dto.AddCartItemsRequestDto;
 import com.kurly.order.presentation.dto.CartResponseDto;
 import com.kurly.order.presentation.dto.DeliveryAddressRequestDto;
 import com.kurly.order.presentation.dto.DeliveryAddressResponseDto;
@@ -19,9 +19,9 @@ public interface CartApi {
     @Operation(summary = "장바구니 상품 추가", description = "상품을 장바구니에 추가합니다. 이미 담긴 상품이면 요청 수량만큼 합산합니다.")
     @ApiErrorCodeExample(status = GlobalErrorCode.class, code = "INVALID_INPUT_VALUE")
     @ApiErrorCodeExample(status = OrderErrorCode.class, code = "ORD_INVALID_CART_ITEMS")
-    ApiResponse<CartResponseDto> addItem(
+    ApiResponse<CartResponseDto> addItems(
             @Parameter(hidden = true) AuthenticatedPrincipal me,
-            AddCartItemRequestDto request
+            AddCartItemsRequestDto request
     );
 
     @Operation(summary = "장바구니 상세 조회", description = "로그인 사용자의 장바구니 품목과 선택된 배송지 정보를 조회합니다.")
