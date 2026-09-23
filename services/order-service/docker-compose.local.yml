@@ -2,6 +2,9 @@ services:
   mysql:
     image: mysql:8.4
     container_name: kurly-order-mysql-local
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
     ports:
       - "3308:3306"
     environment:
