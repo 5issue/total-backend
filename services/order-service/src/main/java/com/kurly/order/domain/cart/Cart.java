@@ -67,4 +67,12 @@ public class Cart extends BaseEntity {
                 .filter(item -> item.getProductId().equals(productId))
                 .findFirst();
     }
+
+    public void removeItemByProductId(Long productId) {
+        this.items.removeIf(item -> item.getProductId().equals(productId));
+    }
+
+    public void removeItemsByProductIds(List<Long> productIds) {
+        this.items.removeIf(item -> productIds.contains(item.getProductId()));
+    }
 }

@@ -7,12 +7,12 @@ import com.kurly.common.security.AuthenticatedPrincipal;
 import com.kurly.order.application.CartService;
 import com.kurly.order.infrastructure.dto.DeliveryAddressResponseDto;
 import com.kurly.order.presentation.api.CartApi;
-import com.kurly.order.presentation.dto.AddCartItemsRequestDto;
-import com.kurly.order.presentation.dto.CartResponseDto;
-import com.kurly.order.presentation.dto.DeliveryAddressRequestDto;
+import com.kurly.order.presentation.dto.*;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
 
 @RestController
 @RequestMapping("/api/v1/carts")
@@ -47,5 +47,33 @@ public class CartController implements CartApi {
     ) {
         return ApiResponse.success("배송 약속 재조회에 성공했습니다.",
                 cartService.updateDeliveryAddress(me, request.addressId()));
+    }
+
+    @PatchMapping("/items/{productId}")
+    public ApiResponse<Void> updateItemQuantity(
+            @AuthPrincipal AuthenticatedPrincipal me,
+            @PathVariable Long productId,
+            @Valid @RequestBody CartQuantityUpdateRequest request
+    ) {
+        cartService.updateItemQuantity(me, productId, request.quantity());
+        return ApiResponse.success(null);
+    }
+
+    @DeleteMapping("/items/{productId}")
+    public ApiResponse<Void> deleteItem(
+            @AuthPrincipal AuthenticatedPrincipal me,
+            @PathVariable Long productId
+    ) {
+        cartService.deleteItem(me, productId);
+        return ApiResponse.success(null);
+    }
+
+    @DeleteMapping("/items")
+    public ApiResponse<DeleteCartItemsResponseDto> deleteSelectedItems(
+            @AuthPrincipal AuthenticatedPrincipal me,
+            @Valid @RequestBody DeleteCartItemsRequestDto request
+    ) {
+        List<Long> deletedProductIds = cartService.deleteSelectedItems(me, request.productIds());
+        return ApiResponse.success(DeleteCartItemsResponseDto.from(deletedProductIds));
     }
 }
