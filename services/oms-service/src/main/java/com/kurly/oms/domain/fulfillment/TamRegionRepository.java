@@ -6,4 +6,5 @@ public interface TamRegionRepository {
 
     Optional<TamRegion> findById(Long id);
 
+    Optional<TamRegion> findByRegionCodeAndStatus(String regionCode, RegionStatus status);
 }

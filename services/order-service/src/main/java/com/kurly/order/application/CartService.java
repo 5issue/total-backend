@@ -7,10 +7,11 @@ import com.kurly.order.domain.cart.Cart;
 import com.kurly.order.domain.cart.CartItem;
 import com.kurly.order.domain.cart.CartRepository;
 import com.kurly.order.domain.common.OrderErrorCode;
+import com.kurly.order.infrastructure.dto.AddressResponse;
 import com.kurly.order.infrastructure.dto.CartProductInfo;
+import com.kurly.order.infrastructure.dto.DeliveryAddressResponseDto;
 import com.kurly.order.presentation.dto.AddCartItemsRequestDto;
 import com.kurly.order.presentation.dto.CartResponseDto;
-import com.kurly.order.presentation.dto.DeliveryAddressResponseDto;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -100,7 +101,7 @@ public class CartService {
     public CartResponseDto getByMemberId(AuthenticatedPrincipal me) {
         Long memberId = me.userId();
         Cart cart = getOrCreateForUpdate(memberId);
-        CartResponseDto.Address address = externalService.getAddress(memberId, cart.getAddressId());
+        AddressResponse address = externalService.getAddress(memberId, cart.getAddressId());
 
         if (cart.getAddressId() == null && address != null) {
             cart.updateDeliveryAddress(address.addressId(), null, null);
@@ -147,7 +148,7 @@ public class CartService {
 
         Long memberId = me.userId();
         Cart cart = getOrCreateForUpdate(memberId);
-        CartResponseDto.Address address = externalService.getAddress(memberId, addressId);
+        AddressResponse address = externalService.getAddress(memberId, addressId);
 
         if (address == null) {
             throw new BusinessException(OrderErrorCode.ORD_NOT_FOUND_ADDRESS);

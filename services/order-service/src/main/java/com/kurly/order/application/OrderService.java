@@ -10,6 +10,7 @@ import com.kurly.order.domain.claim.*;
 import com.kurly.order.domain.common.OrderErrorCode;
 import com.kurly.order.domain.common.StorageType;
 import com.kurly.order.domain.order.*;
+import com.kurly.order.infrastructure.dto.AddressResponse;
 import com.kurly.order.infrastructure.messaging.*;
 import com.kurly.order.presentation.dto.*;
 import lombok.RequiredArgsConstructor;
@@ -71,7 +72,7 @@ public class OrderService {
             throw new BusinessException(OrderErrorCode.ORD_INVALID_CART_ITEMS);
         }
 
-        CartResponseDto.Address address = externalService.getAddress(memberId, cart.getAddressId());
+        AddressResponse address = externalService.getAddress(memberId, cart.getAddressId());
         if (address == null || address.recipientName() == null || address.recipientName().isBlank()
             || address.recipientPhone() == null || address.recipientPhone().isBlank()
             || address.zipCode() == null || address.zipCode().isBlank()

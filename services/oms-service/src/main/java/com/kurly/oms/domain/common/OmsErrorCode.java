@@ -15,6 +15,7 @@ public enum OmsErrorCode implements ErrorCode {
     // 404 NOT_FOUND
     OMS_ORDER_NOT_FOUND(HttpStatus.NOT_FOUND, "주문 정보를 찾을 수 없습니다."),
     OMS_RETURN_NOT_FOUND(HttpStatus.NOT_FOUND, "반품 정보를 찾을 수 없습니다."),
+    ORD_NOT_FOUND_ADDRESS(HttpStatus.NOT_FOUND, "배송이 불가능한 지역입니다."),
 
     // 409 CONFLICT
     OMS_CONFLICT_TEMPERATURE(HttpStatus.CONFLICT, "콜드체인(냉장/냉동) 품목만 자체폐기 승인이 가능합니다.");

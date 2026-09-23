@@ -1,7 +1,9 @@
 package com.kurly.common.response;
 
+import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonFormat;
 import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.kurly.common.exception.ErrorCode;
 import lombok.Getter;
 
@@ -31,7 +33,13 @@ public class ApiResponse<T> {
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd'T'HH:mm:ss'Z'", timezone = "UTC")
     private final Instant timestamp;
 
-    private ApiResponse(ResultStatus status, String message, T data, String error) {
+    @JsonCreator
+    private ApiResponse(
+            @JsonProperty("status") ResultStatus status,
+            @JsonProperty("message") String message,
+            @JsonProperty("data") T data,
+            @JsonProperty("error") String error
+    ) {
         this.status = status;
         this.message = message;
         this.data = data;
