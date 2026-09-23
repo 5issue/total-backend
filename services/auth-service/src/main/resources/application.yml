@@ -19,6 +19,16 @@ jwt:
   refresh-token-ttl: ${JWT_REFRESH_TOKEN_TTL:14d}
 
 auth:
+  # 인증인가_설계서 1.6 — 유휴 세션 자동 차단(user 30분 / admin 15분).
+  # 판정 기준인 last_used_at을 채우는 활동 이벤트 경로가 붙기 전에는 켜지 않는다.
+  # 켜는 순간 "마지막 갱신 시각"만으로 판정하게 되어, access TTL이 유휴 한도보다
+  # 짧지 않으면 활동 중인 사용자가 상시 차단된다.
+  idle-timeout:
+    enabled: ${AUTH_IDLE_TIMEOUT_ENABLED:true}
+    user: ${AUTH_IDLE_TIMEOUT_USER:30m}
+    admin: ${AUTH_IDLE_TIMEOUT_ADMIN:15m}
+    # 활동 이벤트를 모았다가 DB에 반영하는 주기. 짧을수록 반영 지연이 작고 DB 쓰기가 늘어난다.
+    flush-interval-ms: ${AUTH_IDLE_TIMEOUT_FLUSH_INTERVAL_MS:5000}
   # 인증인가_설계서 1.4 — refresh token은 HttpOnly + Secure + SameSite 쿠키로만 오간다.
   refresh-cookie:
     name: ${AUTH_REFRESH_COOKIE_NAME:refresh_token}

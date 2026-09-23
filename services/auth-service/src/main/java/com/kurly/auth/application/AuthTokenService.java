@@ -8,6 +8,8 @@ import com.kurly.auth.domain.entity.UserRefreshToken;
 import com.kurly.auth.domain.enums.AdminStatus;
 import com.kurly.common.security.Role;
 import com.kurly.auth.domain.enums.UserStatus;
+import com.kurly.auth.infrastructure.messaging.SessionActivityLag;
+import com.kurly.auth.infrastructure.security.IdleTimeoutProperties;
 import com.kurly.auth.domain.repository.AdminRefreshTokenRepository;
 import com.kurly.auth.domain.repository.UserRefreshTokenRepository;
 import com.kurly.auth.infrastructure.security.RefreshTokenHasher;
@@ -21,6 +23,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
@@ -48,6 +51,8 @@ public class AuthTokenService {
     private final RefreshTokenHasher refreshTokenHasher;
     private final UserRefreshTokenRepository userRefreshTokenRepository;
     private final AdminRefreshTokenRepository adminRefreshTokenRepository;
+    private final IdleTimeoutProperties idleTimeoutProperties;
+    private final SessionActivityLag sessionActivityLag;
 
     /**
      * 재사용이 감지되면 세션 전체를 무효화한 뒤 요청을 거부한다. 이때 무효화 결과는 커밋되어야 하므로
@@ -80,6 +85,12 @@ public class AuthTokenService {
             log.info("갱신 불가 상태의 회원: authUserId={}, status={}", user.getId(), user.getStatus());
             throw invalidRefreshToken();
         }
+        if (isIdleExceeded(stored.lastActivityAt(), idleTimeoutProperties.user())) {
+            log.info("유휴 한도 초과로 세션 차단: authUserId={}, lastActivityAt={}",
+                    user.getId(), stored.lastActivityAt());
+            revokeAllUserSessions(user.getId());
+            throw invalidRefreshToken();
+        }
 
         // 여기까지의 검사는 조회 시점의 스냅샷이다. 폐기는 조건부 갱신으로 수행해 동시 요청 중
         // 하나만 통과시킨다. 진 쪽은 같은 토큰을 두 번 쓴 것과 구분되지 않으므로 재사용으로 다룬다.
@@ -104,6 +115,8 @@ public class AuthTokenService {
                 .token(refreshTokenHasher.hash(refresh.token()))
                 .expiresAt(toLocalDateTime(refresh.expiresAt()))
                 .authUser(user)
+                // 갱신 자체가 활동이다. 메시지 경로가 죽어도 이 기록은 항상 남는다.
+                .lastUsedAt(LocalDateTime.now())
                 .build());
         return new TokenPair(access, refresh, user.getUserId());
     }
@@ -121,6 +134,12 @@ public class AuthTokenService {
         verifyNotExpired(stored.getExpiresAt());
         if (admin.getStatus() != AdminStatus.ACTIVE) {
             log.info("갱신 불가 상태의 관리자: authAdminId={}, status={}", admin.getId(), admin.getStatus());
+            throw invalidRefreshToken();
+        }
+        if (isIdleExceeded(stored.lastActivityAt(), idleTimeoutProperties.admin())) {
+            log.info("유휴 한도 초과로 세션 차단: authAdminId={}, lastActivityAt={}",
+                    admin.getId(), stored.lastActivityAt());
+            revokeAllAdminSessions(admin.getId());
             throw invalidRefreshToken();
         }
 
@@ -145,6 +164,8 @@ public class AuthTokenService {
                 .token(refreshTokenHasher.hash(refresh.token()))
                 .expiresAt(toLocalDateTime(refresh.expiresAt()))
                 .authAdmin(admin)
+                // 갱신 자체가 활동이다. 메시지 경로가 죽어도 이 기록은 항상 남는다.
+                .lastUsedAt(LocalDateTime.now())
                 .build());
         return new TokenPair(access, refresh, admin.getAdminId());
     }
@@ -181,6 +202,31 @@ public class AuthTokenService {
     /**
      * JWT의 exp는 이미 검증되었지만, 서버 측에서 강제 만료·정리한 레코드를 걸러내기 위해 저장소 기준으로도 확인한다.
      */
+    /**
+     * 유휴 한도 초과 여부(설계서 1.6).
+     *
+     * <p>갱신 요청이 들어온 순간에만 판정한다. 배치가 세션을 훑지 않으므로, 한도를 넘긴 세션도
+     * <b>다음 갱신 시도까지는 DB에 살아 있다.</b> 다만 access token이 만료되면 갱신 없이는
+     * 어떤 API도 호출할 수 없으므로, 실효 차단 시점은 "한도 초과 후 첫 갱신 시도"다.
+     */
+    private boolean isIdleExceeded(LocalDateTime lastActivityAt, Duration limit) {
+        if (!idleTimeoutProperties.enabled() || limit == null || lastActivityAt == null) {
+            return false;
+        }
+
+        // 컨슈머가 밀리면 last_used_at이 실제보다 과거에 머문다. 그 상태로 판정하면
+        // 계속 활동 중이던 사용자를 끊게 되므로, 알고 있는 지연만큼 빼 준다(명세 5-3).
+        Duration lag = sessionActivityLag.current();
+        if (lag.compareTo(limit) >= 0) {
+            // 지연이 한도만큼이면 판정 자체가 무의미하다. 통과시키되 통제가 꺼졌음을 남긴다.
+            log.error("활동 반영 지연으로 유휴 판정을 우회한다: lag={}", lag);
+            return false;
+        }
+
+        Duration idle = Duration.between(lastActivityAt, LocalDateTime.now()).minus(lag);
+        return idle.compareTo(limit) > 0;
+    }
+
     private void verifyNotExpired(LocalDateTime expiresAt) {
         if (expiresAt.isBefore(LocalDateTime.now())) {
             throw invalidRefreshToken();
