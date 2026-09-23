@@ -23,4 +23,17 @@ public interface AdminRefreshTokenJpaRepository
     @Modifying
     @Query("update AdminRefreshToken t set t.revoked = true where t.token = :token and t.revoked = false")
     int revokeIfActive(@Param("token") String token);
+
+    @Override
+    @Modifying
+    @Query("""
+            update AdminRefreshToken t set t.lastUsedAt = :usedAt
+             where t.authAdmin.adminId = :userId
+               and t.revoked = false
+               and t.expiresAt > :now
+               and (t.lastUsedAt is null or t.lastUsedAt < :usedAt)
+            """)
+    int touchActiveSessions(@Param("userId") Long userId,
+                            @Param("usedAt") java.time.LocalDateTime usedAt,
+                            @Param("now") java.time.LocalDateTime now);
 }

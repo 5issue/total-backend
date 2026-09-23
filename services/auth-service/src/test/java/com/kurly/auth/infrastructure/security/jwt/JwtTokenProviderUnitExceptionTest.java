@@ -41,7 +41,7 @@ class JwtTokenProviderUnitExceptionTest {
     }
 
     private static JwtProperties properties(String issuer, String audience, Duration accessTtl) {
-        return new JwtProperties(issuer, audience, accessTtl, Duration.ofDays(14), sharedJwk);
+        return new JwtProperties(issuer, audience, accessTtl, accessTtl, Duration.ofDays(14), sharedJwk);
     }
 
     private static JwtTokenProvider provider(JwtProperties properties) {
@@ -98,7 +98,7 @@ class JwtTokenProviderUnitExceptionTest {
                     .generate()
                     .toJSONString();
             JwtProperties otherProperties = new JwtProperties(
-                    ISSUER, AUDIENCE, Duration.ofMinutes(30), Duration.ofDays(14), otherJwk);
+                    ISSUER, AUDIENCE, Duration.ofMinutes(30), Duration.ofMinutes(15), Duration.ofDays(14), otherJwk);
             IssuedToken forged = provider(otherProperties).issueAccessToken(1L, Role.USER);
 
             assertThatThrownBy(() -> tokenProvider.parse(forged.token(), TokenType.ACCESS))

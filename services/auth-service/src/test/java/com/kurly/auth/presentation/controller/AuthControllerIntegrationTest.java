@@ -122,7 +122,9 @@ class AuthControllerIntegrationTest {
                     .andExpect(jsonPath("$.status").value("SUCCESS"))
                     .andExpect(jsonPath("$.message").value("관리자로그인이 완료되었습니다."))
                     .andExpect(jsonPath("$.data.accessToken").isNotEmpty())
-                    .andExpect(jsonPath("$.data.expiresIn").value(1800))
+                    // 관리자는 회원(1800)과 달리 900이다. 유휴 판정이 갱신 시점에만 일어나므로
+                    // access token 수명을 유휴 한도(15분) 이하로 두어야 한다(설계서 1.6).
+                    .andExpect(jsonPath("$.data.expiresIn").value(900))
                     .andExpect(jsonPath("$.error").isEmpty())
                     .andReturn();
 

@@ -19,7 +19,7 @@ class JwtTokenProviderUnitTest {
     private static final String AUDIENCE = "kurly-api";
 
     private final JwtProperties properties = new JwtProperties(
-            ISSUER, AUDIENCE, Duration.ofMinutes(30), Duration.ofDays(14), null);
+            ISSUER, AUDIENCE, Duration.ofMinutes(30), Duration.ofMinutes(15), Duration.ofDays(14), null);
     private final JwtTokenProvider tokenProvider =
             new JwtTokenProvider(new LocalEcJwtKeyProvider(properties, new MockEnvironment().withProperty("spring.profiles.active", "local")), properties);
 
@@ -105,5 +105,16 @@ class JwtTokenProviderUnitTest {
             assertThat(jwt.getJWTClaimsSet().getIssuer()).isEqualTo(ISSUER);
             assertThat(jwt.getJWTClaimsSet().getAudience()).containsExactly(AUDIENCE);
         }
+    }
+
+    @Test
+    void 관리자_access_token은_별도_수명을_쓴다() {
+        // 유휴 판정이 갱신 시점에만 일어나므로, 수명이 유휴 한도(15분)보다 길면
+        // 한도를 넘긴 뒤에도 만료 전까지 보호 API를 계속 호출할 수 있다.
+        IssuedToken user = tokenProvider.issueAccessToken(1L, Role.USER);
+        IssuedToken admin = tokenProvider.issueAccessToken(2L, Role.ADMIN);
+
+        org.assertj.core.api.Assertions.assertThat(user.ttl()).isEqualTo(Duration.ofMinutes(30));
+        org.assertj.core.api.Assertions.assertThat(admin.ttl()).isEqualTo(Duration.ofMinutes(15));
     }
 }
