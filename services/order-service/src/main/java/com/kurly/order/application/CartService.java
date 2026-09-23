@@ -56,17 +56,14 @@ public class CartService {
         for (AddCartItemsRequestDto.CartItemRequest itemReq : request.items()) {
             CartProductInfo product = productMap.get(itemReq.productId());
 
-            // 1. 필수 재고 객체 및 존재 여부 검증
             if (product == null || product.inventory() == null) {
                 throw new BusinessException(OrderErrorCode.ORD_INVALID_CART_ITEMS);
             }
 
-            // 2. 재고 객체의 품절 플래그 검증
             if (product.inventory().isSoldOut()) {
                 throw new BusinessException(OrderErrorCode.ORD_ITEM_SOLD_OUT, product.productId().toString());
             }
 
-            // 3. 상품 상태(ProductStatus) 검증
             if ("SOLDOUT".equals(product.status())) {
                 throw new BusinessException(OrderErrorCode.ORD_ITEM_SOLD_OUT, product.productId().toString());
             }
@@ -79,7 +76,6 @@ public class CartService {
 
             int updatedQuantity = existingItem.map(CartItem::getQuantity).orElse(0) + itemReq.quantity();
 
-            // 수량 제한 및 재고 검증
             if (updatedQuantity > product.inventory().maxQuantityPerOrder()) {
                 throw new BusinessException(OrderErrorCode.ORD_EXCEED_MAX_QUANTITY);
             }
@@ -87,7 +83,6 @@ public class CartService {
                 throw new BusinessException(OrderErrorCode.ORD_INSUFFICIENT_STOCK);
             }
 
-            // 신규 생성 시 updatedQuantity로 바로 생성 (0 전달 방지)
             CartItem item = existingItem.orElseGet(() -> {
                 CartItem newItem = CartItem.create(itemReq.productId(), product.storageType(), updatedQuantity);
                 cart.addItem(newItem);
@@ -115,19 +110,20 @@ public class CartService {
                 .map(CartItem::getProductId)
                 .toList();
 
-        // 1. externalService에서 CartProductInfo 리스트 수신
         List<CartProductInfo> productInfos = externalService.getProducts(productIds);
 
-        // 2. CartProductInfo -> CartResponseDto.Product 변환 및 Map 수집
         Map<Long, CartResponseDto.Product> products = productInfos.stream()
                 .map(info -> new CartResponseDto.Product(
                         info.productId(),
-                        null, // skuId (필요 시 info에 추가)
+                        null,
                         info.name(),
                         info.thumbnailUrl(),
                         info.salePrice(),
                         info.inventory() != null ? info.inventory().maxQuantityPerOrder() : 0,
-                        "AVAILABLE".equals(info.status()) && (info.inventory() != null && !info.inventory().isSoldOut()),
+                        "SALE".equals(info.status())
+                        && info.inventory() != null
+                        && !info.inventory().isSoldOut()
+                        && info.inventory().availableQuantity() > 0,
                         null, // deliveryType
                         info.storageType(),
                         null, // sellerId
