@@ -1,6 +1,7 @@
 package com.kurly.wms.application;
 
 import com.kurly.common.exception.EntityNotFoundException;
+import com.kurly.wms.application.event.OutboundAllocatedEvent;
 import com.kurly.wms.infrastructure.entity.Inventory;
 import com.kurly.wms.infrastructure.entity.Location;
 import com.kurly.wms.infrastructure.entity.Location.Zone;
@@ -32,6 +33,7 @@ import java.util.Optional;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -49,6 +51,7 @@ public class OutboundOrderService {
     private final StockMovementJpaRepository stockMovementJpaRepository;
     private final LocationJpaRepository locationJpaRepository;
     private final OutboundFailureProperties outboundFailureProperties;
+    private final ApplicationEventPublisher applicationEventPublisher;
 
     /**
      * 결제 완료 이벤트({@code order.inventory.confirm})를 받아 출고 전표(OutboundOrder)를
@@ -57,7 +60,9 @@ public class OutboundOrderService {
      * REPLENISHMENT)를 트리거해 PENDING_REPLENISHMENT로, 그마저도 안 되는 만큼은
      * UNALLOCATED인 OutboundItem으로 남긴다. OutboundOrder의 상태는 생성된 OutboundItem들의
      * 실제 상태로부터 그대로 도출한다 — 하나라도 ALLOCATED가 아니면 전표도 PENDING_REPLENISHMENT,
-     * 전부 ALLOCATED면 전표도 ALLOCATED(생성자 기본값)로 남긴다.
+     * 전부 ALLOCATED면 전표도 ALLOCATED(생성자 기본값)로 남기고 {@link OutboundAllocatedEvent}를
+     * 발행한다(같은 전표가 나중에 {@code finalizeReplenishment()}로 뒤늦게 ALLOCATED가 되는
+     * 경로에서도 동일하게 발행한다).
      */
     @Transactional
     public void createFromOrderEvent(OrderEvent event) {
@@ -95,6 +100,8 @@ public class OutboundOrderService {
                 .anyMatch(outboundItem -> outboundItem.getStatus() != OutboundItemStatus.ALLOCATED);
         if (anyUnallocated) {
             outboundOrder.hold();
+        } else {
+            applicationEventPublisher.publishEvent(new OutboundAllocatedEvent(outboundOrder.getId()));
         }
 
         log.info("출고 지시 생성 완료. orderId={}, outboundOrderId={}, status={}, 품목수={}",
@@ -338,6 +345,7 @@ public class OutboundOrderService {
         touchedOrders.stream().distinct().forEach(order -> {
             if (!outboundItemJpaRepository.existsByOutboundOrderIdAndStatusNot(order.getId(), OutboundItemStatus.ALLOCATED)) {
                 order.allocate();
+                applicationEventPublisher.publishEvent(new OutboundAllocatedEvent(order.getId()));
             }
         });
     }
