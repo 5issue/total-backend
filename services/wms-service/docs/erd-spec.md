@@ -36,6 +36,10 @@ erDiagram
     LOCATION ||--o{ OUTBOUND_ITEM  : "picked from"
     LOCATION ||--o{ STOCK_MOVEMENT : "from / to"
 
+    WAREHOUSE      ||--o{ TASK : "assigns"
+    OUTBOUND_ORDER ||--o{ TASK : "generates"
+    OUTBOUND_ITEM  ||--|| TASK : "picked via"
+
     WAREHOUSE {
         Long    id PK
         String  code UK
@@ -149,6 +153,19 @@ erDiagram
         Enum     status
         DateTime created_at
         DateTime published_at
+    }
+    TASK {
+        Long     id PK
+        String   task_no UK
+        Enum     status
+        Long     warehouse_id FK
+        Long     outbound_order_id FK
+        Long     outbound_item_id FK_UK
+        Long     worker_id
+        DateTime started_at
+        DateTime completed_at
+        DateTime created_at
+        DateTime updated_at
     }
 ```
 
@@ -418,6 +435,29 @@ RabbitMQ 발행용 스키마(`product_outbox`)를 그대로 재사용하는 편�
 
 ---
 
+## 11. Task — 출고 피킹 작업 지시
+
+현장 작업자에게 배정되는 피킹 전용 작업 단위. `OutboundOrder`가 `ALLOCATED`가 될 때 발행하는 `OutboundAllocatedEvent`를 `OutboundReallocationListener`가 구독해 `TaskService.createPickingTasks()`로 품목(OutboundItem) 단위로 자동 생성한다. `V11__create_task.sql`로 생성(`task` 테이블).
+
+**Task는 피킹 전용이다 — 보관존→피킹존 보충은 다루지 않는다.** 처음엔 `task_type`(PICKING/REPLENISHMENT)으로 둘 다 다루려 했으나, 보충은 이미 `StockMovement`가 자체 상태(PENDING/IN_PROGRESS/COMPLETED/CANCELED)와 확정 API(`StockMovementQueryService.confirm()`)를 갖고 있어 Task로 한 번 더 감싸면 `StockMovement.status`와 `Task.status` 두 곳이 서로 어긋날 여지가 생긴다는 문제가 있어 제외했다. 그래서 `outbound_order_id`/`outbound_item_id`는 항상 채워지는 필수 컬럼이다.
+
+| 컬럼 | 타입 | 제약 | 설명 |
+| --- | --- | --- | --- |
+| `id` | Long | PK | 작업 지시 식별자 |
+| `task_no` | String(64) | UK | 사람이 읽는 피킹 작업 번호(예: `TSK-PICK-20260924-1`). `task_no_seq`(전역 시퀀스)로 채번 — 일자별로 1부터 리셋되는 카운터는 아니다(구현하려면 별도 테이블/락이 더 필요해서 우선 단순하게 시작) |
+| `status` | Enum | | 작업 상태 (`PENDING` / `IN_PROGRESS` / `COMPLETED` / `CANCELED`). api-spec의 `WmsService.Common.TaskStatus`와 1:1 대응 |
+| `warehouse_id` | Long | FK → Warehouse, NOT NULL | 대상 창고 ID |
+| `outbound_order_id` | Long | FK → OutboundOrder, NOT NULL | 연관 출고 전표 ID |
+| `outbound_item_id` | Long | FK → OutboundItem, NOT NULL, UK | 연관 출고 상세 ID — 정확히 어느 로케이션/LOT/수량을 피킹할지는 이 품목을 보고 판단한다(Task 자체엔 location/lotNo/quantity를 중복 저장하지 않음). UNIQUE라 품목 하나에 Task가 중복 생성될 수 없다 |
+| `worker_id` | Long | (FK 없음) | 현장 작업자 식별자. `Worker` 엔티티/테이블이 아직 없어 FK를 걸지 못한다 |
+| `started_at` | DateTime | | 작업 시작 시각 |
+| `completed_at` | DateTime | | 작업 완료 시각 |
+| `created_at` / `updated_at` | DateTime | NOT NULL | 생성/수정 일시 |
+
+**설계 결정 — Task 단위는 OutboundOrder가 아니라 OutboundItem**: 처음 제안된 스키마는 `outbound_order_id`만 있었는데, 한 주문이 FEFO로 여러 LOT/로케이션에 걸쳐 분할 할당되면(흔한 경우) Task 레코드만 봐서는 정확히 무엇을 어디서 피킹해야 하는지 알 수 없는 문제가 있었다 — api-spec에 이미 있던 `PickingTaskResponse`도 `outboundItemId` 중심으로 설계돼 있어, 확인을 거쳐 `outbound_item_id`를 추가했다. 즉 한 주문이 3개 LOT으로 분할 할당되면 Task도 3건 생긴다.
+
+---
+
 ## Enum 정의 요약
 
 | Enum | 값 | 사용 테이블 |
@@ -435,6 +475,7 @@ RabbitMQ 발행용 스키마(`product_outbox`)를 그대로 재사용하는 편�
 | `OutboundOrderStatus` | `PENDING_REPLENISHMENT`, `ALLOCATED`, `PICKING`, `PACKING`, `COMPLETED`, `CANCELED`, `FAILED` | OutboundOrder |
 | `OutboundItemStatus` | `UNALLOCATED`, `PENDING_REPLENISHMENT`, `ALLOCATED`, `PICKED`, `SHORTAGE`, `FAILED` | OutboundItem |
 | `OutboxStatus` | `PENDING`, `PUBLISHED` | WmsOutbox |
+| `TaskStatus` | `PENDING`, `IN_PROGRESS`, `COMPLETED`, `CANCELED` | Task (api-spec `WmsService.Common.TaskStatus`와 1:1) |
 | `Region` | `SEOUL_METRO`, `GYEONGGI_EAST`, `GYEONGGI_WEST`, `CHUNGCHEONG`, `GANGWON`, `YEONGNAM`, `HONAM`, `JEJU` | Warehouse (`regions` 배열 컬럼의 원소) |
 
 ---
@@ -449,4 +490,5 @@ RabbitMQ 발행용 스키마(`product_outbox`)를 그대로 재사용하는 편�
 6. **재할당/재시도 소비자**: `OutboundReallocationListener`(`@TransactionalEventListener(AFTER_COMMIT)`) → `OutboundOrderService.retryUnallocated()`/`finalizeReplenishment()`로 구현 완료. FIFO(전표 생성 시각 오름차순)로 처리하며 부분 커버리지 시 분할까지 실제 서버로 검증함(8절 "재시도/최종 할당" 참고). 남은 논의: 여러 REPLENISHMENT/PUT_AWAY가 동시다발적으로 발생할 때의 동시성(같은 상품에 대해 두 리스너가 겹쳐 실행될 가능성 — 현재는 낙관적/비관적 락 어느 쪽도 OutboundItem 레벨엔 없음, Inventory 레벨 락으로 간접 보호되는 정도).
 7. **실패 시 order-service 보상 이벤트**: `OutboundOrderFailureScheduler`가 장시간 UNALLOCATED인 전표를 FAILED로 전환하지만, 지금은 WMS 내부 상태만 바꿀 뿐 order-service에 알리지 않는다(사용자 확인: 우선 내부 상태만, 계약 확정되면 추후 구현). 결제/환불 플로우와 연계하려면 별도 이벤트 계약이 필요.
 8. (해결됨) **Warehouse.region 값 체계 및 조회 API**: 처음엔 시/도 단위 17개 광역자치단체로 만들었다가, 최종적으로 물류 배정에 의미 있는 8개 값(`SEOUL_METRO`/`GYEONGGI_EAST`/`GYEONGGI_WEST`/`CHUNGCHEONG`/`GANGWON`/`YEONGNAM`/`HONAM`/`JEJU`)으로 재정의했다 — 경기도만 물류센터가 몰려 있어(김포/평택/안산) 동/서로 쪼개고 나머지는 크게 묶었다. 저장 방식도 두 번 바뀌었다: `warehouse.region` 단일 컬럼 → "한 창고가 여러 권역을 담당할 수 있지 않냐"는 지적으로 `warehouse_region` 조인 테이블 → "테이블까지 필요 없지 않냐"는 재지적으로 PostgreSQL 배열 컬럼(`warehouse.regions VARCHAR(20)[]`, `V10__add_warehouse_region.sql`)으로 최종 정리. `GET /internal/v1/wms/warehouses`(region/isActive 쿼리 파라미터) Java 구현도 완료 — `WarehouseInternalController`→`WarehouseQueryService`→`WarehouseJpaRepository.search()`(네이티브 쿼리 + `= ANY(...)`). `seed_wms_warehouse.sql`에 실제 8개 창고의 지리적 인접성을 참고해 매핑(김포=경기서부+수도권, 평택=경기서부+충청권, 창원=영남권, 안산=경기서부, 컬리나우 4곳=수도권 단독) — 여러 창고가 같은 권역을 공유할 수도 있어(경기서부 3곳, 수도권 5곳), 그중 하나를 고르는 기준(거리/부하 분산 등)은 여전히 미결이다. 이 API는 후보 목록을 그대로 반환할 뿐 하나로 좁혀주지 않는다.
-9. **OutboundAllocatedEvent 소비자(피킹 Task 자동 생성)**: 전표가 ALLOCATED 될 때 발행하는 것까지는 구현 완료. 이걸 구독해 `PickingTaskResponse`(api-spec에 이미 placeholder로 있는 모델)에 해당하는 실제 피킹 작업 Task를 OutboundItem별로 자동 생성하는 소비자, 그리고 그 이후의 작업자 배정(workerId 지정) API·최종 출고 완료(실물 quantity 차감 + RabbitMQ 완료 이벤트 발행) API는 전부 아직 없음 — 다음 작업.
+9. (해결됨) **OutboundAllocatedEvent 소비자(피킹 Task 자동 생성)**: `OutboundReallocationListener.onOutboundAllocated()` → `TaskService.createPickingTasks()`로 구현 완료 — OutboundItem마다 Task를 하나씩 생성하고(uk_task_outbound_item_id로 중복 방지), FEFO 분할 할당된 주문은 그만큼 여러 Task가 생긴다. 아직 없는 것: (a) `task_no` 일자별 리셋 카운터(지금은 전역 시퀀스 기반 단순 채번, 11절 참고), (b) 작업자 배정(workerId 지정) API, (c) 최종 출고 완료(실물 quantity 차감 + RabbitMQ 완료 이벤트 발행) API. 전부 다음 작업.
+10. **Worker 엔티티 부재**: `Task.worker_id`가 아직 FK를 걸 `Worker` 테이블이 없어 순수 정수 컬럼으로만 존재한다(11절 참고) — `workers.api.tsp`/`workers.dto.tsp`가 이미 있는데도(main.tsp의 "Workers" 태그) 그동안 Java 엔티티가 만들어지지 않았다. Task의 워커 배정 API를 구현하기 전에 먼저 정리할 필요가 있음.
