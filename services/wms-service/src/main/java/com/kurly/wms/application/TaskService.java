@@ -80,7 +80,11 @@ public class TaskService {
         OutboundItem outboundItem = task.getOutboundItem();
         outboundItem.pick(outboundItem.getOrderedQuantity());
 
-        OutboundOrder outboundOrder = task.getOutboundOrder();
+        // 같은 전표의 Task들이 동시에 완료되면 서로의 PICKED를 못 보고 둘 다 포장 전환을 놓칠 수 있어,
+        // 전표를 잠근 뒤에 전 품목 PICKED 여부를 확인한다.
+        Long outboundOrderId = task.getOutboundOrder().getId();
+        OutboundOrder outboundOrder = outboundOrderJpaRepository.findWithPessimisticLockById(outboundOrderId)
+                .orElseThrow(() -> new EntityNotFoundException("출고 전표를 찾을 수 없습니다. outboundOrderId=" + outboundOrderId));
         boolean allItemsPicked = !outboundItemJpaRepository.existsByOutboundOrderIdAndStatusNot(
                 outboundOrder.getId(), OutboundItemStatus.PICKED);
         if (allItemsPicked) {
