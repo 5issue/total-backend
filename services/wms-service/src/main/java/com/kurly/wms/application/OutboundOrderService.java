@@ -321,15 +321,21 @@ public class OutboundOrderService {
 
         Location location = locationJpaRepository.findById(locationId)
                 .orElseThrow(() -> new EntityNotFoundException("로케이션을 찾을 수 없습니다. locationId=" + locationId));
+        // 이동 확정(moveInventory)은 도착 재고를 예약 없이 올려두기만 하므로, 여기서 최종 할당분만큼
+        // 피킹존 재고에 reserved_quantity를 걸어야 이후 해제/출고 차감이 맞아떨어진다.
+        Inventory destination = inventoryJpaRepository.findByWarehouseIdAndLocationIdAndProductIdAndLotNoAndExpiredDateAndLpnCode(
+                        warehouseId, locationId, productId, lotNo, expiredDate, null)
+                .orElseThrow(() -> new EntityNotFoundException("보충 도착 재고를 찾을 수 없습니다. locationId=" + locationId + ", productId=" + productId));
 
         List<OutboundItem> newlyAllocated = new ArrayList<>();
         List<OutboundOrder> touchedOrders = new ArrayList<>();
-        int remaining = quantity;
+        int remaining = Math.min(quantity, destination.getAvailableQuantity());
         for (OutboundItem item : pendingItems) {
             if (remaining <= 0) {
                 break;
             }
             int allocatedQuantity = Math.min(item.getOrderedQuantity(), remaining);
+            destination.reserve(allocatedQuantity);
             if (allocatedQuantity >= item.getOrderedQuantity()) {
                 item.allocate(location, lotNo, expiredDate);
             } else {
