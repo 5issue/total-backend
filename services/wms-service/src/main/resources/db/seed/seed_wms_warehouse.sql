@@ -15,6 +15,15 @@
 --       물류센터(대형 창고) -> <지명>_DC (Distribution Center)
 --       컬리나우(도심 소형 매장) -> CNOW_<지점명>
 --   - is_active: 전부 true (운영 중인 곳이라고 가정).
+--   - regions: 물류 배송 권역 고정 Enum(`com.kurly.wms.domain.enums.Region` — 시/도 17개가
+--     아니라 배송 배정에 의미 있는 단위로 묶은 8개 값), PostgreSQL 배열 컬럼
+--     (`warehouse.regions`). 한 창고가 여러 권역을 동시에 담당할 수 있어(예: 김포물류센터가
+--     경기서부뿐 아니라 인접한 수도권 배송까지 커버한다고 가정) 배열로 둔다 — 주소만으로는
+--     담당 범위를 다 못 담아서, 실제 지리적 인접성을 참고해 임의로 넓혀 채웠다(예:
+--     평택↔충청권). 반대로 여러 창고가 같은 권역을 공유할 수도 있다(경기 물류센터 3곳 모두
+--     GYEONGGI_WEST, 컬리나우 4곳 전부 SEOUL_METRO). OMS가 "이 권역을 담당하는 창고 후보"를
+--     조회하면 여러 건이 나올 수 있다는 뜻이고, 그중 하나를 고르는 기준(거리/부하 분산 등)은
+--     이 시드의 범위 밖이다.
 --   - Location 상세(zone/aisle/rack/level/bin 체계, 랙/빈 개수)는 docs/erd-spec.md의
 --     로케이션 설계 원칙(보관존=PALLET_RACK, 피킹존=SHELF_BIN, 버퍼=BUFFER, 피킹존
 --     3x3 격자 바구니 F01~F09)을 그대로 따라 만든 예시다. 실제 김포물류센터의
@@ -25,7 +34,9 @@
 --     < src/main/resources/db/seed/seed_wms_warehouse.sql
 --
 -- 재실행 안전: Warehouse는 code UNIQUE, Location은 (warehouse_id, aisle, rack,
--- level, bin) UNIQUE라 ON CONFLICT DO NOTHING으로 재실행해도 중복 삽입되지 않는다.
+-- level, bin) UNIQUE라 재실행해도 중복 삽입되지 않는다. Warehouse는 이미 있는 코드를
+-- 다시 넣으면 regions만 최신 값으로 덮어쓴다(DO UPDATE) — regions가 없던 기존 창고에도
+-- 이 파일을 재실행하면 채워지도록 한 것. Location은 그대로 DO NOTHING이다.
 -- ================================================================
 
 BEGIN;
@@ -33,16 +44,21 @@ BEGIN;
 -- ============================================================
 -- 1. Warehouse — 물류센터 4곳 + 컬리나우(도심 매장) 4곳
 -- ============================================================
-INSERT INTO warehouse (code, name, address, is_active) VALUES
-    ('GIMPO_DC',      '김포물류센터',    '대한민국 경기도 김포시 고촌읍 아라육로 75', true),
-    ('PYEONGTAEK_DC', '평택물류센터',    '대한민국 경기도 평택시 청북면 고렴리 1137', true),
-    ('CHANGWON_DC',   '창원물류센터',    '대한민국 경상남도 창원시 진해구 두동 1883', true),
-    ('ANSAN_DC',      '안산물류센터',    '대한민국 경기도 안산시 단원구 해봉로 232', true),
-    ('CNOW_DMC',      '컬리나우DMC점',   '대한민국 서울특별시 서대문구 수색로 102 1층', true),
-    ('CNOW_DOGOK',    '컬리나우도곡점',  '대한민국 서울특별시 강남구 도곡로 331 1층', true),
-    ('CNOW_SEOCHO',   '컬리나우서초점',  '대한민국 서울특별시 서초구 서초대로 277, (기영빌딩) 지하 1층', true),
-    ('CNOW_SONGPA',   '컬리나우송파점',  '대한민국 서울특별시 송파구 가락로 78, 2층 컬리나우송파점', true)
-ON CONFLICT (code) DO NOTHING;
+INSERT INTO warehouse (code, name, address, is_active, regions) VALUES
+    -- 경기 서부 + 인접 수도권(서울/인천) 배송까지 커버한다고 가정
+    ('GIMPO_DC',      '김포물류센터',    '대한민국 경기도 김포시 고촌읍 아라육로 75', true, ARRAY['GYEONGGI_WEST', 'SEOUL_METRO']),
+    -- 경기 서부(남부) + 인접 충청권까지 커버한다고 가정
+    ('PYEONGTAEK_DC', '평택물류센터',    '대한민국 경기도 평택시 청북면 고렴리 1137', true, ARRAY['GYEONGGI_WEST', 'CHUNGCHEONG']),
+    -- 영남권(경남+부산 등)을 통째로 커버
+    ('CHANGWON_DC',   '창원물류센터',    '대한민국 경상남도 창원시 진해구 두동 1883', true, ARRAY['YEONGNAM']),
+    -- 경기 서부만 단독 커버
+    ('ANSAN_DC',      '안산물류센터',    '대한민국 경기도 안산시 단원구 해봉로 232', true, ARRAY['GYEONGGI_WEST']),
+    -- 컬리나우(도심 소형 매장)는 각자 수도권 권역만 단독 커버
+    ('CNOW_DMC',      '컬리나우DMC점',   '대한민국 서울특별시 서대문구 수색로 102 1층', true, ARRAY['SEOUL_METRO']),
+    ('CNOW_DOGOK',    '컬리나우도곡점',  '대한민국 서울특별시 강남구 도곡로 331 1층', true, ARRAY['SEOUL_METRO']),
+    ('CNOW_SEOCHO',   '컬리나우서초점',  '대한민국 서울특별시 서초구 서초대로 277, (기영빌딩) 지하 1층', true, ARRAY['SEOUL_METRO']),
+    ('CNOW_SONGPA',   '컬리나우송파점',  '대한민국 서울특별시 송파구 가락로 78, 2층 컬리나우송파점', true, ARRAY['SEOUL_METRO'])
+ON CONFLICT (code) DO UPDATE SET regions = EXCLUDED.regions;
 
 -- ============================================================
 -- 2. Location — 김포물류센터(GIMPO_DC)만 예시로 채운다.

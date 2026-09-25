@@ -1,9 +1,11 @@
 package com.kurly.wms.infrastructure.jpa;
 
+import com.kurly.wms.domain.enums.StorageType;
 import com.kurly.wms.infrastructure.entity.Inventory;
 import com.kurly.wms.infrastructure.entity.Location.Zone;
 import jakarta.persistence.LockModeType;
 import java.time.LocalDate;
+import java.util.List;
 import java.util.Optional;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -88,4 +90,38 @@ public interface InventoryJpaRepository extends JpaRepository<Inventory, Long> {
             Pageable pageable);
 
     boolean existsByLocationIdAndQuantityGreaterThan(Long id, int i);
+
+    /**
+     * 출고 FEFO 하드 할당(피킹존) 및 보충 지시 소싱(보관존) 양쪽에서 쓰는 후보 조회. 가용
+     * 수량(quantity-reservedQuantity)이 있는 행만, 유통기한 오름차순(FEFO)으로 반환한다.
+     * 같은 상품을 동시에 할당하는 여러 트랜잭션이 가용 수량을 중복으로 보고 초과 예약
+     * (over-reserve)하지 않도록 PESSIMISTIC_WRITE로 잠근다.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+            SELECT i FROM Inventory i
+            JOIN i.location l
+            WHERE i.warehouse.id = :warehouseId
+              AND i.product.id = :productId
+              AND l.zone = :zone
+              AND (i.quantity - i.reservedQuantity) > 0
+            ORDER BY i.expiredDate ASC NULLS LAST, i.id ASC
+            """)
+    List<Inventory> findAllocatableByFefo(
+            @Param("warehouseId") Long warehouseId,
+            @Param("productId") Long productId,
+            @Param("zone") Zone zone);
+
+    /**
+     * 보충 지시(REPLENISHMENT)의 목적지를 정하기 위해, 이 상품이 이미 피킹존 어느 로케이션에
+     * 배치돼 있는지 찾는다. 피킹존 로케이션 배정 전략(고정 슬롯 vs 동적 배정)이 아직 erd-spec의
+     * 미결 사항이라, "이미 재고가 있던 로케이션을 그대로 재사용"하는 것 이상은 하지 않는다 —
+     * 이 상품이 피킹존에 한 번도 배치된 적 없으면 빈 값을 반환하고, 호출부가 보충을 보류한다.
+     * 로케이션의 storage_type이 상품의 storage_type과 일치하는 것만 대상으로 한다 — 그렇지
+     * 않으면 여기서 고른 로케이션으로 REPLENISHMENT 이동 지시를 만들어도, 나중에 실제 물리 이동
+     * 확정(StockMovementQueryService.confirm) 시점에야 validateTargetLocation()이 보관 유형
+     * 불일치로 막아서 그 이동 지시가 영영 확정 불가능한 상태로 남는다.
+     */
+    Optional<Inventory> findFirstByWarehouseIdAndProductIdAndLocation_ZoneAndLocation_StorageType(
+            Long warehouseId, Long productId, Zone zone, StorageType storageType);
 }

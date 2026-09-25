@@ -36,12 +36,17 @@ erDiagram
     LOCATION ||--o{ OUTBOUND_ITEM  : "picked from"
     LOCATION ||--o{ STOCK_MOVEMENT : "from / to"
 
+    WAREHOUSE      ||--o{ TASK : "assigns"
+    OUTBOUND_ORDER ||--o{ TASK : "generates"
+    OUTBOUND_ITEM  ||--|| TASK : "picked via"
+
     WAREHOUSE {
         Long    id PK
         String  code UK
         String  name
         String  address
         Boolean is_active
+        Enum[]  regions
     }
     WMS_PRODUCT {
         Long    id PK
@@ -149,6 +154,19 @@ erDiagram
         DateTime created_at
         DateTime published_at
     }
+    TASK {
+        Long     id PK
+        String   task_no UK
+        Enum     status
+        Long     warehouse_id FK
+        Long     outbound_order_id FK
+        Long     outbound_item_id FK_UK
+        Long     worker_id
+        DateTime started_at
+        DateTime completed_at
+        DateTime created_at
+        DateTime updated_at
+    }
 ```
 
 ---
@@ -186,6 +204,10 @@ erDiagram
 | `name` | String | | 센터 이름 (예: 김포 물류센터) |
 | `address` | String | | 주소 |
 | `is_active` | Boolean | | 운영 여부 |
+
+**담당 권역(regions)**: OMS가 배송지 권역별로 창고를 조회/배정할 수 있도록 `warehouse.regions`(PostgreSQL 배열 컬럼 `VARCHAR(20)[]`, `V10__add_warehouse_region.sql`)로 관리한다. 별도 테이블이 아니라 배열 컬럼인 이유는 **한 창고가 여러 권역을 동시에 담당할 수 있어서**다(예: 김포물류센터가 경기서부+수도권을 같이 커버) — PostgreSQL/Hibernate가 네이티브 배열 타입을 지원해 별도 조인 테이블 없이도 표현 가능하다. 원소는 광역자치단체(시/도) 17개를 그대로 쓰지 않고 물류 배정에 의미 있는 단위로 묶은 8개 고정값(`com.kurly.wms.domain.enums.Region`) — 경기도는 이 회사 물류센터가 여러 곳 몰려 있어(김포/평택/안산) 동/서로 쪼갰고, 나머지는 배송 권역 단위로 크게 묶었다(수도권/충청권/강원권/영남권/호남권/제주). `com.kurly.wms.infrastructure.entity.Warehouse.regions: List<Region>`을 `@JdbcTypeCode(SqlTypes.ARRAY)` + `@Enumerated(EnumType.STRING)`으로 매핑하고, 배열 안의 모든 값이 8개 중 하나인지는 `chk_warehouse_regions` CHECK 제약(`<@` 연산자로 부분집합 검증)이 DB 레벨에서 강제한다. 아직 배정 안 된 창고는 빈 배열일 수 있다.
+
+`GET /internal/v1/wms/warehouses?region=&isActive=`로 그 권역을 담당 목록에 포함하는 창고를 전부 조회한다(반대로 여러 창고가 같은 권역을 공유할 수도 있음 — 예: 컬리나우 4곳 전부 SEOUL_METRO). `WarehouseInternalController`→`WarehouseQueryService`→`WarehouseJpaRepository.search()`로 구현돼 있다. Hibernate HQL의 `array_contains(array, element)` 함수로 먼저 시도했다가 enum 파라미터를 `bytea[]`로 잘못 바인딩하는 문제(`character varying[] @> bytea[]` 에러)를 만나 네이티브 쿼리 + PostgreSQL `= ANY(...)` 연산자로 우회했다 — `region`은 Java enum이 아니라 문자열(enum name)로 바인딩한다.
 
 ---
 
@@ -321,14 +343,51 @@ OMS(주문 관리 시스템)로부터 전달받은 출고 지시 전표.
 | `id` | Long | PK | 출고 전표 식별자 |
 | `order_id` | Long | | 프론트오피스 주문 ID (OMS/주문 도메인 연계) |
 | `warehouse_id` | Long | FK → Warehouse | 출고 담당 물류 센터 ID |
-| `status` | Enum | | 전표 상태 (`ALLOCATED` 재고할당완료 / `PICKING` 피킹중 / `PACKING` 포장중 / `COMPLETED` 출고완료 / `CANCELED` 취소) |
+| `status` | Enum | | 전표 상태. 하위 OutboundItem들의 상태로부터 도출된다 — 아래 "상태 전이" 참고 |
 | `created_at` | DateTime | | 출고 지시 생성 일시 |
+
+**상태 전이**
+
+| 상태값 | 의미 | 전이 조건 |
+| --- | --- | --- |
+| `PENDING_REPLENISHMENT` | 할당 진행 중 | 포함된 OutboundItem 중 하나라도 `ALLOCATED`가 아닌 경우(`PENDING_REPLENISHMENT` 또는 `UNALLOCATED`) |
+| `ALLOCATED` | 출고 지시 가능 (할당 완료) | 포함된 모든 OutboundItem이 `ALLOCATED` 상태로 완료된 경우 |
+| `PICKING` | 피킹 작업 중 | 현장에서 피킹 지시서 발행 및 피킹 시작 시 |
+| `PACKING` | 포장/검수 중 | 피킹 완료 후 패킹 존으로 이동 시 |
+| `COMPLETED` | 출고 완료 | 송장 부착 및 상차 완료 시 |
+| `CANCELED` | 주문 취소 | 취소 처리 시 |
+| `FAILED` | 재고 확보 실패 | 품목 중 하나라도 `UNALLOCATED`으로 `wms.outbound.allocation-timeout`(기본 2시간) 이상 머무르면 `OutboundOrderFailureScheduler`가 전표 전체를 실패 처리. 품목 하나가 실패해도 전표 전체를 실패시킨다(부분 출고는 미지원). 이때 전표의 다른 ALLOCATED 품목이 쥐고 있던 피킹존 재고 예약도 함께 해제하고, PENDING_REPLENISHMENT 품목도 같이 FAILED로 정리한다 — 아래 "실패 처리 시 재고 정리" 참고 |
+
+**FEFO 하드 할당**: `order.inventory.confirm` 이벤트 소비 시(`OutboundOrderService.createFromOrderEvent`) 품목별로 다음 순서로 재고를 확보한다.
+
+1. 피킹존(`Zone.PICKING`) 가용 재고를 유통기한 오름차순으로 소진해 즉시 할당(`ALLOCATED`). 한 품목이 여러 LOT/로케이션에 걸쳐 분할 할당될 수 있다(OutboundItem이 여러 행으로 나뉨).
+2. 그래도 부족하면 보관존(`Zone.STORAGE`)에서 예약(`Inventory.reserve()`) + 피킹존으로의 보충 지시(StockMovement, `REPLENISHMENT`)를 트리거 — 예약이 걸린 만큼은 `PENDING_REPLENISHMENT` OutboundItem(location/lotNo/expiredDate=null)으로 남는다.
+3. 보관존조차 부족하거나(전체/일부), 이 상품이 피킹존에 한 번도 배치된 적이 없어 보충 지시의 목적지를 정할 수 없으면, 그 남은 만큼은 `UNALLOCATED` OutboundItem으로 남는다 — 어떤 StockMovement도 걸려 있지 않은 상태다.
+
+OutboundOrder 자체는 별도 필드로 계산하지 않고, 생성된 OutboundItem들의 실제 상태로부터 그대로 도출한다(단일 진실 공급원은 OutboundItem) — 하나라도 `ALLOCATED`가 아니면 전표도 `hold()`로 `PENDING_REPLENISHMENT` 전환.
+
+**재시도/최종 할당**: `StockMovementQueryService.confirm()`이 물리 이동 완료 시 발행하는 Spring 애플리케이션 이벤트를, `OutboundReallocationListener`(`@TransactionalEventListener(AFTER_COMMIT)`)가 구독해 `OutboundOrderService`의 대응 메서드를 호출한다. 둘 다 같은 상품을 여러 전표가 동시에 기다릴 수 있어 전표 생성 시각 오름차순(FIFO)으로 처리하고, 한 이동으로 다 못 채우면 커버된 만큼/못 채운 만큼 두 행으로 쪼갠다.
+- `REPLENISHMENT` 완료 → `ReplenishmentCompletedEvent(warehouseId, productId, locationId, lotNo, expiredDate, quantity)` — 이동이 실제로 어디로/어떤 LOT으로 도착했는지까지 실어서, `finalizeReplenishment()`가 다시 FEFO 조회 없이 그대로 채워 `PENDING_REPLENISHMENT` OutboundItem을 `ALLOCATED`로 완성한다. 이걸로 전표의 모든 품목이 ALLOCATED가 되면 전표도 `allocate()`로 되돌린다.
+- `PUT_AWAY` 완료 → `PutAwayCompletedEvent(warehouseId, productId)` — 보관존 재고가 새로 늘었다는 신호. `retryUnallocated()`가 `UNALLOCATED` OutboundItem에 대해 `triggerReplenishment()`(보관존 예약 시도)를 다시 실행한다.
+
+**할당 완료 신호(OutboundAllocatedEvent)**: `OutboundOrder`가 `ALLOCATED`가 되는 순간(포함된 모든 OutboundItem이 `ALLOCATED`) `OutboundOrderService`가 `OutboundAllocatedEvent(outboundOrderId)`를 발행한다 — 주문 생성 시점에 바로 전부 할당되는 경로(`createFromOrderEvent`)와, 처음엔 일부만 할당돼 대기하다가 나중에 보충이 끝나 마지막 품목까지 채워지는 경로(`finalizeReplenishment`) 둘 다에서 발행하므로 어느 쪽으로 ALLOCATED가 되든 신호는 정확히 한 번 온다. 이 이벤트를 `OutboundReallocationListener`가 구독해 품목별 피킹 `Task`를 자동 생성한다(11절 참고).
+
+두 소비자 메서드 모두 `@Transactional(propagation = REQUIRES_NEW)`가 필요하다 — `AFTER_COMMIT` 콜백은 원래 트랜잭션이 이미 커밋된 뒤(물리 커넥션은 해제됐지만 동기화 컨텍스트는 아직 열려 있는 애매한 시점)에 실행되므로, 기본(`REQUIRED`) 전파로는 참여할 트랜잭션이 없어 잠금 조회(`PESSIMISTIC_WRITE`)가 `No active transaction`으로 실패한다(`OutboxPublishService.publishOne()`과 동일 패턴).
+
+`OutboundOrderFailureScheduler`(`wms.outbound.failure-check-interval-ms`, 기본 1시간마다)가 `wms.outbound.allocation-timeout`(기본 2시간)을 넘겨서도 `UNALLOCATED` 품목이 남아 있는 전표를 찾아 품목/전표를 전부 `FAILED`로 전환한다. 실패 시 order-service로의 보상(compensating) 이벤트 발행은 아직 하지 않음(WMS 내부 상태만 변경) — 필요해지면 후속 구현.
+
+**실패 처리 시 재고 정리**: 같은 전표 안에 이미 `ALLOCATED`/`PENDING_REPLENISHMENT`인 다른 품목이 있을 수 있어(예: 2개 품목 중 1개만 재고가 없는 경우), `failStuckOrders()`는 UNALLOCATED 품목만이 아니라 전표의 모든 품목을 상태와 무관하게 훑는다.
+- `ALLOCATED` 품목: 피킹존 `Inventory`에서 `reservedQuantity`를 명시적으로 `release()`한다 — 안 풀어주면 실제로 출고되지 않을 재고가 영원히 예약된 채로 남아 다른 주문이 못 쓴다.
+- `PENDING_REPLENISHMENT` 품목: 보관존 쪽 예약은 따로 되돌리지 않는다 — 이미 생성된 REPLENISHMENT `StockMovement`가 실제로 완료되면 `moveInventory()`가 보관존 예약을 알아서 해제·차감하고, 도착한 피킹존 재고는 `finalizeReplenishment()`가 다시 FIFO 조회할 때 이 품목이 더 이상 `PENDING_REPLENISHMENT`가 아니므로(FAILED로 바뀌었으므로) 자연스럽게 다음으로 대기 중인 다른 전표에 재배정된다. 따로 취소 로직이 필요 없다.
+- 모든 품목을 상태와 무관하게 `FAILED`로 남기는 이유: 그냥 두면 `PENDING_REPLENISHMENT`로 남은 품목이 나중에 `finalizeReplenishment()`에 다시 걸려 이미 죽은 전표에 실제 재고를 배정해버릴 수 있다.
+
+**출고 완료(실물 재고 차감)**: `POST /api/v1/wms/outbounds/complete`(`OutboundOrderService.completeShipment()`)가 마지막 단계다. `PACKING` 중인 전표만 대상이며(그 외 상태면 `409 WMS4098`), `findWithPessimisticLockById()`로 전표를 잠근 채 확인하므로 성공하면 곧장 `COMPLETED`가 돼 재호출은 그냥 409로 막힌다(별도 idempotency 키 불필요). 지금까지는 피킹 시점에 예약(`reservedQuantity`)만 걸려 있었을 뿐 `Inventory.quantity`는 그대로였는데, 이 단계에서 `PICKED` 품목마다 실제 재고를 찾아 `release()` → `remove()`로 물리적으로 차감한다(`StockMovementQueryService.moveInventory()`와 동일 순서). 이어서 `OutboxService.recordOutboundCompleted()`로 `wms.outbound.completed` 이벤트를 같은 트랜잭션에 기록한다(`wms.inbound.completed`와 동일한 아웃박스 패턴) — 주문(orderId) 단위 완료 신호이며, 품목별 상세는 `{productId, quantity}`만 담는다(주문 상세 `orderItemId` 단위 매칭은 아직 `OutboundItem`에 대응 컬럼이 없어 미지원, 9절 참고). 패킹재/보냉재 추천, TMS 송장 발급(`PackingRecommendationRequest`/`ShippingConfirmRequest`)은 이 API와 별개로 여전히 placeholder 상태다.
 
 ---
 
 ## 9. OutboundItem — 출고 상세 품목 (FEFO 재고 할당)
 
-주문된 상품을 FEFO(`ORDER BY expired_date ASC`) 방식으로 어떤 재고(LOT/로케이션)에서 차감할지 지정하는 상세 내역.
+주문된 상품을 FEFO(`ORDER BY expired_date ASC`) 방식으로 어떤 재고(LOT/로케이션)에서 차감할지 지정하는 상세 내역. 한 주문 품목이 여러 LOT에 걸쳐 할당되거나 할당/보충예약/미확보로 나뉘면 `outbound_order_id`+`product_id`가 같은 행이 여러 개 생길 수 있다.
 
 | 컬럼 | 타입 | 제약 | 설명 |
 | --- | --- | --- | --- |
@@ -336,12 +395,23 @@ OMS(주문 관리 시스템)로부터 전달받은 출고 지시 전표.
 | `outbound_order_id` | Long | FK → OutboundOrder | 출고 전표 ID |
 | `product_id` | Long | FK → WmsProduct | 상품 ID |
 | `lpn_code` | String(50) | | 물류용 바코드 |
-| `lot_no` | String(50) | | FEFO에 의해 할당된 대상 LOT 번호 |
-| `expired_date` | Date | | 할당된 재고의 유통기한 |
-| `location_id` | Long | FK → Location | 피킹할 출발지 로케이션 (주로 `SHELF_BIN`) |
-| `ordered_quantity` | Integer | | 주문 요청 수량 (EA) |
+| `lot_no` | String(50) | | FEFO에 의해 할당된 대상 LOT 번호. 미할당이면 null |
+| `expired_date` | Date | | 할당된 재고의 유통기한. 미할당이면 null |
+| `location_id` | Long | FK → Location | 피킹할 출발지 로케이션 (주로 `SHELF_BIN`). 미할당이면 null |
+| `ordered_quantity` | Integer | | 이 행에 배정된 수량 (EA) |
 | `picked_quantity` | Integer | | 실제 피킹 완료 수량 (EA) |
-| `status` | Enum | | 상세 상태 (`PENDING` / `PICKED` / `SHORTAGE` 결품) |
+| `status` | Enum | | 상세 상태. `location_id`가 채워지는 시점에 엔티티 생성자가 자동으로 ALLOCATED로 판단해 채운다(별도 컬럼이지만 location_id와 항상 일관됨). location이 없을 때의 세부 상태(UNALLOCATED/PENDING_REPLENISHMENT)는 호출부가 명시한다 |
+
+**상태 전이**
+
+| 상태값 | 의미 | 설명 |
+| --- | --- | --- |
+| `UNALLOCATED` | 미확보 | 피킹존은 물론 보관존에서도 예약조차 못한 상태. StockMovement가 전혀 없다. `PutAwayCompletedEvent`로 재시도 대상이며, 장시간 지속되면 `FAILED`로 전환 |
+| `PENDING_REPLENISHMENT` | 보충 예약됨 | 보관존 재고 예약 + 보충 지시(StockMovement, REPLENISHMENT)까지는 생성됨. 물리 이동 완료(`ReplenishmentCompletedEvent`)만 기다리면 됨 |
+| `ALLOCATED` | 할당 완료 | 피킹존 재고(location_id, lot_no) 매핑 및 reserved_quantity 증가 완료 |
+| `PICKED` | 피킹 완료 | 작업자가 로케이션에서 실물 피킹을 완료함 |
+| `SHORTAGE` | 결품 | 물리적으로 재고가 없어 피킹 불가 처리됨(피킹 시점에 발견되는 것으로, UNALLOCATED과는 발생 시점이 다르다) |
+| `FAILED` | 재고 확보 실패 | `UNALLOCATED`으로 장시간(기본 2시간) 남아 있어 `OutboundOrderFailureScheduler`가 최종 실패 처리 |
 
 ---
 
@@ -367,6 +437,35 @@ RabbitMQ 발행용 스키마(`product_outbox`)를 그대로 재사용하는 편�
 
 ---
 
+## 11. Task — 출고 피킹 작업 지시
+
+현장 작업자에게 배정되는 피킹 전용 작업 단위. `OutboundOrder`가 `ALLOCATED`가 될 때 발행하는 `OutboundAllocatedEvent`를 `OutboundReallocationListener`가 구독해 `TaskService.createPickingTasks()`로 품목(OutboundItem) 단위로 자동 생성한다. `V11__create_task.sql`로 생성(`task` 테이블).
+
+**Task는 피킹 전용이다 — 보관존→피킹존 보충은 다루지 않는다.** 처음엔 `task_type`(PICKING/REPLENISHMENT)으로 둘 다 다루려 했으나, 보충은 이미 `StockMovement`가 자체 상태(PENDING/IN_PROGRESS/COMPLETED/CANCELED)와 확정 API(`StockMovementQueryService.confirm()`)를 갖고 있어 Task로 한 번 더 감싸면 `StockMovement.status`와 `Task.status` 두 곳이 서로 어긋날 여지가 생긴다는 문제가 있어 제외했다. 그래서 `outbound_order_id`/`outbound_item_id`는 항상 채워지는 필수 컬럼이다.
+
+| 컬럼 | 타입 | 제약 | 설명 |
+| --- | --- | --- | --- |
+| `id` | Long | PK | 작업 지시 식별자 |
+| `task_no` | String(64) | UK | 사람이 읽는 피킹 작업 번호(예: `TSK-PICK-20260924-1`). `task_no_seq`(전역 시퀀스)로 채번 — 일자별로 1부터 리셋되는 카운터는 아니다(구현하려면 별도 테이블/락이 더 필요해서 우선 단순하게 시작) |
+| `status` | Enum | | 작업 상태 (`PENDING` / `IN_PROGRESS` / `COMPLETED` / `CANCELED`). api-spec의 `WmsService.Common.TaskStatus`와 1:1 대응 |
+| `warehouse_id` | Long | FK → Warehouse, NOT NULL | 대상 창고 ID |
+| `outbound_order_id` | Long | FK → OutboundOrder, NOT NULL | 연관 출고 전표 ID |
+| `outbound_item_id` | Long | FK → OutboundItem, NOT NULL, UK | 연관 출고 상세 ID — 정확히 어느 로케이션/LOT/수량을 피킹할지는 이 품목을 보고 판단한다(Task 자체엔 location/lotNo/quantity를 중복 저장하지 않음). UNIQUE라 품목 하나에 Task가 중복 생성될 수 없다 |
+| `worker_id` | Long | (FK 없음) | 현장 작업자 식별자. `Worker` 엔티티/테이블이 아직 없어 FK를 걸지 못한다 |
+| `started_at` | DateTime | | 작업 시작 시각 |
+| `completed_at` | DateTime | | 작업 완료 시각 |
+| `created_at` / `updated_at` | DateTime | NOT NULL | 생성/수정 일시 |
+
+**설계 결정 — Task 단위는 OutboundOrder가 아니라 OutboundItem**: 처음 제안된 스키마는 `outbound_order_id`만 있었는데, 한 주문이 FEFO로 여러 LOT/로케이션에 걸쳐 분할 할당되면(흔한 경우) Task 레코드만 봐서는 정확히 무엇을 어디서 피킹해야 하는지 알 수 없는 문제가 있었다 — api-spec에 이미 있던 `PickingTaskResponse`도 `outboundItemId` 중심으로 설계돼 있어, 확인을 거쳐 `outbound_item_id`를 추가했다. 즉 한 주문이 3개 LOT으로 분할 할당되면 Task도 3건 생긴다.
+
+**작업자 배정/시작/완료 API**: `TaskClientController`(`/api/v1/wms/tasks`)로 구현 완료. Worker 엔티티가 아직 없어 별도 "배정" API를 두지 않고, `POST /start` 요청에 `workerId`를 실어 보내 배정과 시작을 한 번에 처리한다(`TaskService.start()`). PENDING이 아니면 `409 WMS4096`. `POST /complete`(`TaskService.complete()`)는 이번 버전엔 부분 피킹(shortage)을 지원하지 않고 항상 `orderedQuantity` 전체를 피킹한 것으로 기록한다 — IN_PROGRESS가 아니면 `409 WMS4096`, 시작한 워커와 다르면 `409 WMS4097`(`TASK_WORKER_MISMATCH`). 동시성은 `StockMovementQueryService`와 동일하게 `findWithPessimisticLockById()`로 Task 행을 잠근 뒤 상태를 확인하는 방식이라, 두 작업자가 같은 Task를 동시에 `start` 해도 한쪽만 성공한다.
+
+**OutboundOrder 상태 롤업**: `start()`는 전표가 아직 `ALLOCATED`면 `startPicking()`을 호출해 `PICKING`으로 전이한다(전표의 첫 피킹 시작 신호). `complete()`는 해당 전표의 모든 OutboundItem이 `PICKED`가 됐는지(`existsByOutboundOrderIdAndStatusNot`) 확인해, 맞으면 `startPacking()`으로 `PACKING`까지 넘긴다 — 실제 포장 API는 아직 없어 우선 전표 상태만 앞서 넘겨둔 것이다. 두 롤업 모두 이미 같은 상태로 재호출돼도 안전(멱등)하므로 OutboundOrder에 별도 잠금을 걸지 않는다.
+
+**재고 실물 차감은 이 단계에서 하지 않는다**: `complete()`는 Task/OutboundItem/OutboundOrder 상태만 바꾸고 `Inventory.quantity`/`reserved_quantity`는 그대로 둔다 — "진짜 quantity 차감"은 8절의 "출고 완료(실물 재고 차감)" API(`POST /api/v1/wms/outbounds/complete`, 패킹 검수 후 실제로 창고를 떠나는 시점)의 몫이다.
+
+---
+
 ## Enum 정의 요약
 
 | Enum | 값 | 사용 테이블 |
@@ -381,9 +480,11 @@ RabbitMQ 발행용 스키마(`product_outbox`)를 그대로 재사용하는 편�
 | `MovementUnit` | `PALLET`, `BOX`, `EA` | StockMovement |
 | `MovementType` | `PUT_AWAY`, `REPLENISHMENT`, `RELOCATION` | StockMovement |
 | `MovementStatus` | `PENDING`, `IN_PROGRESS`, `COMPLETED`, `CANCELED` | StockMovement |
-| `OutboundOrderStatus` | `ALLOCATED`, `PICKING`, `PACKING`, `COMPLETED`, `CANCELED` | OutboundOrder |
-| `OutboundItemStatus` | `PENDING`, `PICKED`, `SHORTAGE` | OutboundItem |
+| `OutboundOrderStatus` | `PENDING_REPLENISHMENT`, `ALLOCATED`, `PICKING`, `PACKING`, `COMPLETED`, `CANCELED`, `FAILED` | OutboundOrder |
+| `OutboundItemStatus` | `UNALLOCATED`, `PENDING_REPLENISHMENT`, `ALLOCATED`, `PICKED`, `SHORTAGE`, `FAILED` | OutboundItem |
 | `OutboxStatus` | `PENDING`, `PUBLISHED` | WmsOutbox |
+| `TaskStatus` | `PENDING`, `IN_PROGRESS`, `COMPLETED`, `CANCELED` | Task (api-spec `WmsService.Common.TaskStatus`와 1:1) |
+| `Region` | `SEOUL_METRO`, `GYEONGGI_EAST`, `GYEONGGI_WEST`, `CHUNGCHEONG`, `GANGWON`, `YEONGNAM`, `HONAM`, `JEJU` | Warehouse (`regions` 배열 컬럼의 원소) |
 
 ---
 
@@ -392,5 +493,11 @@ RabbitMQ 발행용 스키마(`product_outbox`)를 그대로 재사용하는 편�
 1. **전체 재고 집계**: 동일 상품 재고가 로케이션별로 분산 관리됨. 전체 재고 조회 시 로케이션별 재고를 합산(`SUM(quantity - reserved_quantity)`)해서 응답하는 방식으로 확정 필요. 별도 상품 단위 집계 테이블/캐시를 둘지 여부 검토.
 2. **재고 선점(예약) 시점과 대상**: 특정 마감 시각까지 주문을 모았다가 피킹을 시작하는 구조. 마감 전에는 실물 재고가 확정되지 않는데 `reserved_quantity`를 언제 증가시킬지 확정 필요. 선점 시 보관존 재고까지 포함해 차감 대상으로 볼지, 피킹존 가용 재고만 대상으로 볼지 결정 필요.
 3. **마감 전 주문 보관 위치**: 마감 전 주문을 MQ(Kafka)에 적재해 두는지, WMS 내부 임시 테이블에 쌓는지 결정 필요. (재처리·조회 요구사항에 따라 달라짐)
-4. **로케이션 배정 전략**: 보관존(STORAGE) 입고 적치는 동적 배정으로 1차 구현 완료 — `InboundOrderService.recommendStorageLocation()`이 같은 warehouse/storageType의 PALLET_RACK 중 유효 재고 없음 + 진행 중인 이동 지시 미선점인 로케이션을 aisle/rack/level/bin 오름차순으로 1건 추천하고, 없으면 `WMS409`(`NO_AVAILABLE_LOCATION`)를 던진다. 상품별 지정 로케이션(고정 슬롯) 방식과의 하이브리드 여부, 그리고 피킹존(PICKING) 보충(REPLENISHMENT) 배정 전략은 여전히 미결.
+4. **로케이션 배정 전략**: 보관존(STORAGE) 입고 적치는 동적 배정으로 1차 구현 완료 — `InboundOrderService.recommendStorageLocation()`이 같은 warehouse/storageType의 PALLET_RACK 중 유효 재고 없음 + 진행 중인 이동 지시 미선점인 로케이션을 aisle/rack/level/bin 오름차순으로 1건 추천하고, 없으면 `WMS409`(`NO_AVAILABLE_LOCATION`)를 던진다. 상품별 지정 로케이션(고정 슬롯) 방식과의 하이브리드 여부, 그리고 피킹존(PICKING) 보충(REPLENISHMENT) 배정 전략은 여전히 미결 — `OutboundOrderService.triggerReplenishment()`는 임시로 "이 상품이 이미 배치돼 있는(그리고 보관 유형이 상품과 일치하는) 피킹존 로케이션을 재사용"만 하고, 한 번도 배치된 적 없는(또는 일치하는 보관 유형으로는 배치된 적 없는) 상품은 보충 지시 자체를 만들지 못한 채 전표를 UNALLOCATED로 남긴다. 실제로는 현재 피킹존 재고를 채우는 흐름이 전혀 없어(입고 적치는 항상 STORAGE로만 감) 이 분기가 상시 발생할 것 — 초기 피킹존 재고를 어떻게 채울지(수동 시딩? 별도 배치?) 결정 필요. (해결됨) 테스트 중 발견했던 storage_type 불일치 문제는 `InventoryJpaRepository.findFirstByWarehouseIdAndProductIdAndLocation_ZoneAndLocation_StorageType()`으로 조회 자체에 `l.storageType = 상품.storageType` 조건을 추가해 막았다 — 잘못 배치된(보관 유형이 다른) 피킹 로케이션은 애초에 후보에서 제외되므로, 확정 불가능한 REPLENISHMENT 이동 지시가 생성될 일이 없다.
 5. **InboundOrder 상태 확장**: 버퍼 하차 완료 상태를 별도 상태로 추가할지.
+6. **재할당/재시도 소비자**: `OutboundReallocationListener`(`@TransactionalEventListener(AFTER_COMMIT)`) → `OutboundOrderService.retryUnallocated()`/`finalizeReplenishment()`로 구현 완료. FIFO(전표 생성 시각 오름차순)로 처리하며 부분 커버리지 시 분할까지 실제 서버로 검증함(8절 "재시도/최종 할당" 참고). 남은 논의: 여러 REPLENISHMENT/PUT_AWAY가 동시다발적으로 발생할 때의 동시성(같은 상품에 대해 두 리스너가 겹쳐 실행될 가능성 — 현재는 낙관적/비관적 락 어느 쪽도 OutboundItem 레벨엔 없음, Inventory 레벨 락으로 간접 보호되는 정도).
+7. **실패 시 order-service 보상 이벤트**: `OutboundOrderFailureScheduler`가 장시간 UNALLOCATED인 전표를 FAILED로 전환하지만, 지금은 WMS 내부 상태만 바꿀 뿐 order-service에 알리지 않는다(사용자 확인: 우선 내부 상태만, 계약 확정되면 추후 구현). 결제/환불 플로우와 연계하려면 별도 이벤트 계약이 필요.
+8. (해결됨) **Warehouse.region 값 체계 및 조회 API**: 처음엔 시/도 단위 17개 광역자치단체로 만들었다가, 최종적으로 물류 배정에 의미 있는 8개 값(`SEOUL_METRO`/`GYEONGGI_EAST`/`GYEONGGI_WEST`/`CHUNGCHEONG`/`GANGWON`/`YEONGNAM`/`HONAM`/`JEJU`)으로 재정의했다 — 경기도만 물류센터가 몰려 있어(김포/평택/안산) 동/서로 쪼개고 나머지는 크게 묶었다. 저장 방식도 두 번 바뀌었다: `warehouse.region` 단일 컬럼 → "한 창고가 여러 권역을 담당할 수 있지 않냐"는 지적으로 `warehouse_region` 조인 테이블 → "테이블까지 필요 없지 않냐"는 재지적으로 PostgreSQL 배열 컬럼(`warehouse.regions VARCHAR(20)[]`, `V10__add_warehouse_region.sql`)으로 최종 정리. `GET /internal/v1/wms/warehouses`(region/isActive 쿼리 파라미터) Java 구현도 완료 — `WarehouseInternalController`→`WarehouseQueryService`→`WarehouseJpaRepository.search()`(네이티브 쿼리 + `= ANY(...)`). `seed_wms_warehouse.sql`에 실제 8개 창고의 지리적 인접성을 참고해 매핑(김포=경기서부+수도권, 평택=경기서부+충청권, 창원=영남권, 안산=경기서부, 컬리나우 4곳=수도권 단독) — 여러 창고가 같은 권역을 공유할 수도 있어(경기서부 3곳, 수도권 5곳), 그중 하나를 고르는 기준(거리/부하 분산 등)은 여전히 미결이다. 이 API는 후보 목록을 그대로 반환할 뿐 하나로 좁혀주지 않는다.
+9. (해결됨) **OutboundAllocatedEvent 소비자(피킹 Task 자동 생성) + 작업자 배정/시작/완료 API + 출고 완료 API**: `OutboundReallocationListener.onOutboundAllocated()` → `TaskService.createPickingTasks()`로 Task 자동 생성 구현 완료(FEFO 분할 할당된 주문은 그만큼 여러 Task 생성, uk_task_outbound_item_id로 중복 방지). `TaskClientController`(`GET /api/v1/wms/tasks`, `POST /start`, `POST /complete`)로 조회/시작/완료 API도 구현 완료(11절 참고) — 별도 "배정" API 없이 `start` 요청의 `workerId`로 배정을 겸한다. 마지막으로 `POST /api/v1/wms/outbounds/complete`(`OutboundOrderService.completeShipment()`)로 실물 재고 차감(`Inventory.release()`+`remove()`) + `wms.outbound.completed` 이벤트 발행(아웃박스 패턴)까지 구현 완료(8절 참고) — 원래 5단계 플로우가 여기서 전부 끝났다. 이번 버전은 부분 피킹(shortage)을 지원하지 않고 항상 전체 수량을 피킹/차감한 것으로 기록한다. 아직 없는 것: (a) `task_no` 일자별 리셋 카운터(지금은 전역 시퀀스 기반 단순 채번), (b) 부분 피킹/SHORTAGE 지원, (c) `wms.outbound.completed`의 order-service 쪽 실제 소비자(계약만 정의, 컨슈머 팀 확인 필요), (d) 패킹재/보냉재 추천·TMS 송장 발급(별개 관심사로 placeholder 유지).
+10. **Worker 엔티티 부재**: `Task.worker_id`가 아직 FK를 걸 `Worker` 테이블이 없어 순수 정수 컬럼으로만 존재한다(11절 참고) — `workers.api.tsp`/`workers.dto.tsp`가 이미 있는데도(main.tsp의 "Workers" 태그) 그동안 Java 엔티티가 만들어지지 않았다. `TaskStartRequest.workerId`/`TaskCompleteRequest.workerId`도 지금은 유효성 검증(창고 소속 확인, 실존 여부 등) 없이 그대로 받아들인다 — Worker 엔티티가 생기면 정리할 필요가 있음.
+11. **🔴 (블로커, develop 병합 시 확인됨) `order.inventory.confirm` 실제 페이로드에 `warehouseId`가 없다**: `models/events.dto.tsp`의 `OrderEvent`에 `warehouseId`/`recipientInfo`(+`OrderEventItem.orderItemId`/`productName`)를 propose 단계로 얹어뒀는데, `develop`을 이 브랜치에 병합하며 order-service의 실제 발행 클래스(`com.kurly.order.infrastructure.messaging.OrderInventoryConfirmEvent`, `eventId`/`reservationToken`/`orderId`/`memberId`/`items(productId, quantity)`/`occurredAt`만 있음)를 직접 대조해보니 이 필드들이 전혀 없는 것으로 확인됐다. 익스체인지(`order.topic.exchange`)/라우팅키(`order.inventory.confirm`) 자체는 일치해 메시지는 정상 수신되지만, `OutboundOrderService.createFromOrderEvent()`가 `event.warehouseId()`로 곧바로 `Warehouse`를 조회하기 때문에 이 값이 없으면(null) `EntityNotFoundException`으로 매번 실패해 메시지가 DLQ로 빠진다 — **즉 지금 상태로는 실제 order-service 메시지로 OutboundOrder가 하나도 생성되지 않는다.** 사용자 확인: 스키마 정합 작업은 별도 이슈로 분리하고, 이 상태 그대로 우선 develop에 병합. order-service 팀과 `warehouseId`(최소) 확정 및 실제 이벤트 클래스 필드 추가가 필요.

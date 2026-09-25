@@ -9,23 +9,19 @@ namespace WmsService.Outbound;
 @tag("Outbound")
 @route("/api/v1/wms/outbounds")
 interface OutboundClient {
-  @summary("작업자별 피킹 Task 조회")
-  @doc("워커/창고 기준으로 피킹 대기 중이거나 할당된 Task 목록을 조회한다.")
-  @get
-  @route("/picking-tasks")
-  getPickingTasks(@query workerId?: int64, @query warehouseId?: int64): WmsService.Common.ApiResponse<PickingTaskResponse[]> | WmsService.Common.ErrorResponse;
+  // 참고: 피킹 Task 조회/시작/완료는 이제 별도 Task API로 다룬다 — WmsService.Task 참고(routes/client/tasks.api.tsp).
 
-  @summary("작업자에게 피킹 Task 할당")
-  @doc("대기 중인 피킹 Task 중 하나를 작업자에게 배정한다.")
+  @summary("출고 완료(실물 재고 차감)")
+  @doc("""
+    포장 대기(PACKING) 중인 전표의 출고를 최종 확정한다. 피킹 시점엔 예약(reservedQuantity)만
+    걸려 있던 재고를 실제로 차감하고, 전표를 COMPLETED로 전환한 뒤 wms.outbound.completed
+    이벤트를 발행한다(routes/events/outbound.events.tsp 참고). PACKING 상태가 아니면
+    409(WMS4098)로 실패한다 — 이미 COMPLETED인 전표를 재호출해도 같은 이유로 막히므로
+    별도 멱등성 키가 필요 없다.
+    """)
   @post
-  @route("/picking-tasks")
-  assignPickingTask(@body body: PickingTaskAssignRequest): WmsService.Common.ApiResponse<PickingTaskResponse> | WmsService.Common.ErrorResponse;
-
-  @summary("피킹 결과 반영")
-  @doc("품목 1건의 실제 피킹 수량을 기록한다. orderedQuantity보다 적으면 SHORTAGE로 처리된다.")
-  @post
-  @route("/{outboundOrderId}/items/{outboundItemId}/pick")
-  pickItem(@path outboundOrderId: int64, @path outboundItemId: int64, @body body: PickItemRequest): WmsService.Common.ApiResponse<OutboundItemResponse> | WmsService.Common.ErrorResponse;
+  @route("/complete")
+  completeOutbound(@body body: OutboundCompleteRequest): WmsService.Common.ApiResponse<OutboundOrderResponse> | WmsService.Common.ErrorResponse;
 
   // TODO: 포장재/보냉재 추천 알고리즘, TMS 연동 방식이 확정 전이라 아래 두 엔드포인트는 구조만 우선 정의한다.
 

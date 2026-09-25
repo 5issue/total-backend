@@ -13,7 +13,10 @@ public enum WmsErrorCode implements ErrorCode {
     INVALID_STOCK_MOVEMENT_STATUS(HttpStatus.CONFLICT, "WMS4092", "대기 중인 작업 지시가 아닙니다."),
     INVALID_INBOUND_ITEM_STATUS(HttpStatus.CONFLICT, "WMS4093", "대기 중인 입고 상세가 아닙니다."),
     INSUFFICIENT_INVENTORY(HttpStatus.CONFLICT, "WMS4094", "재고가 부족합니다."),
-    INVALID_INVENTORY_LOCATION(HttpStatus.CONFLICT, "WMS4095", "재고의 로케이션과 요청된 fromLocationId가 일치하지 않습니다.")
+    INVALID_INVENTORY_LOCATION(HttpStatus.CONFLICT, "WMS4095", "재고의 로케이션과 요청된 fromLocationId가 일치하지 않습니다."),
+    INVALID_TASK_STATUS(HttpStatus.CONFLICT, "WMS4096", "요청한 상태 전이를 수행할 수 없는 작업 지시입니다."),
+    TASK_WORKER_MISMATCH(HttpStatus.CONFLICT, "WMS4097", "작업을 시작한 작업자와 일치하지 않습니다."),
+    INVALID_OUTBOUND_ORDER_STATUS(HttpStatus.CONFLICT, "WMS4098", "포장 대기 중인 전표가 아닙니다.")
     ;
 
     private final HttpStatus status;

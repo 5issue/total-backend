@@ -17,3 +17,17 @@ wms:
     exchange: wms.topic.exchange
     batch-size: 100
     publish-delay-ms: 5000
+  order:
+    # order-service가 발행하는 order.inventory.confirm 구독. 큐/바인딩은 소비자인 우리가 선언한다.
+    exchange: order.topic.exchange
+    confirm-routing-key: order.inventory.confirm
+    confirm-queue: wms.inventory.confirm.queue
+    dead-letter: wms.inventory.confirm.dlq
+  outbound:
+    # 출고 전표가 재고를 전혀 확보(OUT_OF_STOCK)하지 못한 채로 버틸 수 있는 최대 시간.
+    allocation-timeout: 2h
+    failure-check-interval-ms: 3600000
+
+kurly:
+  security:
+    enabled: true

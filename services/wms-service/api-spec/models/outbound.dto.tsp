@@ -5,53 +5,56 @@ namespace WmsService.Outbound;
 
 /** `OutboundItem.OutboundItemStatus`와 1:1로 대응한다. */
 enum OutboundItemStatus {
-  PENDING,
+  @doc("피킹존은 물론 보관존에서도 예약조차 못한 상태. StockMovement가 전혀 없다. 입고 적치(PUT_AWAY)로 보관존 재고가 늘면 재시도 대상이며, 장시간 지속되면 FAILED로 전환된다.")
+  UNALLOCATED,
+
+  @doc("보관존 재고 예약 + 보충 지시(StockMovement, REPLENISHMENT)까지는 생성됨. 물리 이동 완료만 기다리면 된다. location/lotNo/expiredDate가 아직 null이다.")
+  PENDING_REPLENISHMENT,
+
+  @doc("피킹존 재고(location, lotNo)에 매핑되고 reserved_quantity 증가까지 끝난 상태.")
+  ALLOCATED,
   PICKED,
   SHORTAGE,
+
+  @doc("장시간 UNALLOCATED으로 남아 있어 최종 실패 처리됨(배치/스케줄러가 전환).")
+  FAILED,
+}
+
+/** `OutboundOrder.OutboundOrderStatus`와 1:1로 대응한다. */
+enum OutboundOrderStatus {
+  PENDING_REPLENISHMENT,
+  ALLOCATED,
+  PICKING,
+  PACKING,
+  COMPLETED,
+  CANCELED,
+
+  @doc("품목 하나라도 장시간 재고를 확보하지 못해 최종 실패 처리됨(배치/스케줄러가 전환).")
+  FAILED,
 }
 
 // 참고: 예전에는 여기 "OMS 주문 수신 + FEFO 재고 할당"을 REST(POST /internal/v1/wms/outbounds/orders)로
 // 받았지만, 비동기 이벤트(order.inventory.confirm)로 전환했다 — events/inventory.events.tsp 참고.
 // 출고 지시(OutboundOrder) 생성과 FEFO 하드 할당은 이제 그 이벤트 컨슈머 안에서 일어난다.
 
-model OutboundItemResponse {
+// 참고: 피킹은 이제 별도 Task 엔티티/API로 다룬다 — models/tasks.dto.tsp, routes/client/tasks.api.tsp 참고.
+
+// ── client: 출고 완료 ──────────────────────────────────────────
+
+model OutboundOrderResponse {
   id: int64;
-  productId: int64;
-  orderedQuantity: int32;
-  pickedQuantity: int32;
-  status: OutboundItemStatus;
-
-  @doc("FEFO 할당 결과. 결품 등으로 아직 할당되지 않았으면 null.")
-  allocatedLocationId: int64 | null;
-  allocatedLotNo: string | null;
-  allocatedExpiredDate: plainDate | null;
-}
-
-// ── client: 피킹 ──────────────────────────────────────────
-
-@doc("출고 지시 1건에서 피킹해야 할 품목 1개. FEFO 할당 결과(locationId/lotNo)가 채워진 상태로 내려간다.")
-model PickingTaskResponse {
-  outboundItemId: int64;
-  outboundOrderId: int64;
-  productId: int64;
-  locationId: int64 | null;
-  lotNo: string | null;
-  orderedQuantity: int32;
-  status: WmsService.Common.TaskStatus;
-
-  @doc("작업자에게 할당되기 전에는 null.")
-  workerId: int64 | null;
-}
-
-@doc("대기 중인 피킹 Task를 작업자 1명에게 배정한다. 배정 전략(선입선출/동선 최적화 등)은 서버가 정한다.")
-model PickingTaskAssignRequest {
-  workerId: int64;
+  orderId: int64;
   warehouseId: int64;
+  status: OutboundOrderStatus;
+  createdAt: utcDateTime;
 }
 
-model PickItemRequest {
-  @minValue(0)
-  pickedQuantity: int32;
+@doc("""
+  포장 대기(PACKING) 중인 전표의 출고를 최종 확정한다. PACKING 상태가 아니면
+  409(WMS4098)로 실패한다.
+  """)
+model OutboundCompleteRequest {
+  outboundOrderId: int64;
 }
 
 // ── client: 패킹/송장 ──────────────────────────────────────────

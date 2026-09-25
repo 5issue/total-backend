@@ -1,6 +1,7 @@
 package com.kurly.wms.presentation;
 
 import com.kurly.common.response.ApiResponse;
+import com.kurly.common.security.PublicApi;
 import com.kurly.wms.application.InboundOrderService;
 import com.kurly.wms.presentation.dto.InboundItemResponse;
 import com.kurly.wms.presentation.dto.InspectItemRequest;
@@ -23,11 +24,13 @@ public class InboundClientController {
 
     private final InboundOrderService inboundOrderService;
 
+    @PublicApi
     @PostMapping("/inspect")
     public ApiResponse<InboundItemResponse> inspect(@Valid @RequestBody InspectItemRequest request) {
         return ApiResponse.success(inboundOrderService.inspect(request));
     }
 
+    @PublicApi
     @PostMapping("/put-away/recommendation")
     public ApiResponse<PutAwayRecommendationResponse> recommendPutAway(@Valid @RequestBody PutAwayRecommendationRequest request) {
         return ApiResponse.success(inboundOrderService.recommendPutAway(request));
