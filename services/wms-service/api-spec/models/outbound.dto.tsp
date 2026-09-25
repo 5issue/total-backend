@@ -24,45 +24,7 @@ enum OutboundItemStatus {
 // 받았지만, 비동기 이벤트(order.inventory.confirm)로 전환했다 — events/inventory.events.tsp 참고.
 // 출고 지시(OutboundOrder) 생성과 FEFO 하드 할당은 이제 그 이벤트 컨슈머 안에서 일어난다.
 
-model OutboundItemResponse {
-  id: int64;
-  productId: int64;
-  orderedQuantity: int32;
-  pickedQuantity: int32;
-  status: OutboundItemStatus;
-
-  @doc("FEFO 할당 결과. 결품 등으로 아직 할당되지 않았으면 null.")
-  allocatedLocationId: int64 | null;
-  allocatedLotNo: string | null;
-  allocatedExpiredDate: plainDate | null;
-}
-
-// ── client: 피킹 ──────────────────────────────────────────
-
-@doc("출고 지시 1건에서 피킹해야 할 품목 1개. FEFO 할당 결과(locationId/lotNo)가 채워진 상태로 내려간다.")
-model PickingTaskResponse {
-  outboundItemId: int64;
-  outboundOrderId: int64;
-  productId: int64;
-  locationId: int64 | null;
-  lotNo: string | null;
-  orderedQuantity: int32;
-  status: WmsService.Common.TaskStatus;
-
-  @doc("작업자에게 할당되기 전에는 null.")
-  workerId: int64 | null;
-}
-
-@doc("대기 중인 피킹 Task를 작업자 1명에게 배정한다. 배정 전략(선입선출/동선 최적화 등)은 서버가 정한다.")
-model PickingTaskAssignRequest {
-  workerId: int64;
-  warehouseId: int64;
-}
-
-model PickItemRequest {
-  @minValue(0)
-  pickedQuantity: int32;
-}
+// 참고: 피킹은 이제 별도 Task 엔티티/API로 다룬다 — models/tasks.dto.tsp, routes/client/tasks.api.tsp 참고.
 
 // ── client: 패킹/송장 ──────────────────────────────────────────
 // TODO: 포장재/보냉재 추천 알고리즘, TMS 연동 방식(송장 발급 API 계약 등)이 아직 정해지지 않았다.

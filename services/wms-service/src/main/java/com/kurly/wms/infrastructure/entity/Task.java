@@ -83,6 +83,19 @@ public class Task {
         this.status = TaskStatus.PENDING;
     }
 
+    /** 상태 전이 가능 여부(PENDING인지)는 서비스 계층이 잠금을 잡은 뒤 미리 확인한다. */
+    public void start(Long workerId) {
+        this.workerId = workerId;
+        this.status = TaskStatus.IN_PROGRESS;
+        this.startedAt = LocalDateTime.now();
+    }
+
+    /** 상태 전이 가능 여부(IN_PROGRESS인지)는 서비스 계층이 잠금을 잡은 뒤 미리 확인한다. */
+    public void complete() {
+        this.status = TaskStatus.COMPLETED;
+        this.completedAt = LocalDateTime.now();
+    }
+
     public enum TaskStatus {
         PENDING,
         IN_PROGRESS,
