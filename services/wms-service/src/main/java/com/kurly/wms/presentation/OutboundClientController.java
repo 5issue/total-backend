@@ -1,6 +1,7 @@
 package com.kurly.wms.presentation;
 
 import com.kurly.common.response.ApiResponse;
+import com.kurly.common.security.PublicApi;
 import com.kurly.wms.application.OutboundOrderService;
 import com.kurly.wms.presentation.dto.OutboundCompleteRequest;
 import com.kurly.wms.presentation.dto.OutboundOrderResponse;
@@ -21,6 +22,7 @@ public class OutboundClientController {
 
     private final OutboundOrderService outboundOrderService;
 
+    @PublicApi
     @PostMapping("/complete")
     public ApiResponse<OutboundOrderResponse> completeOutbound(@Valid @RequestBody OutboundCompleteRequest request) {
         return ApiResponse.success(outboundOrderService.completeShipment(request));

@@ -1,6 +1,7 @@
 package com.kurly.wms.presentation;
 
 import com.kurly.common.response.ApiResponse;
+import com.kurly.common.security.PublicApi;
 import com.kurly.wms.application.TaskService;
 import com.kurly.wms.infrastructure.entity.Task.TaskStatus;
 import com.kurly.wms.presentation.dto.TaskCompleteRequest;
@@ -26,6 +27,7 @@ public class TaskClientController {
 
     private final TaskService taskService;
 
+    @PublicApi
     @GetMapping
     public ApiResponse<List<TaskResponse>> listTasks(
             @RequestParam(required = false) Long warehouseId,
@@ -33,11 +35,13 @@ public class TaskClientController {
         return ApiResponse.success(taskService.list(warehouseId, status));
     }
 
+    @PublicApi
     @PostMapping("/start")
     public ApiResponse<TaskResponse> startTask(@Valid @RequestBody TaskStartRequest request) {
         return ApiResponse.success(taskService.start(request));
     }
 
+    @PublicApi
     @PostMapping("/complete")
     public ApiResponse<TaskResponse> completeTask(@Valid @RequestBody TaskCompleteRequest request) {
         return ApiResponse.success(taskService.complete(request));

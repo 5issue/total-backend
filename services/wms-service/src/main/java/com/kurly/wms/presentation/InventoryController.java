@@ -1,6 +1,7 @@
 package com.kurly.wms.presentation;
 
 import com.kurly.common.response.ApiResponse;
+import com.kurly.common.security.PublicApi;
 import com.kurly.wms.application.InventoryService;
 import com.kurly.wms.infrastructure.entity.Location.Zone;
 import com.kurly.wms.presentation.dto.InventoryDetailResponse;
@@ -21,6 +22,7 @@ public class InventoryController {
 
     private final InventoryService inventoryService;
 
+    @PublicApi
     @GetMapping("/summary")
     public ApiResponse<PageResponse<ProductInventorySummaryResponse>> getInventorySummary(
             @RequestParam(required = false) Long warehouseId,
@@ -31,6 +33,7 @@ public class InventoryController {
         return ApiResponse.success(inventoryService.summarize(warehouseId, productId, page, size));
     }
 
+    @PublicApi
     @GetMapping
     public ApiResponse<PageResponse<InventoryDetailResponse>> listInventoryDetails(
             @RequestParam(required = false) Long warehouseId,

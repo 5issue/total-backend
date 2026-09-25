@@ -1,6 +1,7 @@
 package com.kurly.wms.presentation;
 
 import com.kurly.common.response.ApiResponse;
+import com.kurly.common.security.PublicApi;
 import com.kurly.wms.application.StockMovementQueryService;
 import com.kurly.wms.infrastructure.entity.StockMovement.MovementStatus;
 import com.kurly.wms.infrastructure.entity.StockMovement.MovementType;
@@ -26,6 +27,7 @@ public class StockMovementController {
 
     private final StockMovementQueryService stockMovementQueryService;
 
+    @PublicApi
     @GetMapping
     public ApiResponse<List<StockMovementResponse>> listStockMovements(
             @RequestParam(required = false) Long warehouseId,
@@ -35,11 +37,13 @@ public class StockMovementController {
         return ApiResponse.success(stockMovementQueryService.list(warehouseId, movementType, status, limit));
     }
 
+    @PublicApi
     @PostMapping
     public ApiResponse<StockMovementResponse> createStockMovement(@Valid @RequestBody StockMovementCreateRequest request) {
         return ApiResponse.success(stockMovementQueryService.create(request));
     }
 
+    @PublicApi
     @PostMapping("/confirm")
     public ApiResponse<StockMovementResponse> confirmStockMovement(@Valid @RequestBody StockMovementConfirmRequest request) {
         return ApiResponse.success(stockMovementQueryService.confirm(request));
