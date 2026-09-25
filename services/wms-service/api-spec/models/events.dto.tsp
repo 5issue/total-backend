@@ -92,6 +92,33 @@ model InboundCompletedEventPayload {
 }
 
 /**
+ * WMS가 출고를 최종 완료(피킹 완료 후 실물 재고 차감)했을 때 발행하는 이벤트의 페이로드.
+ * `com.kurly.wms.infrastructure.messaging.dto.OutboundCompletedEvent`와 대응한다.
+ *
+ * 주문 상세(orderItemId) 단위 매칭은 아직 지원하지 않는다 — `OutboundItem`에 대응 컬럼이
+ * 없다(`WmsService.Events.OrderEvent.OrderEventItem.orderItemId`가 propose 단계 필드인 것과
+ * 같은 이유). 이번 버전은 부분 출고/숏도 없어 상품별 수량만으로 충분하다고 보고, 주문(orderId)
+ * 단위 완료 신호로 우선 정의한다.
+ */
+model OutboundCompletedEventPayload {
+  eventId: string;
+  routingKey: string;
+
+  orderId: int64;
+  warehouseId: int64;
+  items: OutboundCompletedItem[];
+
+  occurredAt: utcDateTime;
+}
+
+model OutboundCompletedItem {
+  productId: int64;
+
+  @doc("실제로 피킹·차감된 수량. 이번 버전은 부분 피킹을 지원하지 않아 항상 주문 수량과 같다.")
+  quantity: int32;
+}
+
+/**
  * WMS가 반품 검수를 완료했을 때 발행하는 이벤트의 페이로드. 아직 구현되지 않은
  * `com.kurly.wms.infrastructure.messaging.dto.ReturnInspectionCompletedEvent`(예정)와
  * 대응한다.

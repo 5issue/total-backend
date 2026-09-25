@@ -20,11 +20,42 @@ enum OutboundItemStatus {
   FAILED,
 }
 
+/** `OutboundOrder.OutboundOrderStatus`와 1:1로 대응한다. */
+enum OutboundOrderStatus {
+  PENDING_REPLENISHMENT,
+  ALLOCATED,
+  PICKING,
+  PACKING,
+  COMPLETED,
+  CANCELED,
+
+  @doc("품목 하나라도 장시간 재고를 확보하지 못해 최종 실패 처리됨(배치/스케줄러가 전환).")
+  FAILED,
+}
+
 // 참고: 예전에는 여기 "OMS 주문 수신 + FEFO 재고 할당"을 REST(POST /internal/v1/wms/outbounds/orders)로
 // 받았지만, 비동기 이벤트(order.inventory.confirm)로 전환했다 — events/inventory.events.tsp 참고.
 // 출고 지시(OutboundOrder) 생성과 FEFO 하드 할당은 이제 그 이벤트 컨슈머 안에서 일어난다.
 
 // 참고: 피킹은 이제 별도 Task 엔티티/API로 다룬다 — models/tasks.dto.tsp, routes/client/tasks.api.tsp 참고.
+
+// ── client: 출고 완료 ──────────────────────────────────────────
+
+model OutboundOrderResponse {
+  id: int64;
+  orderId: int64;
+  warehouseId: int64;
+  status: OutboundOrderStatus;
+  createdAt: utcDateTime;
+}
+
+@doc("""
+  포장 대기(PACKING) 중인 전표의 출고를 최종 확정한다. PACKING 상태가 아니면
+  409(WMS4098)로 실패한다.
+  """)
+model OutboundCompleteRequest {
+  outboundOrderId: int64;
+}
 
 // ── client: 패킹/송장 ──────────────────────────────────────────
 // TODO: 포장재/보냉재 추천 알고리즘, TMS 연동 방식(송장 발급 API 계약 등)이 아직 정해지지 않았다.

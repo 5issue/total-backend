@@ -1,7 +1,9 @@
 package com.kurly.wms.application;
 
+import com.kurly.common.exception.BusinessException;
 import com.kurly.common.exception.EntityNotFoundException;
 import com.kurly.wms.application.event.OutboundAllocatedEvent;
+import com.kurly.wms.domain.exception.WmsErrorCode;
 import com.kurly.wms.infrastructure.entity.Inventory;
 import com.kurly.wms.infrastructure.entity.Location;
 import com.kurly.wms.infrastructure.entity.Location.Zone;
@@ -23,7 +25,10 @@ import com.kurly.wms.infrastructure.jpa.WarehouseJpaRepository;
 import com.kurly.wms.infrastructure.jpa.WmsProductJpaRepository;
 import com.kurly.wms.infrastructure.messaging.dto.OrderEvent;
 import com.kurly.wms.infrastructure.messaging.dto.OrderEvent.OrderEventItem;
+import com.kurly.wms.infrastructure.messaging.dto.OutboundCompletedEvent;
 import com.kurly.wms.infrastructure.scheduler.OutboundFailureProperties;
+import com.kurly.wms.presentation.dto.OutboundCompleteRequest;
+import com.kurly.wms.presentation.dto.OutboundOrderResponse;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -52,6 +57,7 @@ public class OutboundOrderService {
     private final LocationJpaRepository locationJpaRepository;
     private final OutboundFailureProperties outboundFailureProperties;
     private final ApplicationEventPublisher applicationEventPublisher;
+    private final OutboxService outboxService;
 
     /**
      * 결제 완료 이벤트({@code order.inventory.confirm})를 받아 출고 전표(OutboundOrder)를
@@ -348,5 +354,54 @@ public class OutboundOrderService {
                 applicationEventPublisher.publishEvent(new OutboundAllocatedEvent(order.getId()));
             }
         });
+    }
+
+    /**
+     * 포장 대기(PACKING) 중인 전표의 출고를 최종 확정한다 — 피킹존 재고를 실제로 차감하고
+     * (지금까지는 예약(reservedQuantity)만 걸려 있었을 뿐 물리 재고는 그대로였다), 전표를
+     * COMPLETED로 전환한 뒤 {@code wms.outbound.completed} 이벤트를 발행한다.
+     *
+     * <p>{@code findWithPessimisticLockById()}로 전표를 잠그고 PACKING 상태를 확인하는 것 자체가
+     * 이중 호출 방지책이다 — 성공하면 COMPLETED로 바뀌므로 재호출은 그냥 409로 막힌다(별도
+     * idempotency 키 불필요, {@code StockMovementQueryService.findPendingMovement()}와 동일한
+     * 발상).
+     */
+    @Transactional
+    public OutboundOrderResponse completeShipment(OutboundCompleteRequest request) {
+        OutboundOrder outboundOrder = outboundOrderJpaRepository.findWithPessimisticLockById(request.outboundOrderId())
+                .orElseThrow(() -> new EntityNotFoundException("출고 전표를 찾을 수 없습니다. outboundOrderId=" + request.outboundOrderId()));
+        if (outboundOrder.getStatus() != OutboundOrderStatus.PACKING) {
+            throw new BusinessException(WmsErrorCode.INVALID_OUTBOUND_ORDER_STATUS,
+                    "포장 대기 중인 전표가 아닙니다. outboundOrderId=" + outboundOrder.getId() + ", status=" + outboundOrder.getStatus());
+        }
+
+        List<OutboundItem> pickedItems = outboundItemJpaRepository.findByOutboundOrderId(outboundOrder.getId()).stream()
+                .filter(item -> item.getStatus() == OutboundItemStatus.PICKED)
+                .toList();
+        for (OutboundItem item : pickedItems) {
+            deductPickedInventory(outboundOrder.getWarehouse(), item);
+        }
+
+        outboundOrder.complete();
+
+        List<OutboundCompletedEvent.Item> eventItems = pickedItems.stream()
+                .map(item -> new OutboundCompletedEvent.Item(item.getProduct().getId(), item.getPickedQuantity()))
+                .toList();
+        outboxService.recordOutboundCompleted(outboundOrder.getOrderId(), outboundOrder.getWarehouse().getId(), eventItems);
+
+        log.info("출고 완료 처리 및 재고 차감 완료. outboundOrderId={}, orderId={}, 품목수={}",
+                outboundOrder.getId(), outboundOrder.getOrderId(), pickedItems.size());
+        return OutboundOrderResponse.from(outboundOrder);
+    }
+
+    /** 피킹 시점엔 예약만 걸려 있던 재고를, 실제로 이 로케이션에서 빠져나간 것으로 확정한다. */
+    private void deductPickedInventory(Warehouse warehouse, OutboundItem item) {
+        Inventory inventory = inventoryJpaRepository.findByWarehouseIdAndLocationIdAndProductIdAndLotNoAndExpiredDateAndLpnCode(
+                        warehouse.getId(), item.getLocation().getId(), item.getProduct().getId(),
+                        item.getLotNo(), item.getExpiredDate(), item.getLpnCode())
+                .orElseThrow(() -> new EntityNotFoundException(
+                        "출고 완료 처리 중 차감할 재고를 찾지 못했습니다. outboundItemId=" + item.getId()));
+        inventory.release(item.getPickedQuantity());
+        inventory.remove(item.getPickedQuantity());
     }
 }

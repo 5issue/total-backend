@@ -29,6 +29,7 @@ import "./routes/client/tasks.api.tsp";
 
 import "./routes/events/inventory.events.tsp";
 import "./routes/events/inbound.events.tsp";
+import "./routes/events/outbound.events.tsp";
 import "./routes/events/return.events.tsp";
 
 using TypeSpec.Http;
@@ -44,7 +45,7 @@ using TypeSpec.OpenAPI;
 @tagMetadata("Inbound", #{ description: "입고 예정(ASN) 생성, 검수, 적치" })
 @tagMetadata("Inventory", #{ description: "재고 조회, 재고 선점(Soft-alloc). 하드 할당/복구는 비동기 이벤트로 처리(routes/events/), 로케이션 간 이동 작업 지시는 StockMovement 태그 참고" })
 @tagMetadata("StockMovement", #{ description: "재고 이동 작업 지시(적치/보충/재배치) 생성·목록 조회·완료 확정" })
-@tagMetadata("Outbound", #{ description: "패킹, 송장. 출고 지시 생성은 비동기 이벤트로 처리(routes/events/), 피킹 작업 지시는 Task 태그 참고" })
+@tagMetadata("Outbound", #{ description: "출고 완료(실물 재고 차감), 패킹, 송장. 출고 지시 생성은 비동기 이벤트로 처리(routes/events/), 피킹 작업 지시는 Task 태그 참고" })
 @tagMetadata("Task", #{ description: "출고 피킹 작업 지시(Task) 조회·시작·완료" })
 @tagMetadata("Workers", #{ description: "창고 작업자 등록 및 상태 관리" })
 @tagMetadata("Monitoring", #{ description: "로케이션 히트맵, 작업자 생산성(UPH) 등 운영 모니터링" })
