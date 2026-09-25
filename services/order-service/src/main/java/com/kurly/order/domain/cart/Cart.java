@@ -10,6 +10,7 @@ import org.springframework.util.Assert;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 
 @Getter
 @Entity
@@ -59,5 +60,19 @@ public class Cart extends BaseEntity {
     public void addItem(CartItem item) {
         this.items.add(item);
         item.assignCart(this);
+    }
+
+    public Optional<CartItem> findItemByProductId(Long productId) {
+        return this.items.stream()
+                .filter(item -> item.getProductId().equals(productId))
+                .findFirst();
+    }
+
+    public void removeItemByProductId(Long productId) {
+        this.items.removeIf(item -> item.getProductId().equals(productId));
+    }
+
+    public void removeItemsByProductIds(List<Long> productIds) {
+        this.items.removeIf(item -> productIds.contains(item.getProductId()));
     }
 }

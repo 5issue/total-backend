@@ -1,0 +1,17 @@
+version: '3.8'
+
+services:
+  oms-postgres:
+    image: postgres:17-alpine
+    container_name: kurly-oms-postgres-prod
+    environment:
+      POSTGRES_DB: ${DB_NAME:?DB_NAME is required}
+      POSTGRES_USER: ${DB_USERNAME:?DB_USERNAME is required}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
+    ports:
+      - "${DB_BIND_ADDRESS:-127.0.0.1}:${DB_PORT:-5432}:5432"
+    volumes:
+      - oms_pgdata_prod:/var/lib/postgresql/data
+
+volumes:
+  oms_pgdata_prod:

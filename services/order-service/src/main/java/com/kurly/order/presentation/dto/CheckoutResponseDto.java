@@ -1,10 +1,12 @@
 package com.kurly.order.presentation.dto;
 
 import com.kurly.order.domain.order.Order;
+
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.UUID;
 
-public record CheckoutResponseDto(Long orderId, String orderNo, String reservationToken,
+public record CheckoutResponseDto(Long orderId, String orderNo, UUID reservationToken,
                                   LocalDateTime expiresAt, Long paymentAmount, List<OrderItemResponseDto> items) {
     public static CheckoutResponseDto from(Order order) {
         return new CheckoutResponseDto(order.getId(), order.getOrderNo(), order.getInventoryReservationToken(),

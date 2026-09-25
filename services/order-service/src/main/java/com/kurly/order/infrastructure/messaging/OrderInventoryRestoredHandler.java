@@ -3,8 +3,10 @@ package com.kurly.order.infrastructure.messaging;
 import com.kurly.order.application.OrderService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.amqp.AmqpRejectAndDontRequeueException;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
 import org.springframework.stereotype.Component;
+
 
 @Slf4j
 @Component
@@ -13,12 +15,16 @@ public class OrderInventoryRestoredHandler {
 
     private final OrderService orderService;
 
-    @RabbitListener(queues = OrderRabbitMqConfig.INVENTORY_RESTORED_QUEUE)
+    @RabbitListener(queues = OrderRabbitMqConfig.QUEUE_INVENTORY_RESTORED)
     public void handle(ProductInventoryRestoredEvent event) {
         log.info("상품 재고 복구 결과 수신: orderId={}, eventId={}, status={}",
                 event.orderId(), event.eventId(), event.status());
-        if ("RESTORED".equals(event.status())) {
-            orderService.completeCancel(event.orderId(), event.reservationToken());
+
+        try {
+            orderService.completeCancel(event.orderId(), event.status());
+        } catch (IllegalStateException e) {
+            throw new AmqpRejectAndDontRequeueException(
+                    "재고 복구 이벤트 처리 실패: orderId=" + event.orderId(), e);
         }
     }
 }

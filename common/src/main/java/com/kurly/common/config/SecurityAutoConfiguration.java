@@ -1,6 +1,7 @@
 package com.kurly.common.config;
 
 import com.kurly.common.security.*;
+import com.kurly.common.security.activity.SessionActivityRecorder;
 import com.nimbusds.jose.jwk.JWK;
 import com.nimbusds.jose.jwk.source.JWKSource;
 import com.nimbusds.jose.jwk.source.JWKSourceBuilder;
@@ -126,8 +127,10 @@ public class SecurityAutoConfiguration {
     public WebMvcConfigurer securityWebMvcConfigurer(
             JwtVerifier jwtVerifier,
             @Value("${kurly.cors.allowed-origins:http://localhost:8080,http://127.0.0.1:8080}")
-            List<String> allowedOrigins) {
-        return new SecurityWebMvcConfigurer(jwtVerifier, allowedOrigins);
+            List<String> allowedOrigins,
+            ObjectProvider<SessionActivityRecorder> activityRecorder) {
+        return new SecurityWebMvcConfigurer(jwtVerifier, allowedOrigins,
+                activityRecorder.getIfAvailable(() -> SessionActivityRecorder.NOOP));
     }
 
     @RequiredArgsConstructor
@@ -135,6 +138,7 @@ public class SecurityAutoConfiguration {
 
         private final JwtVerifier jwtVerifier;
         private final List<String> allowedOrigins;
+        private final SessionActivityRecorder activityRecorder;
 
         @Override
         public void addCorsMappings(CorsRegistry registry) {
@@ -149,7 +153,7 @@ public class SecurityAutoConfiguration {
         @Override
         public void addInterceptors(InterceptorRegistry registry) {
             // 경로 패턴으로 공개 여부를 가르지 않는다. 판단은 핸들러 애노테이션이 한다.
-            registry.addInterceptor(new AuthenticationInterceptor(jwtVerifier))
+            registry.addInterceptor(new AuthenticationInterceptor(jwtVerifier, activityRecorder))
                     .addPathPatterns("/**")
                     .excludePathPatterns(
                             "/error",

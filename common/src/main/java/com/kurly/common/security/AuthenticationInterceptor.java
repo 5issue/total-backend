@@ -1,6 +1,7 @@
 package com.kurly.common.security;
 
 import com.kurly.common.exception.ForbiddenException;
+import com.kurly.common.security.activity.SessionActivityRecorder;
 import com.kurly.common.exception.UnauthorizedException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -28,6 +29,12 @@ public class AuthenticationInterceptor implements HandlerInterceptor {
     private static final String BEARER_PREFIX = "Bearer ";
 
     private final JwtVerifier jwtVerifier;
+    private final SessionActivityRecorder activityRecorder;
+
+    /** 활동 기록이 필요 없는 환경(테스트 등)에서 쓰는 생성자. */
+    public AuthenticationInterceptor(JwtVerifier jwtVerifier) {
+        this(jwtVerifier, SessionActivityRecorder.NOOP);
+    }
 
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) {
@@ -46,6 +53,7 @@ public class AuthenticationInterceptor implements HandlerInterceptor {
                 .orElseGet(HandlerAuthorizationRule::forAuthenticated);
 
         if (rule.publicAccess()) {
+            recordIfAuthenticated(request);
             return true;
         }
 
@@ -58,7 +66,33 @@ public class AuthenticationInterceptor implements HandlerInterceptor {
         }
 
         request.setAttribute(AuthenticatedPrincipal.ATTRIBUTE, principal);
+
+        // 인증에 성공한 요청만 활동으로 센다. 공개 엔드포인트는 주체가 없어 여기 도달하지 않는다.
+        activityRecorder.record(principal);
         return true;
+    }
+
+    /**
+     * 공개 엔드포인트에서도 토큰이 있으면 활동으로 센다(설계서 1.6).
+     *
+     * <p><b>없으면 유휴 판정에 구멍이 생긴다.</b> 상품 조회처럼 공개인 경로만 오가는 동안에는
+     * 기록이 남지 않아, 로그인한 사용자가 카탈로그를 한도 이상 둘러보다 갱신하면 유휴로 오판된다.
+     *
+     * <p><b>검증 실패는 무시한다.</b> 공개 경로는 토큰이 없거나 잘못돼도 통과시켜야 한다.
+     * 여기서 던지면 만료된 토큰을 들고 있다는 이유로 공개 API가 401이 된다.
+     *
+     * <p>주체를 요청 attribute에 담지는 않는다. 공개 엔드포인트의 동작을 바꾸지 않기 위함이다.
+     */
+    private void recordIfAuthenticated(HttpServletRequest request) {
+        String header = request.getHeader(HttpHeaders.AUTHORIZATION);
+        if (!StringUtils.hasText(header) || !header.startsWith(BEARER_PREFIX)) {
+            return;
+        }
+        try {
+            activityRecorder.record(jwtVerifier.verify(header.substring(BEARER_PREFIX.length()).trim()));
+        } catch (Exception e) {
+            log.trace("공개 경로의 토큰 검증 실패. 활동으로 세지 않고 통과시킨다", e);
+        }
     }
 
     private String extractBearerToken(HttpServletRequest request) {

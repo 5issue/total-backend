@@ -32,6 +32,16 @@ public interface UserRefreshTokenRepository {
     /** 재사용 감지 시 해당 회원의 세션을 일괄 무효화하기 위해 조회한다. */
     List<UserRefreshToken> findAllByAuthUserId(Long authUserId);
 
+    /**
+     * 활동 이벤트를 살아 있는 세션에 반영한다(세션활동_이벤트_통신명세 5-1).
+     *
+     * <p>폐기·만료된 세션은 건드리지 않는다. 되살리면 유휴 판정을 우회하게 된다.
+     * 이미 더 최근 기록이 있으면 덮어쓰지 않아, 늦게 도착한 과거 이벤트가 무해해진다.
+     *
+     * @return 갱신된 행 수
+     */
+    int touchActiveSessions(Long userId, java.time.LocalDateTime usedAt, java.time.LocalDateTime now);
+
     /** 명시적 로그아웃 시 해당 회원의 세션을 제거한다(인증인가_설계서 1.6). */
     void deleteAllByAuthUserUserId(Long userId);
 }

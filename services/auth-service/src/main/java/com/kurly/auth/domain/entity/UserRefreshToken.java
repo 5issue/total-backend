@@ -55,6 +55,13 @@ public class UserRefreshToken {
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
+    /**
+     * 마지막 활동 시각. 유휴 세션 자동 차단 판정의 기준이다(설계서 1.6).
+     * 기존 행에는 값이 없을 수 있어 {@code null}을 허용하며, 그때는 {@code createdAt}으로 판정한다.
+     */
+    @Column(name = "last_used_at")
+    private LocalDateTime lastUsedAt;
+
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(
             name = "auth_user_id",
@@ -64,11 +71,24 @@ public class UserRefreshToken {
     private AuthUser authUser;
 
     @Builder
-    private UserRefreshToken(String token, LocalDateTime expiresAt, AuthUser authUser) {
+    private UserRefreshToken(String token, LocalDateTime expiresAt, LocalDateTime lastUsedAt, AuthUser authUser) {
         this.token = token;
         this.expiresAt = expiresAt;
         this.authUser = authUser;
         this.revoked = false;
+        this.lastUsedAt = lastUsedAt;
+    }
+
+    /** 활동을 기록한다. 이미 더 최근 기록이 있으면 덮어쓰지 않는다. */
+    public void touch(LocalDateTime usedAt) {
+        if (this.lastUsedAt == null || this.lastUsedAt.isBefore(usedAt)) {
+            this.lastUsedAt = usedAt;
+        }
+    }
+
+    /** 판정 기준 시각. 활동 기록이 없으면 발급 시각을 쓴다. */
+    public LocalDateTime lastActivityAt() {
+        return lastUsedAt != null ? lastUsedAt : createdAt;
     }
 
     /** 로그아웃·rotation·재사용 감지 시 무효화한다. */

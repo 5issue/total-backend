@@ -5,13 +5,20 @@ import com.kurly.common.exception.GlobalErrorCode;
 import com.kurly.common.security.AuthenticatedPrincipal;
 import com.kurly.order.domain.cart.Cart;
 import com.kurly.order.domain.cart.CartItem;
+import com.kurly.order.domain.cart.CartItemRepository;
 import com.kurly.order.domain.cart.CartRepository;
 import com.kurly.order.domain.claim.*;
 import com.kurly.order.domain.common.OrderErrorCode;
 import com.kurly.order.domain.common.StorageType;
 import com.kurly.order.domain.order.*;
+import com.kurly.order.infrastructure.dto.AddressResponse;
+import com.kurly.order.infrastructure.dto.CancelEligibilityResponse;
+import com.kurly.order.infrastructure.dto.CartProductInfo;
+import com.kurly.order.infrastructure.dto.CheckoutInventoryResponseDto;
+import com.kurly.order.infrastructure.messaging.*;
 import com.kurly.order.presentation.dto.*;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.PageRequest;
@@ -34,16 +41,19 @@ import java.util.stream.Collectors;
 @Service
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
+@Slf4j
 public class OrderService {
 
     private static final Duration PAYMENT_TIMEOUT = Duration.ofMinutes(5);
 
     private final OrderRepository orderRepository;
     private final CartRepository cartRepository;
+    private final CartItemRepository cartItemRepository;
     private final OrderClaimRepository orderClaimRepository;
     private final OrderDeliveryInfoRepository orderDeliveryInfoRepository;
     private final ApplicationEventPublisher eventPublisher;
     private final OrderExternalService externalService;
+    private final CartExternalService cartExternalService;
 
     @Value("${services.storage.refund-attachment-bucket:refund-attachments}")
     private String refundAttachmentBucket;
@@ -70,68 +80,85 @@ public class OrderService {
             throw new BusinessException(OrderErrorCode.ORD_INVALID_CART_ITEMS);
         }
 
-        CartResponseDto.Address address = externalService.getAddress(memberId, cart.getAddressId());
-        if (address == null || address.recipientName() == null || address.recipientName().isBlank()
-                || address.recipientPhone() == null || address.recipientPhone().isBlank()
-                || address.zipCode() == null || address.zipCode().isBlank()
-                || address.address() == null || address.address().isBlank()) {
+        AddressResponse address = externalService.getAddress(memberId, cart.getAddressId());
+        if (address == null || address.addressId() == null
+            || address.recipientName() == null || address.recipientName().isBlank()
+            || address.recipientPhone() == null || address.recipientPhone().isBlank()
+            || address.address() == null || address.address().isBlank()) {
             throw new BusinessException(OrderErrorCode.ORD_NOT_FOUND_ADDRESS);
         }
 
+        List<Long> productIds = selectedItems.stream().map(CartItem::getProductId).toList();
+        Map<Long, CartProductInfo> productMap;
+        try {
+            List<CartProductInfo> productInfos = cartExternalService.getProducts(productIds);
+            if (productInfos == null) {
+                throw new IllegalStateException("상품 서비스의 상품 응답이 비어 있습니다.");
+            }
+            productMap = productInfos.stream()
+                    .collect(Collectors.toMap(CartProductInfo::productId, Function.identity()));
+        } catch (RestClientException | IllegalStateException e) {
+            throw new BusinessException(OrderErrorCode.ORD_INCOMPLETE_PRODUCT_RESPONSE);
+        }
+
+        if (!productMap.keySet().containsAll(productIds)) {
+            throw new BusinessException(OrderErrorCode.ORD_INCOMPLETE_PRODUCT_RESPONSE);
+        }
+
+        List<OrderItem> orderItems = selectedItems.stream()
+                .map(item -> {
+                    CartProductInfo info = productMap.get(item.getProductId());
+                    return OrderItem.create(
+                            item.getProductId(),
+                            0L,
+                            0L,
+                            info.name(),
+                            null,
+                            item.getStorageType(),
+                            item.getQuantity(),
+                            info.salePrice()
+                    );
+                })
+                .toList();
+
         orderRepository.findActiveCheckoutForUpdate(memberId).ifPresent(existing -> {
             if (existing.getInventoryReservationToken() != null &&
-                    existing.getInventoryReservedUntil() != null &&
-                    existing.getInventoryReservedUntil().isAfter(LocalDateTime.now())) {
+                existing.getInventoryReservedUntil() != null &&
+                existing.getInventoryReservedUntil().isAfter(LocalDateTime.now())) {
                 externalService.releaseInventory(existing.getInventoryReservationToken());
             }
             existing.markExpired();
         });
 
-        String reservationToken = "rsv_" + UUID.randomUUID().toString().replace("-", "");
+        UUID reservationToken = UUID.randomUUID();
         LocalDateTime expiresAt = LocalDateTime.now().plusMinutes(15);
 
-        CheckoutInventoryResponseDto hold;
         try {
-            hold = externalService.holdInventory(reservationToken, selectedItems);
+            externalService.holdInventory(reservationToken, selectedItems);
         } catch (HttpClientErrorException.Conflict e) {
             throw new BusinessException(OrderErrorCode.ORD_INSUFFICIENT_STOCK);
         } catch (RestClientException | IllegalStateException e) {
             throw new BusinessException(OrderErrorCode.ORD_INCOMPLETE_PRODUCT_RESPONSE, "상품 재고 서비스 통신에 실패했습니다.");
         }
 
-        if (hold == null || hold.items() == null || !inventoryItemsMatch(selectedItems, hold.items())) {
-            throw new BusinessException(OrderErrorCode.ORD_INCOMPLETE_PRODUCT_RESPONSE);
-        }
-
-        List<OrderItem> orderItems = hold.items().stream()
-                .map(item -> OrderItem.create(
-                        item.productId(),
-                        item.dealProductId(),
-                        item.skuId(),
-                        item.productName(),
-                        item.optionName(),
-                        item.storageType(),
-                        item.quantity(),
-                        item.unitPrice()))
-                .toList();
-
-        String orderNo = "O" + UUID.randomUUID().toString().replace("-", "").substring(0, 20).toUpperCase();
+        String orderNo = "O" + reservationToken.toString().replace("-", "").substring(0, 20).toUpperCase();
 
         Order order = orderRepository.save(Order.createCheckout(
                 orderNo,
                 memberId,
                 reservationToken,
                 expiresAt,
-                hold.shippingFee(),
+                0L, //  hold.shippingFee(),
                 orderItems
         ));
 
         OrderDeliveryInfo deliveryInfo = OrderDeliveryInfo.createSnapshot(
                 order,
+                cart.getRegionId(),
                 address.addressId(),
                 address.recipientName(),
                 address.recipientPhone(),
-                address.zipCode(),
+                "11111", // address.zipCode(),
                 address.address(),
                 address.detailAddress(),
                 address.addressName(),
@@ -227,10 +254,10 @@ public class OrderService {
         StorageType policy = hasColdItem
                 ? order.getItems().stream()
                   .map(OrderItem::getStorageType)
-                  .filter(type -> type != StorageType.ROOM)
+                  .filter(type -> type != StorageType.ROOM_TEMPERATURE)
                   .findFirst()
-                  .orElse(StorageType.CHILLED)
-                : StorageType.ROOM;
+                  .orElse(StorageType.REFRIGERATED)
+                : StorageType.ROOM_TEMPERATURE;
 
         return new ReturnPreviewResponseDto(
                 orderId,
@@ -250,13 +277,23 @@ public class OrderService {
         Order order = getOwnedOrderForUpdate(me, orderId);
 
         if (order.getStatus() == OrderStatus.PAID) {
-            throw new BusinessException(OrderErrorCode.ORD_CONFLICT_ALREADY_PAID);
+            throw new BusinessException(OrderErrorCode.ORD_CONFLICT_ALREADY_PROCESSED, order.getStatus().name());
         }
         if (order.getStatus() != OrderStatus.CHECKOUT_CREATED) {
             throw new BusinessException(OrderErrorCode.ORD_INVALID_STATUS);
         }
 
         order.markPaymentPending(LocalDateTime.now().plus(PAYMENT_TIMEOUT));
+
+        List<Long> orderProductIds = order.getItems().stream()
+                .map(OrderItem::getProductId)
+                .toList();
+
+        Cart cart = cartRepository.findByMemberIdForUpdate(me.userId())
+                .orElseThrow(() -> new BusinessException(OrderErrorCode.ORD_INVALID_CART_ITEMS));
+
+        cart.getItems().removeIf(item -> orderProductIds.contains(item.getProductId()));
+
         return PlaceOrderResponseDto.from(order);
     }
 
@@ -273,28 +310,28 @@ public class OrderService {
 
     @Transactional
     public CompletePayResponseDto completePay(Long orderId, CompletePayRequestDto request) {
-        Order before = getOrder(orderId);
+        Order order = orderRepository.findByIdForUpdate(orderId)
+                .orElseThrow(() -> new BusinessException(OrderErrorCode.ORD_NOT_FOUND_ORDER));
 
-        if (before.getStatus() == OrderStatus.PAID) {
-            throw new BusinessException(OrderErrorCode.ORD_CONFLICT_ALREADY_PAID);
+        if (order.getStatus() != OrderStatus.PENDING_PAYMENT) {
+            throw new BusinessException(OrderErrorCode.ORD_CONFLICT_ALREADY_PROCESSED, order.getStatus().name());
         }
-        if (!before.getPaymentAmount().equals(request.paymentAmount())) {
+        if (!order.getPaymentAmount().equals(request.paymentAmount())) {
             throw new BusinessException(OrderErrorCode.ORD_INVALID_PAYMENT_AMOUNT);
         }
-
-        if (orderRepository.completePayment(orderId, request.paymentId(), request.paidAt(), LocalDateTime.now()) == 0) {
+        if (order.getInventoryReservedUntil().isBefore(request.paidAt())) {
             throw new BusinessException(OrderErrorCode.ORD_EXPIRED_PAYMENT_TIMEOUT);
         }
 
-        Order paidOrder = getOrder(orderId);
-
-        eventPublisher.publishEvent(OrderEvent.of("order.inventory.confirm", paidOrder));
+        order.markPaid(request.paymentId(), request.paidAt());
 
         OrderDeliveryInfo deliveryInfo = orderDeliveryInfoRepository.findById(orderId)
                 .orElseThrow(() -> new BusinessException(OrderErrorCode.ORD_NOT_FOUND_ORDER));
-        eventPublisher.publishEvent(SalesOrderCreatedEvent.of(paidOrder, deliveryInfo));
 
-        return CompletePayResponseDto.from(paidOrder);
+        eventPublisher.publishEvent(OrderPaymentCompletedEvent.of(order, deliveryInfo));
+        eventPublisher.publishEvent(OrderInventoryConfirmEvent.of(order));
+
+        return CompletePayResponseDto.from(order);
     }
 
     @Transactional
@@ -311,7 +348,9 @@ public class OrderService {
             throw new BusinessException(OrderErrorCode.ORD_INVALID_STATUS, "결제 완료 주문만 취소할 수 있습니다.");
         }
 
-        if (!externalService.isCancellationEligible(orderId)) {
+        CancelEligibilityResponse eligibility = externalService.getCancelEligibility(orderId);
+
+        if (!eligibility.cancelable()) {
             throw new BusinessException(OrderErrorCode.ORD_CONFLICT_RELEASE_STARTED);
         }
 
@@ -325,7 +364,8 @@ public class OrderService {
                 order.getPaymentAmount()
         ));
 
-        eventPublisher.publishEvent(PaymentCancellationEvent.of(order));
+        externalService.cancelPayment(order.getPaymentId(), "order-cancel-" + orderId, request.reasonCode());
+        eventPublisher.publishEvent(OrderInventoryRestoreEvent.of(order));
         return OrderClaimResponseDto.from(claim);
     }
 
@@ -343,7 +383,7 @@ public class OrderService {
 
         String objectKeyPrefix = "returns/%d/".formatted(me.userId());
         if (attachments.stream().anyMatch(attachment -> !attachment.objectKey().startsWith(objectKeyPrefix)
-                || attachment.objectKey().contains(".."))) {
+                                                        || attachment.objectKey().contains(".."))) {
             throw new BusinessException(OrderErrorCode.ORD_INVALID_RETURN_EVIDENCE);
         }
 
@@ -386,7 +426,7 @@ public class OrderService {
         )));
 
         orderClaimRepository.save(claim);
-        eventPublisher.publishEvent(OrderEvent.of("order.return-requested", order));
+        eventPublisher.publishEvent(OrderReturnRequestedEvent.of(order));
         return OrderClaimResponseDto.from(claim);
     }
 
@@ -395,18 +435,29 @@ public class OrderService {
         if (orderRepository.expirePayment(orderId, now) == 0) {
             return false;
         }
-        eventPublisher.publishEvent(OrderEvent.of("order.inventory.release", getOrder(orderId)));
+        eventPublisher.publishEvent(OrderInventoryReleaseEvent.of(getOrder(orderId)));
         return true;
     }
 
     @Transactional
-    public void completeCancel(Long orderId, String reservationToken) {
+    public void completeCancel(Long orderId, String eventStatus) {
         Order order = orderRepository.findByIdForUpdate(orderId)
-                .orElseThrow(() -> new BusinessException(OrderErrorCode.ORD_NOT_FOUND_ORDER));
+                .orElseThrow(() -> new IllegalStateException("주문을 찾을 수 없습니다. orderId=" + orderId));
 
-        if (reservationToken == null || !reservationToken.equals(order.getInventoryReservationToken())) {
-            throw new BusinessException(OrderErrorCode.ORD_INVALID_STATUS, "재고 복구 토큰이 주문과 일치하지 않습니다.");
+        if (order.getStatus() == OrderStatus.CANCELLED) {
+            log.info("이미 취소 처리 완료된 주문입니다. orderId={}", orderId);
+            return;
         }
+
+        if (!"RESTORED".equals(eventStatus) && !"ALREADY_RESTORED".equals(eventStatus)) {
+            throw new IllegalStateException("재고 복구 실패 이벤트 수신. status=" + eventStatus + ", orderId=" + orderId);
+        }
+
+        if (order.getStatus() != OrderStatus.CANCEL_PROCESSING) {
+            throw new IllegalStateException("취소 처리 중(CANCEL_PROCESSING) 상태가 아닙니다. currentStatus="
+                                            + order.getStatus() + ", orderId=" + orderId);
+        }
+
         order.completeCancel();
     }
 
@@ -449,7 +500,7 @@ public class OrderService {
 
     private boolean hasColdItem(Order order) {
         return order.getItems().stream()
-                .anyMatch(item -> item.getStorageType() == StorageType.CHILLED || item.getStorageType() == StorageType.FROZEN);
+                .anyMatch(item -> item.getStorageType() == StorageType.REFRIGERATED || item.getStorageType() == StorageType.FROZEN);
     }
 
     private boolean inventoryItemsMatch(List<CartItem> requested,
@@ -461,9 +512,6 @@ public class OrderService {
                 .map(item -> new InventoryItemKey(item.productId(), item.quantity()))
                 .collect(Collectors.groupingBy(Function.identity(), Collectors.counting()));
         return requestedItems.equals(receivedItems);
-    }
-
-    private record InventoryItemKey(Long productId, Integer quantity) {
     }
 
     private ClaimType parseClaimType(String value) {
@@ -486,5 +534,8 @@ public class OrderService {
         } catch (IllegalArgumentException exception) {
             throw new BusinessException(OrderErrorCode.ORD_INVALID_REQUEST_STATUS);
         }
+    }
+
+    private record InventoryItemKey(Long productId, Integer quantity) {
     }
 }

@@ -1,0 +1,24 @@
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5438/oms
+    username: postgres
+    password: postgres
+    driver-class-name: org.postgresql.Driver
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+        default_batch_fetch_size: 100
+
+kurly:
+  security:
+    enabled: true
+    issuer: ${JWT_ISSUER:https://auth.kurly.local}
+    audience: ${JWT_AUDIENCE:kurly-api}
+    jwks-uri: ${JWT_JWKS_URI:http://localhost:8081/.well-known/jwks.json}
+
+server:
+  port: 8086

@@ -1,6 +1,7 @@
 package com.kurly.product.presentation;
 
 import com.kurly.common.response.ApiResponse;
+import com.kurly.common.security.PublicApi;
 import com.kurly.common.security.RequireRole;
 import com.kurly.common.security.Role;
 import com.kurly.product.application.InternalProductService;
@@ -20,7 +21,7 @@ public class InternalProductController {
 
     private final InternalProductService internalProductService;
 
-    @RequireRole(Role.ADMIN)
+    @PublicApi
     @PostMapping("/batch-summary")
     public ApiResponse<BatchProductSummaryResponse> batchSummary(@Valid @RequestBody BatchProductSummaryRequest request) {
         return ApiResponse.success(internalProductService.getBatchSummary(request.productIds()));

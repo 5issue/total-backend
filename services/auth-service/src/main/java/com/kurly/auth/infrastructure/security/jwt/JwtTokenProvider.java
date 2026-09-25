@@ -53,7 +53,19 @@ public class JwtTokenProvider {
     }
 
     public IssuedToken issueAccessToken(Long userId, Role role) {
-        return issue(userId, role, TokenType.ACCESS, properties.accessTokenTtl());
+        return issue(userId, role, TokenType.ACCESS, accessTokenTtl(role));
+    }
+
+    /**
+     * 관리자 access token은 별도 수명을 쓴다(설계서 1.6 — 관리자 유휴 한도 15분).
+     * 유휴 판정이 갱신 시점에만 일어나므로, 수명이 유휴 한도보다 길면 한도를 넘긴 뒤에도
+     * 만료 전까지 보호 API를 호출할 수 있다.
+     */
+    private Duration accessTokenTtl(Role role) {
+        if (role == Role.ADMIN && properties.adminAccessTokenTtl() != null) {
+            return properties.adminAccessTokenTtl();
+        }
+        return properties.accessTokenTtl();
     }
 
     public IssuedToken issueRefreshToken(Long userId, Role role) {

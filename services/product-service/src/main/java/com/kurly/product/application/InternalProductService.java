@@ -133,6 +133,7 @@ public class InternalProductService {
         int availableQuantity = availableQuantityOrNull != null ? availableQuantityOrNull : 0;
         return new ProductSummaryItem(
                 product.getId(),
+                product.getSkuCode(),
                 product.getName(),
                 product.getSalePrice(),
                 thumbnailUrl,
