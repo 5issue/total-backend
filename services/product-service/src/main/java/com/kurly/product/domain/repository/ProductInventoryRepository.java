@@ -16,5 +16,9 @@ public interface ProductInventoryRepository {
 
     void restoreInventory(String reservationToken, List<Long> productIds, List<Integer> quantities);
 
+    void increaseInventory(Long productId, int quantity);
+
+    void finalizeOutboundInventory(Long productId, int quantity);
+
     void syncInventoryToRedis(Long productId);
 }

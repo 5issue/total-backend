@@ -59,4 +59,13 @@ public class ProductInventory {
     public void restore(int quantity) {
         this.reservedQuantity = Math.max(0, this.reservedQuantity - quantity);
     }
+
+    public void increaseBaseQuantity(int quantity) {
+        this.baseQuantity += quantity;
+    }
+
+    public void finalizeOutbound(int quantity) {
+        this.baseQuantity = Math.max(0, this.baseQuantity - quantity);
+        this.reservedQuantity = Math.max(0, this.reservedQuantity - quantity);
+    }
 }

@@ -84,4 +84,26 @@ public class ProductInventoryService {
 
         productInventoryRepository.restoreInventory(null, items.stream().map(ReserveItem::productId).toList(), items.stream().map(ReserveItem::quantity).toList());
     }
+
+    @Transactional
+    public void increaseStock(Long productId, int quantity) {
+        ProductInventory inventory = productInventoryRepository.findByProductId(productId)
+                .orElseThrow(() -> new EntityNotFoundException("상품 재고를 찾을 수 없습니다. productId=" + productId));
+
+        inventory.increaseBaseQuantity(quantity);
+        inventory.getProduct().restock();
+
+        productInventoryRepository.increaseInventory(productId, quantity);
+    }
+
+    @Transactional
+    public void finalizeOutbound(List<ReserveItem> items) {
+        for (ReserveItem item : items) {
+            ProductInventory inventory = productInventoryRepository.findByProductId(item.productId())
+                    .orElseThrow(() -> new EntityNotFoundException("상품 재고를 찾을 수 없습니다. productId=" + item.productId()));
+
+            inventory.finalizeOutbound(item.quantity());
+            productInventoryRepository.finalizeOutboundInventory(item.productId(), item.quantity());
+        }
+    }
 }
