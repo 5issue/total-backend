@@ -1,10 +1,13 @@
 package com.kurly.product.infrastructure.messaging;
 
 import com.kurly.product.application.port.EventPublisher;
+import java.nio.charset.StandardCharsets;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.amqp.core.Message;
+import org.springframework.amqp.core.MessageBuilder;
 import org.springframework.amqp.core.MessageDeliveryMode;
 import org.springframework.amqp.core.MessageProperties;
 import org.springframework.amqp.rabbit.connection.CorrelationData;
@@ -28,12 +31,18 @@ public class RabbitEventPublisher implements EventPublisher {
     public void publish(String exchange, String routingKey, String typeId, String payload) {
         CorrelationData correlationData = new CorrelationData(UUID.randomUUID().toString());
 
-        rabbitTemplate.convertAndSend(exchange, routingKey, payload, message -> {
-            message.getMessageProperties().setDeliveryMode(MessageDeliveryMode.PERSISTENT);
-            message.getMessageProperties().setContentType(MessageProperties.CONTENT_TYPE_JSON);
-            message.getMessageProperties().setHeader(TYPE_ID_HEADER, typeId);
-            return message;
-        }, correlationData);
+        // payload는 이미 JSON으로 직렬화된 문자열이다. convertAndSend(..., Object, ...)로 보내면
+        // 설정된 MessageConverter(JacksonJsonMessageConverter)가 이 문자열을 "JSON으로 변환할
+        // 객체"로 보고 다시 한 번 직렬화해(따옴표로 감싸고 이스케이프) 이중 인코딩된 바디가
+        // 나간다 — 소비자는 바디를 파싱하면 문자열 스칼라 하나만 얻는다. 이미 만들어진 JSON
+        // 텍스트는 그 바이트 그대로 보내야 한다.
+        Message message = MessageBuilder.withBody(payload.getBytes(StandardCharsets.UTF_8))
+                .setContentType(MessageProperties.CONTENT_TYPE_JSON)
+                .setDeliveryMode(MessageDeliveryMode.PERSISTENT)
+                .setHeader(TYPE_ID_HEADER, typeId)
+                .build();
+
+        rabbitTemplate.send(exchange, routingKey, message, correlationData);
         try {
             // 3. ✋ 핵심! 브로커의 ACK/NACK 응답을 최대 5초간 대기합니다.
             Confirm confirm = correlationData.getFuture().get(5, TimeUnit.SECONDS);
