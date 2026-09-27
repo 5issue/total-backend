@@ -27,6 +27,8 @@ public class ProductInventoryRepositoryImpl implements ProductInventoryRepositor
     private RedisScript<Long> confirmScript;
     private RedisScript<Long> releaseScript;
     private RedisScript<Long> restoreScript;
+    private RedisScript<Long> increaseScript;
+    private RedisScript<Long> deductScript;
     private RedisScript<Long> syncScript;
     private final ProductInventoryJpaRepository productInventoryJpaRepository;
 
@@ -36,6 +38,8 @@ public class ProductInventoryRepositoryImpl implements ProductInventoryRepositor
         this.confirmScript = RedisScript.of(new ClassPathResource("lua/stock_confirm.lua"), Long.class);
         this.releaseScript = RedisScript.of(new ClassPathResource("lua/stock_release.lua"), Long.class);
         this.restoreScript = RedisScript.of(new ClassPathResource("lua/stock_restore.lua"), Long.class);
+        this.increaseScript = RedisScript.of(new ClassPathResource("lua/stock_increase.lua"), Long.class);
+        this.deductScript = RedisScript.of(new ClassPathResource("lua/stock_deduct.lua"), Long.class);
         this.syncScript = RedisScript.of(new ClassPathResource("lua/stock_sync.lua"), Long.class);
     }
 
@@ -121,6 +125,15 @@ public class ProductInventoryRepositoryImpl implements ProductInventoryRepositor
         executeScript(restoreScript, keys, args);
     }
 
+    @Override
+    public void increaseInventory(Long productId, int quantity) {
+        executeScript(increaseScript, List.of(getKey(productId)), List.of(String.valueOf(quantity)));
+    }
+
+    @Override
+    public void finalizeOutboundInventory(Long productId, int quantity) {
+        executeScript(deductScript, List.of(getKey(productId)), List.of(String.valueOf(quantity)));
+    }
 
     @Override
     public void syncInventoryToRedis(Long productId) {

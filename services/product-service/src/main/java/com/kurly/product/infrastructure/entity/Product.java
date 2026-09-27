@@ -85,6 +85,12 @@ public class Product {
         this.totalSalesCount = totalSalesCount;
     }
 
+    public void restock() {
+        if (this.status == ProductStatus.SOLDOUT) {
+            this.status = ProductStatus.SALE;
+        }
+    }
+
     public enum ProductStatus {
         SALE, SOLDOUT, HIDDEN
     }

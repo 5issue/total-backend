@@ -1,7 +1,6 @@
 package com.kurly.product.infrastructure.config;
 
-import com.kurly.product.infrastructure.messaging.InventoryEvent;
-import com.kurly.product.infrastructure.messaging.InventoryMessagingProperties;
+import com.kurly.product.infrastructure.messaging.WmsEventMessagingProperties;
 import org.springframework.amqp.AmqpRejectAndDontRequeueException;
 import org.springframework.amqp.core.Binding;
 import org.springframework.amqp.core.BindingBuilder;
@@ -19,11 +18,11 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 @Configuration
-@EnableConfigurationProperties(InventoryMessagingProperties.class)
-public class InventoryMessagingConfig {
+@EnableConfigurationProperties(WmsEventMessagingProperties.class)
+public class WmsEventMessagingConfig {
 
     @Bean
-    public SimpleRabbitListenerContainerFactory inventoryListenerContainerFactory(ConnectionFactory connectionFactory,
+    public SimpleRabbitListenerContainerFactory wmsEventListenerContainerFactory(ConnectionFactory connectionFactory,
                                                                                     MessageConverter messageConverter) {
         SimpleRabbitListenerContainerFactory factory = new SimpleRabbitListenerContainerFactory();
         factory.setConnectionFactory(connectionFactory);
@@ -42,46 +41,35 @@ public class InventoryMessagingConfig {
     }
 
     @Bean
-    public TopicExchange orderTopicExchange(InventoryMessagingProperties properties) {
+    public TopicExchange wmsTopicExchange(WmsEventMessagingProperties properties) {
         return ExchangeBuilder.topicExchange(properties.exchange()).durable(true).build();
     }
 
     @Bean
-    public Queue inventoryDeadLetterQueue(InventoryMessagingProperties properties) {
+    public Queue wmsEventDeadLetterQueue(WmsEventMessagingProperties properties) {
         return QueueBuilder.durable(properties.deadLetter()).build();
     }
 
     @Bean
-    public Queue inventoryReleaseQueue(InventoryMessagingProperties properties) {
-        return buildQueue(properties.releaseQueue(), properties.deadLetter());
+    public Queue inboundCompletedQueue(WmsEventMessagingProperties properties) {
+        return buildQueue(properties.inboundCompletedQueue(), properties.deadLetter());
     }
 
     @Bean
-    public Queue inventoryConfirmQueue(InventoryMessagingProperties properties) {
-        return buildQueue(properties.confirmQueue(), properties.deadLetter());
+    public Queue outboundCompletedQueue(WmsEventMessagingProperties properties) {
+        return buildQueue(properties.outboundCompletedQueue(), properties.deadLetter());
     }
 
     @Bean
-    public Queue inventoryRestoreQueue(InventoryMessagingProperties properties) {
-        return buildQueue(properties.restoreQueue(), properties.deadLetter());
+    public Binding inboundCompletedBinding(Queue inboundCompletedQueue, TopicExchange wmsTopicExchange,
+                                            WmsEventMessagingProperties properties) {
+        return BindingBuilder.bind(inboundCompletedQueue).to(wmsTopicExchange).with(properties.inboundCompletedRoutingKey());
     }
 
     @Bean
-    public Binding inventoryReleaseBinding(Queue inventoryReleaseQueue, TopicExchange orderTopicExchange,
-                                            InventoryMessagingProperties properties) {
-        return BindingBuilder.bind(inventoryReleaseQueue).to(orderTopicExchange).with(properties.releaseRoutingKey());
-    }
-
-    @Bean
-    public Binding inventoryConfirmBinding(Queue inventoryConfirmQueue, TopicExchange orderTopicExchange,
-                                            InventoryMessagingProperties properties) {
-        return BindingBuilder.bind(inventoryConfirmQueue).to(orderTopicExchange).with(properties.confirmRoutingKey());
-    }
-
-    @Bean
-    public Binding inventoryRestoreBinding(Queue inventoryRestoreQueue, TopicExchange orderTopicExchange,
-                                            InventoryMessagingProperties properties) {
-        return BindingBuilder.bind(inventoryRestoreQueue).to(orderTopicExchange).with(properties.restoreRoutingKey());
+    public Binding outboundCompletedBinding(Queue outboundCompletedQueue, TopicExchange wmsTopicExchange,
+                                             WmsEventMessagingProperties properties) {
+        return BindingBuilder.bind(outboundCompletedQueue).to(wmsTopicExchange).with(properties.outboundCompletedRoutingKey());
     }
 
     private Queue buildQueue(String name, String deadLetter) {

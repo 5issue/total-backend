@@ -22,6 +22,14 @@ product:
     restore-queue: product.inventory.restore.queue
     # 처리할 수 없는 메시지가 무한 재배달되며 큐를 막지 않도록 보낼 곳.
     dead-letter: product.inventory.dlq
+  wms-event:
+    # WMS가 발행하는 입고/출고 완료 이벤트 구독. 큐/바인딩은 소비자인 우리가 선언한다.
+    exchange: wms.topic.exchange
+    inbound-completed-routing-key: wms.inbound.completed
+    inbound-completed-queue: product.inbound.completed.queue
+    outbound-completed-routing-key: wms.outbound.completed
+    outbound-completed-queue: product.outbound.completed.queue
+    dead-letter: product.wms-event.dlq
   outbox:
     # 재고 확정/복구 결과 발행. 큐/바인딩은 주문 서비스가 선언한다.
     exchange: product.topic.exchange
