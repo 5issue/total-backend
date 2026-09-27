@@ -1,6 +1,7 @@
 package com.kurly.product.infrastructure.config;
 
 import com.kurly.product.infrastructure.messaging.WmsEventMessagingProperties;
+import org.springframework.amqp.AmqpRejectAndDontRequeueException;
 import org.springframework.amqp.core.Binding;
 import org.springframework.amqp.core.BindingBuilder;
 import org.springframework.amqp.core.ExchangeBuilder;
@@ -31,6 +32,8 @@ public class WmsEventMessagingConfig {
                 RetryInterceptorBuilder.stateless()
                         .maxRetries(3)
                         .backOffOptions(1000, 2.0, 5000)
+                        // 리스너가 이미 "재시도 무의미"라고 판단해 던진 예외라, 재시도 없이 즉시 DLQ로 보낸다.
+                        .configureRetryPolicy(policy -> policy.excludes(AmqpRejectAndDontRequeueException.class))
                         .recoverer(new RejectAndDontRequeueRecoverer())
                         .build()
         );
