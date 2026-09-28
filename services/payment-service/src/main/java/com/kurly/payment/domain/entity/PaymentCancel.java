@@ -67,19 +67,44 @@ public class PaymentCancel {
     @Column(name = "failure_reason", length = 255)
     private String failureReason;
 
+    /**
+     * 같은 환불 요청을 두 번 처리하지 않기 위한 유니크 키(이벤트 식별자).
+     *
+     * <p>조회 후 삽입으로는 동시 재배달을 막지 못한다. <b>DB 유니크 제약이 유일한 경합 차단점</b>이며
+     * 위반이 곧 중복 배달 신호다. 전액 취소 경로에서는 {@code null}이다.
+     */
+    @Column(name = "dedup_key", length = 100)
+    private String dedupKey;
+
+    /**
+     * OMS 반품 건 식별자. 완료 통보에 되돌려주고, <b>부분 환불 경로임을 알아보는 표시</b>로도 쓴다.
+     *
+     * <p>이 값이 있으면 재시도·회수 경로가 전액 취소가 아니라 부분 환불로 완료 처리해야 한다.
+     */
+    @Column(name = "oms_return_id")
+    private Long omsReturnId;
+
     @CreatedDate
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
     @Builder
-    private PaymentCancel(Payment payment, String cancelReason, Long cancelAmount) {
+    private PaymentCancel(Payment payment, String cancelReason, Long cancelAmount,
+                          String dedupKey, Long omsReturnId) {
         if (cancelAmount == null || cancelAmount <= 0) {
             throw new IllegalArgumentException("취소 금액은 0보다 커야 합니다: " + cancelAmount);
         }
         this.payment = payment;
         this.cancelReason = cancelReason;
         this.cancelAmount = cancelAmount;
+        this.dedupKey = dedupKey;
+        this.omsReturnId = omsReturnId;
         this.status = CancelStatus.REQUESTED;
+    }
+
+    /** 부분 환불(OMS 반품) 경로인가. 재시도·회수 시 완료 처리 방식을 가른다. */
+    public boolean isOmsRefund() {
+        return omsReturnId != null;
     }
 
     public void succeed(String pgCancelKey) {

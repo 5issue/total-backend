@@ -59,7 +59,8 @@ public class PaymentRetryService {
     }
 
     private boolean runTask(PaymentRecordService.RetryTask task) {
-        if (!PaymentRecordService.PG_CANCEL_TASK.equals(task.taskType())) {
+        if (!PaymentRecordService.PG_CANCEL_TASK.equals(task.taskType())
+                && !PaymentRecordService.PG_REFUND_TASK.equals(task.taskType())) {
             // 처리할 줄 모르는 작업을 계속 집어가면 배치가 헛돈다. 실패로 기록해 상한에 걸리게 한다.
             log.error("알 수 없는 재시도 작업 종류: retryId={}, taskType={}",
                     task.retryId(), task.taskType());
