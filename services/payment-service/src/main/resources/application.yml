@@ -48,6 +48,12 @@ payment:
     delay-ms: 300000
     batch-size: 200
     stale-after: PT30M
+  oms-refund:
+    # OMS 반품 환불 요청 구독(payment 추가 통신 명세). 큐는 소비자인 우리가 선언한다.
+    exchange: oms.topic.exchange
+    routing-key: oms.order-refund.requested
+    queue: payment.oms-refund.queue
+    dead-letter: payment.oms-refund.dlq
   refund:
     # 반품 승인 환불 이벤트 구독(주문-결제 시퀀스 3절). 큐는 소비자인 우리가 선언한다.
     exchange: order.topic.exchange

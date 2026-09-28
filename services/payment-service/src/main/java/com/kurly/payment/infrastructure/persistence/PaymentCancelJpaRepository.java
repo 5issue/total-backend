@@ -33,4 +33,29 @@ public interface PaymentCancelJpaRepository extends JpaRepository<PaymentCancel,
             """, nativeQuery = true)
     List<PaymentCancel> findStaleRequestedForUpdateSkipLocked(
             @Param("staleBefore") LocalDateTime staleBefore, @Param("limit") int limit);
+
+    @Override
+    boolean existsByCancelReason(String cancelReason);
+
+    /**
+     * 합이 없으면 {@code null}이 아니라 0이 나와야 한다. 호출부가 null을 다루지 않게
+     * {@code COALESCE}로 감싼다.
+     */
+    @Override
+    @Query("""
+            select coalesce(sum(c.cancelAmount), 0)
+              from PaymentCancel c
+             where c.payment.id = :paymentId
+               and c.status = com.kurly.payment.domain.enums.CancelStatus.SUCCESS
+            """)
+    long sumSucceededAmountByPaymentId(@Param("paymentId") Long paymentId);
+
+    @Override
+    @Query("""
+            select coalesce(sum(c.cancelAmount), 0)
+              from PaymentCancel c
+             where c.payment.id = :paymentId
+               and c.status <> com.kurly.payment.domain.enums.CancelStatus.FAILED
+            """)
+    long sumUnsettledAmountByPaymentId(@Param("paymentId") Long paymentId);
 }
