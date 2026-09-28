@@ -1,21 +1,17 @@
 package com.kurly.payment.application;
 
 import com.kurly.payment.application.port.PgClient;
-import com.kurly.payment.domain.entity.Payment;
-import com.kurly.payment.domain.entity.PaymentCancel;
-import com.kurly.payment.domain.enums.PaymentStatus;
-import com.kurly.payment.domain.repository.PaymentCancelRepository;
-import com.kurly.payment.domain.repository.PaymentRepository;
-import com.kurly.payment.exception.PaymentNotFoundException;
 import com.kurly.payment.infrastructure.messaging.OmsRefundRequestedEvent;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 
 /**
  * OMS 반품 환불 요청 처리(payment 추가 통신 명세).
  *
- * <p>흐름은 <b>PG 취소 → 기록 → 완료 통보 적재</b>다. 통보는 아웃박스에 넣고 워커가 발행한다.
+ * <p>흐름은 <b>개시(트랜잭션) → PG 취소(트랜잭션 밖) → 완료 기록(트랜잭션)</b> 셋으로 나뉜다.
+ * PG 호출을 트랜잭션 안에서 하면 외부 응답을 기다리는 동안 결제 행 잠금을 붙잡는다.
  *
  * <p><b>{@code PaymentCancelService}와 나누어 둔다.</b> 그쪽은 결제 전액을 취소하는 경로이고
  * 소유자 대조를 전제로 한다. 반품 환불은 일부 상품만 돌아오는 부분 환불이며, 행위자가 관리자라
@@ -26,64 +22,60 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class OmsRefundService {
 
-    /** 취소 사유에 이벤트 식별자를 담아 중복 배달을 걸러낸다. */
+    /** 취소 사유에 남기는 표시. 사람이 이력을 볼 때 경로를 알 수 있게 한다. */
     static final String REASON_PREFIX = "OMS_RETURN_REFUND:";
 
-    private final PaymentRepository paymentRepository;
-    private final PaymentCancelRepository paymentCancelRepository;
     private final PaymentRecordService paymentRecordService;
     private final PgClient pgClient;
 
     /**
      * 환불을 수행하고 완료 통보를 적재한다.
      *
-     * <p>이미 처리한 이벤트면 아무 일도 하지 않는다. 브로커가 최소 1회 배달을 보장하므로
-     * 같은 요청이 두 번 오는 것은 정상이며, 그때 두 번 환불하면 고객에게 과다 지급된다.
-     *
      * @return 환불을 수행했으면 {@code true}, 중복 배달로 건너뛰었으면 {@code false}
      */
     public boolean refund(OmsRefundRequestedEvent event) {
-        String reason = REASON_PREFIX + event.eventId();
-        if (paymentCancelRepository.existsByCancelReason(reason)) {
-            log.info("이미 처리한 환불 요청. 중복 배달로 보고 넘어간다: eventId={}", event.eventId());
+        String dedupKey = event.eventId().toString();
+        PaymentRecordService.RefundTicket ticket;
+        try {
+            ticket = paymentRecordService.beginRefund(
+                    event.orderId(), REASON_PREFIX + event.eventId(),
+                    event.refundAmount(), dedupKey, event.omsReturnId());
+        } catch (DataIntegrityViolationException e) {
+            // dedup_key 유니크 제약 위반. 조회로는 막을 수 없는 동시 재배달이 여기서 걸린다.
+            // 최소 1회 배달이라 같은 요청이 두 번 오는 것은 정상이며, 두 번 환불하면 과다 지급이다.
+            log.info("이미 처리 중이거나 처리된 환불 요청. 중복 배달로 보고 넘어간다: eventId={}",
+                    event.eventId());
             return false;
         }
 
-        Payment payment = paymentRepository
-                .findByOrderIdAndStatus(event.orderId(), PaymentStatus.SUCCESS)
-                .orElseThrow(PaymentNotFoundException::new);
-
-        long refundAmount = event.refundAmount();
-        long alreadyRefunded = paymentCancelRepository.sumSucceededAmountByPaymentId(payment.getId());
-        if (alreadyRefunded + refundAmount > payment.getTotalAmount()) {
-            // 결제 금액보다 많이 환불하려는 요청이다. 발행자 버그이므로 재시도해도 같다.
-            throw new RefundAmountExceededException(
-                    "환불 요청이 결제 금액을 넘는다: orderId=" + event.orderId()
-                            + ", 결제=" + payment.getTotalAmount()
-                            + ", 기환불=" + alreadyRefunded + ", 요청=" + refundAmount);
-        }
-
-        PaymentCancel cancel = paymentRecordService.beginCancel(payment.getId(), reason, refundAmount);
+        PgClient.Cancellation cancellation;
         try {
-            PgClient.Cancellation cancellation = pgClient.cancel(
-                    payment.getPaymentKey(), refundAmount, reason, cancel.getId());
-            paymentRecordService.completeRefund(cancel.getId(), cancellation.pgCancelKey(), event.omsReturnId());
-            log.info("반품 환불 완료: orderId={}, omsReturnId={}, amount={}",
-                    event.orderId(), event.omsReturnId(), refundAmount);
-            return true;
+            cancellation = pgClient.cancel(
+                    ticket.paymentKey(), ticket.amount(), REASON_PREFIX + event.eventId(), ticket.cancelId());
         } catch (RuntimeException e) {
-            // 환불 실패를 그대로 던지면 고객 돈이 묶인 채 잊힌다. 이력에 남기고 배치가 이어받는다.
+            // PG 호출이 실패했다. 이력에 남기고 재시도 배치가 이어받는다.
+            // 여기서 조용히 끝내면 고객 돈이 묶인 채 잊힌다.
             log.error("PG 환불 실패. 재시도 큐로 넘긴다: orderId={}, cancelId={}",
-                    event.orderId(), cancel.getId(), e);
-            paymentRecordService.failCancel(cancel.getId(), e.getMessage());
+                    event.orderId(), ticket.cancelId(), e);
+            paymentRecordService.failCancel(ticket.cancelId(), e.getMessage());
             throw e;
         }
-    }
 
-    /** 결제 금액을 넘는 환불 요청. 재시도로 해결되지 않으므로 호출부가 DLQ로 보낸다. */
-    public static class RefundAmountExceededException extends RuntimeException {
-        public RefundAmountExceededException(String message) {
-            super(message);
+        try {
+            paymentRecordService.completeRefund(ticket.cancelId(), cancellation.pgCancelKey());
+        } catch (RuntimeException e) {
+            // PG는 이미 환불했고 기록만 실패했다. 여기서 failCancel을 부르면 안 된다 —
+            // 실패로 확정해 재시도를 걸면 PG를 다시 부르게 되고, 환불되지 않은 것처럼 이력이 남는다.
+            // 취소는 REQUESTED로 남겨 회수 배치가 집어가게 한다. 그 경로는 같은 멱등키로
+            // PG를 다시 불러 원래 결과를 돌려받고, 부분 환불로 완료 처리한다.
+            log.error("환불은 됐으나 기록에 실패했다. REQUESTED로 남겨 회수에 맡긴다: "
+                            + "orderId={}, cancelId={}, pgCancelKey={}",
+                    event.orderId(), ticket.cancelId(), cancellation.pgCancelKey(), e);
+            throw e;
         }
+
+        log.info("반품 환불 완료: orderId={}, omsReturnId={}, amount={}",
+                event.orderId(), event.omsReturnId(), ticket.amount());
+        return true;
     }
 }

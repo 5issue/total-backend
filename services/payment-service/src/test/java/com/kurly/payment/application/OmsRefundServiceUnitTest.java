@@ -1,11 +1,6 @@
 package com.kurly.payment.application;
 
 import com.kurly.payment.application.port.PgClient;
-import com.kurly.payment.domain.entity.Payment;
-import com.kurly.payment.domain.entity.PaymentCancel;
-import com.kurly.payment.domain.enums.PaymentStatus;
-import com.kurly.payment.domain.repository.PaymentCancelRepository;
-import com.kurly.payment.domain.repository.PaymentRepository;
 import com.kurly.payment.exception.PaymentNotFoundException;
 import com.kurly.payment.infrastructure.messaging.OmsRefundRequestedEvent;
 import org.junit.jupiter.api.DisplayName;
@@ -16,10 +11,10 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
+import org.springframework.dao.DataIntegrityViolationException;
 
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -35,6 +30,9 @@ import static org.mockito.Mockito.verify;
 
 /**
  * OMS 반품 환불 처리(payment 추가 통신 명세).
+ *
+ * <p>개시·PG·기록 세 단계의 <b>실패 처리가 서로 달라야 한다.</b> 특히 PG가 환불한 뒤 기록이
+ * 실패했을 때 실패로 확정하면, 재시도가 환불되지 않은 것처럼 다루게 된다.
  */
 @ExtendWith(MockitoExtension.class)
 @MockitoSettings(strictness = Strictness.LENIENT)
@@ -43,9 +41,8 @@ class OmsRefundServiceUnitTest {
 
     private static final Long ORDER_ID = 7001L;
     private static final Long OMS_RETURN_ID = 3001L;
+    private static final Long CANCEL_ID = 900L;
 
-    @Mock PaymentRepository paymentRepository;
-    @Mock PaymentCancelRepository paymentCancelRepository;
     @Mock PaymentRecordService paymentRecordService;
     @Mock PgClient pgClient;
 
@@ -56,73 +53,67 @@ class OmsRefundServiceUnitTest {
                 refundAmount, 0L, List.of(1L, 2L), LocalDateTime.now());
     }
 
-    /** 같은 패키지의 {@code PaymentFixtures}를 쓴다. id는 DB가 채우므로 리플렉션으로 심는 조립이다. */
-    private Payment approvedPayment() {
-        return PaymentFixtures.approvedPayment(500L);
+    private void givenBeginSucceeds(long amount) {
+        given(paymentRecordService.beginRefund(any(), anyString(), anyLong(), anyString(), any()))
+                .willReturn(new PaymentRecordService.RefundTicket(CANCEL_ID, "TOSS-KEY", amount));
     }
 
-    private void givenPayment(Payment payment) {
-        given(paymentRepository.findByOrderIdAndStatus(ORDER_ID, PaymentStatus.SUCCESS))
-                .willReturn(Optional.of(payment));
-    }
-
-    private void givenCancelBegins() {
-        PaymentCancel cancel = PaymentFixtures.cancel(900L, approvedPayment(), 12_000L);
-        given(paymentRecordService.beginCancel(any(), anyString(), anyLong())).willReturn(cancel);
+    private void givenPgSucceeds() {
         given(pgClient.cancel(anyString(), anyLong(), anyString(), any()))
                 .willReturn(new PgClient.Cancellation("pg-cancel-1"));
     }
 
     @Test
     void 요청_금액만큼_PG_취소를_호출한다() {
-        givenPayment(approvedPayment());
-        givenCancelBegins();
+        givenBeginSucceeds(12_000L);
+        givenPgSucceeds();
 
-        boolean refunded = omsRefundService.refund(event(12_000L));
+        assertThat(omsRefundService.refund(event(12_000L))).isTrue();
 
-        assertThat(refunded).isTrue();
         // 결제 총액이 아니라 요청 금액으로 취소해야 한다. 전액으로 부르면 반품하지 않은 상품까지 환불된다.
-        verify(pgClient).cancel(eq("TOSS-KEY"), eq(12_000L), anyString(), any());
+        verify(pgClient).cancel(eq("TOSS-KEY"), eq(12_000L), anyString(), eq(CANCEL_ID));
+        verify(paymentRecordService).completeRefund(CANCEL_ID, "pg-cancel-1");
     }
 
     @Test
-    void 완료_통보에_받은_omsReturnId를_그대로_싣는다() {
-        givenPayment(approvedPayment());
-        givenCancelBegins();
+    void 개시에_omsReturnId와_중복키를_함께_넘긴다() {
+        givenBeginSucceeds(12_000L);
+        givenPgSucceeds();
+        OmsRefundRequestedEvent event = event(12_000L);
 
-        omsRefundService.refund(event(12_000L));
+        omsRefundService.refund(event);
 
-        // OMS가 이 값으로 반품 건을 찾는다. 우리가 다시 계산할 수 있는 값이 아니다.
-        verify(paymentRecordService).completeRefund(any(), eq("pg-cancel-1"), eq(OMS_RETURN_ID));
+        // 중복키는 이벤트 식별자다. omsReturnId는 완료 통보에 되돌려주기 위해 취소 행에 남는다.
+        verify(paymentRecordService).beginRefund(eq(ORDER_ID), anyString(), eq(12_000L),
+                eq(event.eventId().toString()), eq(OMS_RETURN_ID));
     }
 
     @Test
-    void 이미_처리한_이벤트는_다시_환불하지_않는다() {
-        // 브로커가 최소 1회 배달을 보장하므로 같은 요청이 두 번 온다. 두 번 환불하면 과다 지급이다.
-        given(paymentCancelRepository.existsByCancelReason(anyString())).willReturn(true);
+    void 유니크_제약_위반은_중복_배달로_다룬다() {
+        // 조회 후 삽입으로는 동시 재배달을 막을 수 없다. 제약 위반이 유일한 경합 차단점이다.
+        willThrow(new DataIntegrityViolationException("uk_payment_cancels_dedup_key"))
+                .given(paymentRecordService).beginRefund(any(), anyString(), anyLong(), anyString(), any());
 
-        boolean refunded = omsRefundService.refund(event(12_000L));
+        assertThat(omsRefundService.refund(event(12_000L))).isFalse();
 
-        assertThat(refunded).isFalse();
         verify(pgClient, never()).cancel(anyString(), anyLong(), anyString(), any());
-        verify(paymentRecordService, never()).beginCancel(any(), anyString(), anyLong());
     }
 
     @Test
-    void 결제_금액을_넘는_환불은_거부한다() {
-        givenPayment(approvedPayment());
-        given(paymentCancelRepository.sumSucceededAmountByPaymentId(any())).willReturn(25_000L);  // 남은 한도 7,000원
+    void 금액_초과는_개시_단계에서_막힌다() {
+        willThrow(new PaymentRecordService.RefundAmountExceededException("초과"))
+                .given(paymentRecordService).beginRefund(any(), anyString(), anyLong(), anyString(), any());
 
-        assertThatThrownBy(() -> omsRefundService.refund(event(10_000L)))
-                .isInstanceOf(OmsRefundService.RefundAmountExceededException.class);
+        assertThatThrownBy(() -> omsRefundService.refund(event(99_000L)))
+                .isInstanceOf(PaymentRecordService.RefundAmountExceededException.class);
 
         verify(pgClient, never()).cancel(anyString(), anyLong(), anyString(), any());
     }
 
     @Test
     void 성공한_결제가_없으면_거부한다() {
-        given(paymentRepository.findByOrderIdAndStatus(ORDER_ID, PaymentStatus.SUCCESS))
-                .willReturn(Optional.empty());
+        willThrow(new PaymentNotFoundException())
+                .given(paymentRecordService).beginRefund(any(), anyString(), anyLong(), anyString(), any());
 
         assertThatThrownBy(() -> omsRefundService.refund(event(12_000L)))
                 .isInstanceOf(PaymentNotFoundException.class);
@@ -130,17 +121,30 @@ class OmsRefundServiceUnitTest {
 
     @Test
     void PG_실패는_이력에_남기고_다시_던진다() {
-        // 여기서 조용히 끝내면 고객 돈이 묶인 채 잊힌다.
-        givenPayment(approvedPayment());
-        PaymentCancel cancel = PaymentFixtures.cancel(900L, approvedPayment(), 12_000L);
-        given(paymentRecordService.beginCancel(any(), anyString(), anyLong())).willReturn(cancel);
+        // 여기서 조용히 끝내면 고객 돈이 묶인 채 잊힌다. 재시도 배치가 이어받아야 한다.
+        givenBeginSucceeds(12_000L);
         willThrow(new RuntimeException("PG 오류")).given(pgClient)
                 .cancel(anyString(), anyLong(), anyString(), any());
 
         assertThatThrownBy(() -> omsRefundService.refund(event(12_000L)))
                 .isInstanceOf(RuntimeException.class);
 
-        verify(paymentRecordService).failCancel(any(), anyString());
-        verify(paymentRecordService, never()).completeRefund(any(), anyString(), any());
+        verify(paymentRecordService).failCancel(eq(CANCEL_ID), anyString());
+        verify(paymentRecordService, never()).completeRefund(any(), anyString());
+    }
+
+    @Test
+    void 환불_후_기록_실패는_실패로_확정하지_않는다() {
+        // PG는 이미 환불했다. 실패로 확정하면 재시도가 "환불되지 않았다"로 다루고,
+        // 전액 취소 완료 처리를 타 결제 상태와 OMS 상태가 모두 어긋난다.
+        givenBeginSucceeds(12_000L);
+        givenPgSucceeds();
+        willThrow(new RuntimeException("DB 오류")).given(paymentRecordService)
+                .completeRefund(any(), anyString());
+
+        assertThatThrownBy(() -> omsRefundService.refund(event(12_000L)))
+                .isInstanceOf(RuntimeException.class);
+
+        verify(paymentRecordService, never()).failCancel(any(), anyString());
     }
 }

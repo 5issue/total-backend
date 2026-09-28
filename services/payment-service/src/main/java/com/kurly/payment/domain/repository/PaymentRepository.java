@@ -22,6 +22,15 @@ public interface PaymentRepository {
     Optional<Payment> findByIdAndUserId(Long id, Long userId);
 
     /**
+     * 환불 한도 검사를 위해 <b>결제 행을 잠그고</b> 가져온다.
+     *
+     * <p>잠그지 않으면 같은 결제에 대한 환불 요청 둘이 각자 한도 검사를 통과해 합계가 결제 금액을
+     * 넘는다. 검사와 취소 삽입이 같은 트랜잭션 안에서 이 잠금 아래 일어나야 한다.
+     */
+    Optional<Payment> findByOrderIdAndStatusForUpdate(Long orderId,
+                                                      com.kurly.payment.domain.enums.PaymentStatus status);
+
+    /**
      * 주문 기준 단건 조회. OMS 반품 환불 요청은 {@code paymentId}가 아니라 {@code orderId}를 싣는다.
      *
      * <p>같은 주문에 성공한 결제는 유니크 제약으로 하나뿐이다(중복 결제 차단).

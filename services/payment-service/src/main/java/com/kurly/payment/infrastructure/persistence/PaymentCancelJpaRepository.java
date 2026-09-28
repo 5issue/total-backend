@@ -49,4 +49,13 @@ public interface PaymentCancelJpaRepository extends JpaRepository<PaymentCancel,
                and c.status = com.kurly.payment.domain.enums.CancelStatus.SUCCESS
             """)
     long sumSucceededAmountByPaymentId(@Param("paymentId") Long paymentId);
+
+    @Override
+    @Query("""
+            select coalesce(sum(c.cancelAmount), 0)
+              from PaymentCancel c
+             where c.payment.id = :paymentId
+               and c.status <> com.kurly.payment.domain.enums.CancelStatus.FAILED
+            """)
+    long sumUnsettledAmountByPaymentId(@Param("paymentId") Long paymentId);
 }

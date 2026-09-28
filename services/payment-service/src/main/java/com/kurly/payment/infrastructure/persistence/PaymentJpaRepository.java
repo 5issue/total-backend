@@ -3,7 +3,9 @@ package com.kurly.payment.infrastructure.persistence;
 import com.kurly.payment.domain.entity.Payment;
 import com.kurly.payment.domain.enums.PaymentStatus;
 import com.kurly.payment.domain.repository.PaymentRepository;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -41,4 +43,14 @@ public interface PaymentJpaRepository extends JpaRepository<Payment, Long>, Paym
 
     @Override
     Optional<Payment> findByOrderIdAndStatus(Long orderId, PaymentStatus status);
+
+    /**
+     * 파생 쿼리 이름에 {@code ForUpdate}를 쓸 수 없어 명시 쿼리로 둔다.
+     * 잠금은 {@code @Lock}이 담당한다.
+     */
+    @Override
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select p from Payment p where p.orderId = :orderId and p.status = :status")
+    Optional<Payment> findByOrderIdAndStatusForUpdate(@Param("orderId") Long orderId,
+                                                     @Param("status") PaymentStatus status);
 }

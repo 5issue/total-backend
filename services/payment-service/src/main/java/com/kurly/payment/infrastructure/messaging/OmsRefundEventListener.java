@@ -1,6 +1,7 @@
 package com.kurly.payment.infrastructure.messaging;
 
 import com.kurly.payment.application.OmsRefundService;
+import com.kurly.payment.application.PaymentRecordService;
 import com.kurly.payment.exception.InvalidPaymentStatusException;
 import com.kurly.payment.exception.PaymentNotFoundException;
 import lombok.RequiredArgsConstructor;
@@ -35,7 +36,7 @@ public class OmsRefundEventListener {
             // 주문에 성공한 결제가 없다. 정상 상황에서는 일어나지 않는 발행자 버그다.
             log.error("환불 대상 결제를 찾지 못함. DLQ로 보낸다: orderId={}", event.orderId(), e);
             throw new AmqpRejectAndDontRequeueException("환불 대상 결제 없음: orderId=" + event.orderId(), e);
-        } catch (OmsRefundService.RefundAmountExceededException e) {
+        } catch (PaymentRecordService.RefundAmountExceededException e) {
             log.error("환불 금액이 결제 금액을 넘는다. DLQ로 보낸다: eventId={}", event.eventId(), e);
             throw new AmqpRejectAndDontRequeueException(e.getMessage(), e);
         } catch (InvalidPaymentStatusException e) {

@@ -19,6 +19,14 @@ public interface PaymentCancelRepository {
     boolean existsByCancelReason(String cancelReason);
 
     /**
+     * 아직 실패로 확정되지 않은 취소 금액의 합(성공 + 진행 중).
+     *
+     * <p><b>한도 검사에는 이 값을 쓴다.</b> 성공한 것만 더하면 진행 중인 취소가 빠져, 동시에 들어온
+     * 두 환불 요청이 모두 한도를 통과한다. 실패한 취소는 환불되지 않았으므로 제외한다.
+     */
+    long sumUnsettledAmountByPaymentId(Long paymentId);
+
+    /**
      * 해당 결제에서 성공한 취소 금액의 합.
      *
      * <p>부분 환불이 쌓여 결제 총액에 도달했을 때만 결제를 취소 상태로 옮기기 위해 쓴다.

@@ -1,6 +1,7 @@
 package com.kurly.payment.infrastructure.messaging;
 
 import com.kurly.payment.application.OmsRefundService;
+import com.kurly.payment.application.PaymentRecordService;
 import com.kurly.payment.exception.InvalidPaymentStatusException;
 import com.kurly.payment.exception.PaymentNotFoundException;
 import org.junit.jupiter.api.DisplayName;
@@ -87,7 +88,7 @@ class OmsRefundEventListenerUnitTest {
 
     @Test
     void 결제_금액_초과_요청은_DLQ로_보낸다() {
-        willThrow(new OmsRefundService.RefundAmountExceededException("초과"))
+        willThrow(new PaymentRecordService.RefundAmountExceededException("초과"))
                 .given(omsRefundService).refund(any());
 
         assertThatThrownBy(() -> listener.onRefundRequested(valid()))

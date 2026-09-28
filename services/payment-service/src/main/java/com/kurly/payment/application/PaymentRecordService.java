@@ -41,6 +41,8 @@ public class PaymentRecordService {
     static final int MAX_RETRY_COUNT = 5;
 
     static final String PG_CANCEL_TASK = "PG_CANCEL";
+    /** 부분 환불 재시도. 완료 처리가 전액 취소와 달라 작업 종류를 나눈다. */
+    static final String PG_REFUND_TASK = "PG_REFUND";
     static final String PAYMENT_CANCELED_EVENT = "PAYMENT_CANCELED";
     /** 라우팅 키는 이벤트 타입에서 만들어진다 — {@code payment.refund.completed}. */
     static final String PAYMENT_REFUND_COMPLETED_EVENT = "PAYMENT_REFUND_COMPLETED";
@@ -85,6 +87,54 @@ public class PaymentRecordService {
     }
 
     /**
+     * 환불을 개시한다. <b>한도 검사와 취소 삽입을 한 트랜잭션에서</b> 수행한다.
+     *
+     * <p>검사와 삽입이 갈라져 있으면 같은 결제에 동시에 들어온 환불 요청 둘이 각자 한도를 통과해
+     * 합계가 결제 금액을 넘는다. 결제 행을 잠그고, 진행 중인 취소까지 합계에 넣어 막는다.
+     *
+     * <p>중복 배달은 {@code dedup_key} 유니크 제약이 막는다. 조회로 걸러내는 것만으로는
+     * 동시 재배달을 막을 수 없어, <b>제약 위반이 곧 중복 신호</b>다. 위반은 커밋 시점에
+     * {@code DataIntegrityViolationException}으로 올라오므로 호출부가 그것을 중복으로 다룬다.
+     *
+     * @return 개시한 취소와 PG 호출에 필요한 값
+     */
+    @Transactional
+    public RefundTicket beginRefund(Long orderId, String reason, long amount,
+                                    String dedupKey, Long omsReturnId) {
+        Payment payment = paymentRepository
+                .findByOrderIdAndStatusForUpdate(orderId, PaymentStatus.SUCCESS)
+                .orElseThrow(PaymentNotFoundException::new);
+
+        long unsettled = paymentCancelRepository.sumUnsettledAmountByPaymentId(payment.getId());
+        if (unsettled + amount > payment.getTotalAmount()) {
+            throw new RefundAmountExceededException(
+                    "환불 요청이 결제 금액을 넘는다: orderId=" + orderId
+                            + ", 결제=" + payment.getTotalAmount()
+                            + ", 미정산=" + unsettled + ", 요청=" + amount);
+        }
+
+        PaymentCancel cancel = paymentCancelRepository.save(PaymentCancel.builder()
+                .payment(payment)
+                .cancelReason(reason)
+                .cancelAmount(amount)
+                .dedupKey(dedupKey)
+                .omsReturnId(omsReturnId)
+                .build());
+        return new RefundTicket(cancel.getId(), payment.getPaymentKey(), amount);
+    }
+
+    /** 결제 금액을 넘는 환불 요청. 재시도로 해결되지 않으므로 호출부가 DLQ로 보낸다. */
+    public static class RefundAmountExceededException extends RuntimeException {
+        public RefundAmountExceededException(String message) {
+            super(message);
+        }
+    }
+
+    /** PG 호출에 필요한 값만 담아 트랜잭션 밖으로 넘긴다. 준영속 엔티티를 들고 나가지 않는다. */
+    public record RefundTicket(Long cancelId, String paymentKey, long amount) {
+    }
+
+    /**
      * 취소 성공을 기록하고 결제 상태를 옮긴다. 이벤트는 같은 트랜잭션의 아웃박스에 적재한다.
      *
      * <p>브로커 발행을 여기서 직접 하면 DB는 커밋됐는데 발행이 실패하거나 그 반대가 되어
@@ -103,7 +153,16 @@ public class PaymentRecordService {
      */
     @Transactional
     public void completeRetry(Long retryId, Long cancelId, String pgCancelKey) {
-        applyCancelSuccess(cancelId, pgCancelKey);
+        PaymentCancel cancel = paymentCancelRepository.findById(cancelId)
+                .orElseThrow(PaymentNotFoundException::new);
+
+        // 부분 환불은 전액 취소와 완료 처리가 다르다. 취소 행이 그 구분을 들고 있다.
+        if (cancel.isOmsRefund()) {
+            applyRefundSuccess(cancel, pgCancelKey);
+        } else {
+            applyCancelSuccess(cancelId, pgCancelKey);
+        }
+
         paymentRetryRepository.findById(retryId)
                 .orElseThrow(PaymentNotFoundException::new)
                 .succeed();
@@ -185,9 +244,14 @@ public class PaymentRecordService {
      * 발행이 어긋나면 OMS의 반품 상태가 결제와 맞지 않게 된다. 발행은 아웃박스 워커가 맡는다.
      */
     @Transactional
-    public PaymentCancel completeRefund(Long cancelId, String pgCancelKey, Long omsReturnId) {
+    public PaymentCancel completeRefund(Long cancelId, String pgCancelKey) {
         PaymentCancel cancel = paymentCancelRepository.findById(cancelId)
                 .orElseThrow(PaymentNotFoundException::new);
+        return applyRefundSuccess(cancel, pgCancelKey);
+    }
+
+    /** 부분 환불 성공 처리. 최초 시도와 재시도가 같은 경로를 타야 결과가 갈리지 않는다. */
+    private PaymentCancel applyRefundSuccess(PaymentCancel cancel, String pgCancelKey) {
         cancel.succeed(pgCancelKey);
 
         Payment payment = cancel.getPayment();
@@ -203,7 +267,7 @@ public class PaymentRecordService {
                 // 받은 값을 그대로 되돌려준다 — 우리가 다시 계산하면 대조의 의미가 없어진다.
                 .payload(jsonMapper.writeValueAsString(Map.of(
                         "eventId", UUID.randomUUID().toString(),
-                        "omsReturnId", omsReturnId,
+                        "omsReturnId", cancel.getOmsReturnId(),
                         "refundAmount", cancel.getCancelAmount(),
                         "refundAt", System.currentTimeMillis())))
                 .build());
@@ -224,13 +288,18 @@ public class PaymentRecordService {
         enqueueRetry(cancel, error);
     }
 
-    /** 취소를 실패로 확정하고 재시도 큐에 적재한다. */
+    /**
+     * 취소를 실패로 확정하고 재시도 큐에 적재한다.
+     *
+     * <p><b>부분 환불은 작업 종류를 달리 남긴다.</b> 전액 취소로 완료 처리하면 일부만 환불했는데
+     * 결제가 취소 상태로 넘어가고, OMS에는 완료 통보가 나가지 않아 반품이 대기에 남는다.
+     */
     private void enqueueRetry(PaymentCancel cancel, String error) {
         cancel.fail(error);
 
         paymentRetryRepository.save(PaymentRetry.builder()
                 .payment(cancel.getPayment())
-                .taskType(PG_CANCEL_TASK)
+                .taskType(cancel.isOmsRefund() ? PG_REFUND_TASK : PG_CANCEL_TASK)
                 .payload(jsonMapper.writeValueAsString(Map.of(
                         "paymentCancelId", cancel.getId(),
                         "cancelAmount", cancel.getCancelAmount())))
