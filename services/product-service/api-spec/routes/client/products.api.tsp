@@ -34,6 +34,16 @@ interface ProductsClient {
     @query size?: int32
   ): ProductService.Common.ApiResponse<SliceResponse<ProductSummaryResponse>> | ProductService.Common.ErrorResponse;
 
+  @summary("상품명 자동완성")
+  @doc("""
+    Redis ZSET(ZRANGEBYLEX) 기반 substring 자동완성 — 상품명 맨 앞뿐 아니라 "전용목장우유"의
+    "우유"처럼 중간에 붙은 부분도 매칭된다. Redis 캐시 미스 시 DB(ILIKE substring) 조회로
+    폴백한다. keyword는 필수이며 비어있으면 빈 배열을 반환한다. size 기본값은 10이다.
+    """)
+  @get
+  @route("/autocomplete")
+  autocomplete(@query keyword: string, @query size?: int32): ProductService.Common.ApiResponse<ProductAutocompleteResponse> | ProductService.Common.ErrorResponse;
+
   @summary("검색/목록 필터 옵션 조회")
   @doc("categoryId 또는 keyword 중 정확히 하나만 있어야 한다(둘 다 없거나 둘 다 있으면 400 INVALID_INPUT_VALUE).")
   @get
