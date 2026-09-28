@@ -126,6 +126,10 @@ model SliceResponse<T> {
   empty: boolean;
 }
 
+model ProductAutocompleteResponse {
+  suggestions: string[];
+}
+
 model ProductFilterResponse {
   totalCount: int64;
   filterGroups: FilterGroupDto[];

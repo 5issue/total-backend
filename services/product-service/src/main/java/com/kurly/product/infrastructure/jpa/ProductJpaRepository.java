@@ -70,7 +70,7 @@ public interface ProductJpaRepository extends JpaRepository<Product, Long> {
                     where ps.product.parentId = p.id
                       and ps.storageType = :storageType
               ))
-              and (:keyword is null or lower(p.name) like lower(concat('%', cast(:keyword as string), '%')))
+              and (:keyword is null or concat(p.name, ' ', coalesce(p.brand, '')) ilike concat('%', cast(:keyword as string), '%'))
             """)
     Slice<Product> searchInCategories(@Param("categoryIds") List<Long> categoryIds,
                                       @Param("type") ProductType type,
@@ -99,7 +99,7 @@ public interface ProductJpaRepository extends JpaRepository<Product, Long> {
                     where ps.product.parentId = p.id
                       and ps.storageType = :storageType
               ))
-              and (:keyword is null or lower(p.name) like lower(concat('%', cast(:keyword as string), '%')))
+              and (:keyword is null or concat(p.name, ' ', coalesce(p.brand, '')) ilike concat('%', cast(:keyword as string), '%'))
             """)
     Slice<Product> search(@Param("type") ProductType type,
                           @Param("status") ProductStatus status,
@@ -117,7 +117,7 @@ public interface ProductJpaRepository extends JpaRepository<Product, Long> {
             select p from Product p
             where p.type = :type
               and p.status = :status
-              and lower(p.name) like lower(concat('%', cast(:keyword as string), '%'))
+              and concat(p.name, ' ', coalesce(p.brand, '')) ilike concat('%', cast(:keyword as string), '%')
             """)
     List<Product> findByKeyword(@Param("type") ProductType type,
                                 @Param("status") ProductStatus status,

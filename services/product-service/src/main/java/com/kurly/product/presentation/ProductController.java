@@ -2,11 +2,13 @@ package com.kurly.product.presentation;
 
 import com.kurly.common.response.ApiResponse;
 import com.kurly.common.security.PublicApi;
+import com.kurly.product.application.ProductAutocompleteService;
 import com.kurly.product.application.ProductQueryService;
 import com.kurly.product.domain.enums.PriceBand;
 import com.kurly.product.domain.dto.ProductSearchCondition;
 import com.kurly.product.infrastructure.entity.ProductSpec.StorageType;
 import com.kurly.product.presentation.dto.HomeResponse;
+import com.kurly.product.presentation.dto.ProductAutocompleteResponse;
 import com.kurly.product.presentation.dto.ProductDetailResponse;
 import com.kurly.product.presentation.dto.ProductFilterResponse;
 import com.kurly.product.domain.enums.ProductSortType;
@@ -23,9 +25,12 @@ import org.springframework.web.bind.annotation.RestController;
 public class ProductController {
 
     private final ProductQueryService productQueryService;
+    private final ProductAutocompleteService productAutocompleteService;
 
-    public ProductController(ProductQueryService productQueryService) {
+    public ProductController(ProductQueryService productQueryService,
+                             ProductAutocompleteService productAutocompleteService) {
         this.productQueryService = productQueryService;
+        this.productAutocompleteService = productAutocompleteService;
     }
 
     @PublicApi
@@ -47,6 +52,15 @@ public class ProductController {
             @RequestParam(defaultValue = "20") int size) {
         ProductSearchCondition condition = new ProductSearchCondition(categoryId, keyword, brand, PriceBand.from(price), storageType);
         return ApiResponse.success(productQueryService.getProducts(condition, sort, page, size));
+    }
+
+    @PublicApi
+    @GetMapping("/autocomplete")
+    public ApiResponse<ProductAutocompleteResponse> autocomplete(
+            @RequestParam String keyword,
+            @RequestParam(defaultValue = "10") int size) {
+        return ApiResponse.success(
+                new ProductAutocompleteResponse(productAutocompleteService.autocomplete(keyword, size)));
     }
 
     @PublicApi

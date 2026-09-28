@@ -35,6 +35,8 @@ product:
     exchange: product.topic.exchange
     batch-size: 100
     publish-delay-ms: 5000
+  autocomplete:
+    rebuild-delay-ms: 60000
 
 kurly:
   security:
