@@ -8,8 +8,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import com.kurly.product.infrastructure.entity.Product.ProductStatus;
-import com.kurly.product.infrastructure.jpa.ProductJpaRepository;
+import com.kurly.product.infrastructure.jpa.SearchKeywordJpaRepository;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
@@ -28,7 +27,7 @@ import org.springframework.data.redis.core.ZSetOperations;
 class ProductAutocompleteServiceTest {
 
     @Mock
-    private ProductJpaRepository productJpaRepository;
+    private SearchKeywordJpaRepository searchKeywordRepository;
     @Mock
     private StringRedisTemplate redisTemplate;
     @Mock
@@ -38,7 +37,7 @@ class ProductAutocompleteServiceTest {
 
     @BeforeEach
     void setUp() {
-        productAutocompleteService = new ProductAutocompleteService(productJpaRepository, redisTemplate);
+        productAutocompleteService = new ProductAutocompleteService(searchKeywordRepository, redisTemplate);
     }
 
     @Test
@@ -55,12 +54,28 @@ class ProductAutocompleteServiceTest {
     void cacheHitReturnsOriginalCasingWithoutDbFallback() {
         when(redisTemplate.opsForZSet()).thenReturn(zSetOperations);
         when(zSetOperations.rangeByLex(eq("product:autocomplete:names"), any(Range.class), any(Limit.class)))
-                .thenReturn(Set.of("제주감귤\u0001제주감귤", "제주삼겹살\u0001제주삼겹살"));
+                .thenReturn(Set.of("우유\u0001우유", "우유 저지방\u0001우유 저지방"));
 
-        List<String> result = productAutocompleteService.autocomplete("제주", 10);
+        List<String> result = productAutocompleteService.autocomplete("우유", 10);
 
-        assertThat(result).containsExactlyInAnyOrder("제주감귤", "제주삼겹살");
-        verify(productJpaRepository, never()).findNamesByStatusAndKeyword(any(), anyString(), any());
+        assertThat(result).containsExactly("우유", "우유 저지방");
+        verify(searchKeywordRepository, never()).findByKeywordContaining(anyString(), any());
+    }
+
+    @Test
+    @DisplayName("결과는 짧은 키워드가 먼저 나오도록 길이 오름차순, 길이가 같으면 가나다순으로 정렬된다")
+    void resultsAreSortedByLengthThenAlphabetically() {
+        when(redisTemplate.opsForZSet()).thenReturn(zSetOperations);
+        when(zSetOperations.rangeByLex(eq("product:autocomplete:names"), any(Range.class), any(Limit.class)))
+                .thenReturn(Set.of(
+                        "우유 식빵\u0001우유 식빵",
+                        "우유 A2\u0001우유 A2",
+                        "우유\u0001우유",
+                        "우럭\u0001우럭"));
+
+        List<String> result = productAutocompleteService.autocomplete("우", 10);
+
+        assertThat(result).containsExactly("우럭", "우유", "우유 A2", "우유 식빵");
     }
 
     @Test
@@ -69,7 +84,7 @@ class ProductAutocompleteServiceTest {
         when(redisTemplate.opsForZSet()).thenReturn(zSetOperations);
         when(zSetOperations.rangeByLex(anyString(), any(Range.class), any(Limit.class)))
                 .thenReturn(Set.of());
-        when(productJpaRepository.findNamesByStatusAndKeyword(eq(ProductStatus.SALE), eq("신상"), any()))
+        when(searchKeywordRepository.findByKeywordContaining(eq("신상"), any()))
                 .thenReturn(List.of("신상품A"));
 
         List<String> result = productAutocompleteService.autocomplete("신상", 10);
@@ -78,10 +93,10 @@ class ProductAutocompleteServiceTest {
     }
 
     @Test
-    @DisplayName("색인 재구축 시 이름의 모든 접미사를 채워서 중간에 붙은 단어도 substring으로 찾을 수 있다")
+    @DisplayName("색인 재구축 시 정제 키워드의 모든 접미사를 채워서 중간에 붙은 단어도 substring으로 찾을 수 있다")
     void rebuildIndexStagesEverySuffixThenRenames() {
-        when(productJpaRepository.findNamesByStatus(ProductStatus.SALE))
-                .thenReturn(Arrays.asList("바나나", " ", null, "청정 우유"));
+        when(searchKeywordRepository.findAllKeywords())
+                .thenReturn(Arrays.asList("바나나", " ", "우유 A2"));
         when(redisTemplate.opsForZSet()).thenReturn(zSetOperations);
         when(zSetOperations.add(anyString(), anyString(), eq(0.0))).thenReturn(true);
 
@@ -90,18 +105,18 @@ class ProductAutocompleteServiceTest {
         verify(zSetOperations).add(anyString(), eq("바나나\u0001바나나"), eq(0.0));
         verify(zSetOperations).add(anyString(), eq("나나\u0001바나나"), eq(0.0));
         verify(zSetOperations).add(anyString(), eq("나\u0001바나나"), eq(0.0));
-        // "청정 우유" 중간에 띄어쓰기 없이 이어지지 않아도, "우유"가 시작하는 위치가 별도로 색인된다
-        verify(zSetOperations).add(anyString(), eq("우유\u0001청정 우유"), eq(0.0));
+        // "우유 A2" 중간에 있는 "A2"도 시작 위치가 별도로 색인된다
+        verify(zSetOperations).add(anyString(), eq("a2\u0001우유 A2"), eq(0.0));
         // 공백으로 시작하는 접미사는 색인하지 않는다
-        verify(zSetOperations, never()).add(anyString(), eq(" 우유\u0001청정 우유"), eq(0.0));
+        verify(zSetOperations, never()).add(anyString(), eq(" a2\u0001우유 A2"), eq(0.0));
         verify(redisTemplate).rename(anyString(), eq("product:autocomplete:names"));
         verify(redisTemplate, never()).delete("product:autocomplete:names");
     }
 
     @Test
-    @DisplayName("판매중 상품이 없으면 staging 없이 기존 색인을 비운다")
-    void rebuildIndexClearsWhenNoSalableProducts() {
-        when(productJpaRepository.findNamesByStatus(ProductStatus.SALE)).thenReturn(List.of());
+    @DisplayName("정제 키워드가 없으면 staging 없이 기존 색인을 비운다")
+    void rebuildIndexClearsWhenNoKeywords() {
+        when(searchKeywordRepository.findAllKeywords()).thenReturn(List.of());
 
         productAutocompleteService.rebuildIndex();
 

@@ -70,7 +70,7 @@ public interface ProductJpaRepository extends JpaRepository<Product, Long> {
                     where ps.product.parentId = p.id
                       and ps.storageType = :storageType
               ))
-              and (:keyword is null or p.name ilike concat('%', cast(:keyword as string), '%'))
+              and (:keyword is null or concat(p.name, ' ', coalesce(p.brand, '')) ilike concat('%', cast(:keyword as string), '%'))
             """)
     Slice<Product> searchInCategories(@Param("categoryIds") List<Long> categoryIds,
                                       @Param("type") ProductType type,
@@ -99,7 +99,7 @@ public interface ProductJpaRepository extends JpaRepository<Product, Long> {
                     where ps.product.parentId = p.id
                       and ps.storageType = :storageType
               ))
-              and (:keyword is null or p.name ilike concat('%', cast(:keyword as string), '%'))
+              and (:keyword is null or concat(p.name, ' ', coalesce(p.brand, '')) ilike concat('%', cast(:keyword as string), '%'))
             """)
     Slice<Product> search(@Param("type") ProductType type,
                           @Param("status") ProductStatus status,
@@ -117,29 +117,10 @@ public interface ProductJpaRepository extends JpaRepository<Product, Long> {
             select p from Product p
             where p.type = :type
               and p.status = :status
-              and p.name ilike concat('%', cast(:keyword as string), '%')
+              and concat(p.name, ' ', coalesce(p.brand, '')) ilike concat('%', cast(:keyword as string), '%')
             """)
     List<Product> findByKeyword(@Param("type") ProductType type,
                                 @Param("status") ProductStatus status,
                                 @Param("keyword") String keyword);
-
-    /**
-     * 자동완성 인덱스 재구축용 상품명 전체 조회. 엔티티 전체가 아닌 name 프로젝션만 가져온다.
-     */
-    @Query("select p.name from Product p where p.status = :status")
-    List<String> findNamesByStatus(@Param("status") ProductStatus status);
-
-    /**
-     * 자동완성 Redis 캐시 미스 시 DB 폴백용 경량 조회. ZSET의 suffix 색인과 동일하게
-     * 상품명 어디에 있든(substring) 매칭한다.
-     */
-    @Query("""
-            select p.name from Product p
-            where p.status = :status
-              and p.name ilike concat('%', cast(:keyword as string), '%')
-            """)
-    List<String> findNamesByStatusAndKeyword(@Param("status") ProductStatus status,
-                                             @Param("keyword") String keyword,
-                                             Pageable pageable);
 
 }
