@@ -21,6 +21,7 @@ import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 /**
  * 결제 상태 기록 전용 서비스.
@@ -41,6 +42,8 @@ public class PaymentRecordService {
 
     static final String PG_CANCEL_TASK = "PG_CANCEL";
     static final String PAYMENT_CANCELED_EVENT = "PAYMENT_CANCELED";
+    /** 라우팅 키는 이벤트 타입에서 만들어진다 — {@code payment.refund.completed}. */
+    static final String PAYMENT_REFUND_COMPLETED_EVENT = "PAYMENT_REFUND_COMPLETED";
 
     private final PaymentRepository paymentRepository;
     private final PaymentCancelRepository paymentCancelRepository;
@@ -168,6 +171,43 @@ public class PaymentRecordService {
 
         // 갱신된 인스턴스를 돌려준다. beginCancel이 돌려준 객체는 다른 트랜잭션에서 읽은 것이라
         // 상태 전이가 반영되어 있지 않아, 그대로 응답에 쓰면 취소했는데 SUCCESS로 나간다.
+        return cancel;
+    }
+
+    /**
+     * 반품 환불 성공을 기록하고 완료 통보를 아웃박스에 적재한다(payment 추가 통신 명세).
+     *
+     * <p>{@link #completeCancel}과 나누어 둔다. 그쪽은 <b>전액 취소를 전제</b>로 결제를 곧바로
+     * {@code CANCELED}로 옮기는데, 반품 환불은 일부 상품만 돌아오는 부분 환불이라 그 전제가 깨진다.
+     * 여기서는 성공한 취소 금액의 합이 결제 총액에 도달했을 때만 결제를 취소 상태로 옮긴다.
+     *
+     * <p>브로커 발행을 여기서 직접 하지 않는 이유는 {@link #completeCancel}과 같다 — DB 커밋과
+     * 발행이 어긋나면 OMS의 반품 상태가 결제와 맞지 않게 된다. 발행은 아웃박스 워커가 맡는다.
+     */
+    @Transactional
+    public PaymentCancel completeRefund(Long cancelId, String pgCancelKey, Long omsReturnId) {
+        PaymentCancel cancel = paymentCancelRepository.findById(cancelId)
+                .orElseThrow(PaymentNotFoundException::new);
+        cancel.succeed(pgCancelKey);
+
+        Payment payment = cancel.getPayment();
+        long refunded = paymentCancelRepository.sumSucceededAmountByPaymentId(payment.getId());
+        if (refunded >= payment.getTotalAmount()) {
+            // 누적 환불이 결제 총액에 닿았다. 이제야 전액 취소다.
+            payment.cancel();
+        }
+
+        paymentOutboxRepository.save(PaymentOutbox.builder()
+                .eventType(PAYMENT_REFUND_COMPLETED_EVENT)
+                // OMS는 omsReturnId로 반품 건을 찾고 refundAmount로 자기 기록과 대조한다.
+                // 받은 값을 그대로 되돌려준다 — 우리가 다시 계산하면 대조의 의미가 없어진다.
+                .payload(jsonMapper.writeValueAsString(Map.of(
+                        "eventId", UUID.randomUUID().toString(),
+                        "omsReturnId", omsReturnId,
+                        "refundAmount", cancel.getCancelAmount(),
+                        "refundAt", System.currentTimeMillis())))
+                .build());
+
         return cancel;
     }
 

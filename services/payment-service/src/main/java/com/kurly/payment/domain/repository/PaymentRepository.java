@@ -21,6 +21,13 @@ public interface PaymentRepository {
      */
     Optional<Payment> findByIdAndUserId(Long id, Long userId);
 
+    /**
+     * 주문 기준 단건 조회. OMS 반품 환불 요청은 {@code paymentId}가 아니라 {@code orderId}를 싣는다.
+     *
+     * <p>같은 주문에 성공한 결제는 유니크 제약으로 하나뿐이다(중복 결제 차단).
+     */
+    Optional<Payment> findByOrderIdAndStatus(Long orderId, com.kurly.payment.domain.enums.PaymentStatus status);
+
     /** 같은 주문에 이미 성공한 결제가 있는지 확인한다. 중복 결제 차단의 마지막 방어선이다. */
     boolean existsByOrderIdAndStatus(Long orderId, com.kurly.payment.domain.enums.PaymentStatus status);
 

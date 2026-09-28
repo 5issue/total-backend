@@ -1,6 +1,7 @@
 package com.kurly.payment.infrastructure.persistence;
 
 import com.kurly.payment.domain.entity.Payment;
+import com.kurly.payment.domain.enums.PaymentStatus;
 import com.kurly.payment.domain.repository.PaymentRepository;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
@@ -37,4 +38,7 @@ public interface PaymentJpaRepository extends JpaRepository<Payment, Long>, Paym
     List<Payment> claimReconcilableForUpdateSkipLocked(@Param("now") LocalDateTime now,
                                                        @Param("staleBefore") LocalDateTime staleBefore,
                                                        @Param("limit") int limit);
+
+    @Override
+    Optional<Payment> findByOrderIdAndStatus(Long orderId, PaymentStatus status);
 }
