@@ -8,7 +8,6 @@ import com.kurly.product.domain.dto.ProductSearchCondition;
 import com.kurly.product.domain.enums.ProductSortType;
 import com.kurly.product.domain.repository.ProductRepository;
 import com.kurly.product.infrastructure.entity.Product;
-import com.kurly.product.infrastructure.entity.ProductMedia;
 import com.kurly.product.infrastructure.entity.ProductMedia.MediaRole;
 import com.kurly.product.infrastructure.jpa.ProductMediaJpaRepository;
 import com.kurly.product.infrastructure.jpa.ProductSpecJpaRepository;
@@ -18,6 +17,7 @@ import com.kurly.product.presentation.dto.HomeResponse.ProductSummaryDto;
 import com.kurly.product.presentation.dto.ProductDetailResponse;
 import com.kurly.product.presentation.dto.ProductFilterResponse;
 import com.kurly.product.presentation.dto.ProductMediaResponse;
+import com.kurly.product.presentation.support.MediaUrlEncoder;
 import com.kurly.product.presentation.dto.ProductSpecResponse;
 import com.kurly.product.presentation.dto.ProductSummaryResponse;
 import com.kurly.product.presentation.dto.ProductUnitResponse;
@@ -143,7 +143,7 @@ public class ProductQueryService {
                 .stream()
                 .collect(Collectors.toMap(
                         media -> media.getProduct().getId(),
-                        ProductMedia::getMediaUrl,
+                        media -> MediaUrlEncoder.encode(media.getMediaUrl()),
                         (first, second) -> first));
     }
 }

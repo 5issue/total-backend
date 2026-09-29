@@ -3,7 +3,6 @@ package com.kurly.product.application;
 import com.kurly.product.domain.repository.ProductRepository;
 import com.kurly.product.infrastructure.entity.Product;
 import com.kurly.product.infrastructure.entity.Product.ProductType;
-import com.kurly.product.infrastructure.entity.ProductMedia;
 import com.kurly.product.infrastructure.entity.ProductMedia.MediaRole;
 import com.kurly.product.infrastructure.entity.ProductSpec;
 import com.kurly.product.infrastructure.entity.ProductSpec.StorageType;
@@ -13,6 +12,7 @@ import com.kurly.product.infrastructure.jpa.ProductSpecJpaRepository;
 import com.kurly.product.presentation.dto.BatchProductSummaryResponse;
 import com.kurly.product.presentation.dto.BatchProductSummaryResponse.InventoryInfo;
 import com.kurly.product.presentation.dto.BatchProductSummaryResponse.ProductSummaryItem;
+import com.kurly.product.presentation.support.MediaUrlEncoder;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -78,7 +78,7 @@ public class InternalProductService {
                 .findByProductIdInAndMediaRole(parentProductId, MediaRole.THUMBNAIL).stream()
                 .collect(Collectors.toMap(
                         media -> media.getProduct().getId(),
-                        ProductMedia::getMediaUrl,
+                        media -> MediaUrlEncoder.encode(media.getMediaUrl()),
                         (first, second) -> first));
 
         List<ProductSummaryItem> items = productIds.stream()
