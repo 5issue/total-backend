@@ -67,6 +67,26 @@ class MediaUrlEncoderTest {
     }
 
     @Test
+    @DisplayName("파일명 안의 %2F는 경로 구분자로 바뀌지 않고 그대로 %2F로 남는다")
+    void preservesEncodedSlashInFilename() {
+        String withEncodedSlash = "https://img-cf.kurly.com/shop/data/goods/163001/a%2Fb.jpg";
+
+        String encoded = MediaUrlEncoder.encode(withEncodedSlash);
+
+        assertThat(encoded).contains("a%2Fb.jpg");
+    }
+
+    @Test
+    @DisplayName("파일명 안의 %23은 fragment 구분자로 바뀌지 않고 그대로 %23으로 남는다")
+    void preservesEncodedHashInFilename() {
+        String withEncodedHash = "https://img-cf.kurly.com/shop/data/goods/163001/a%23b.jpg";
+
+        String encoded = MediaUrlEncoder.encode(withEncodedHash);
+
+        assertThat(encoded).contains("a%23b.jpg");
+    }
+
+    @Test
     @DisplayName("null/blank은 그대로 반환한다")
     void passesThroughNullAndBlank() {
         assertThat(MediaUrlEncoder.encode(null)).isNull();
