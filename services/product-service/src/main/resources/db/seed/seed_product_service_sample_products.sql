@@ -9,15 +9,16 @@
 --       (product_category.is_main = true), 반드시 1개 이상의 UNIT 을 가진다.
 --       product_spec 은 UNIT 상품에만 매핑된다(상품당 최대 1건).
 --
--- seed_product_service.sql 과의 관계:
+-- V5__seed_demo_products.sql(옛 seed_product_service.sql) 과의 관계:
 --   - category 테이블은 이 파일에서 전혀 건드리지 않는다(INSERT 없음).
---     STANDARD/DISPLAY 카테고리는 seed_product_service.sql 이 만든 기존
---     트리를 이름으로 조회해서 재사용한다 — 그래서 이 파일을 실행하기
---     전에 seed_product_service.sql 이 먼저 실행되어(카테고리 트리와
---     product.type CHECK 제약 수정이 끝나 있어야) 한다.
---   - product.sku_code 는 "SKU-0001" ~ "SKU-0100" 을 쓴다. seed_product_service.sql
---     이 만드는 "컬리 픽" 상품(SKU-K0001 ~ SKU-K0056)과 접두사로 네임스페이스가
---     분리되어 있어 절대 겹치지 않는다.
+--     STANDARD/DISPLAY 카테고리는 V5 마이그레이션이 만든 기존 트리를 이름으로
+--     조회해서 재사용한다 — 그래서 이 파일을 실행하려면 그 DB에 V5가 이미
+--     적용돼 있어야 한다(카테고리 트리와 product.type CHECK 제약 수정이 끝나
+--     있어야 함). V5는 Flyway 버전드 마이그레이션이라 앱이 그 DB에 한 번이라도
+--     떴으면 자동으로 적용돼 있다 — 더 이상 수동으로 먼저 실행할 파일이 아니다.
+--   - product.sku_code 는 "SKU-0001" ~ "SKU-0100" 을 쓴다. V5가 만드는
+--     "컬리 픽" 상품(SKU-K0001 ~ SKU-K0056)과 접두사로 네임스페이스가 분리되어
+--     있어 절대 겹치지 않는다.
 --
 -- 구성 (테이블별로 한 블록씩):
 --   1a. product - GROUP 상품 100개 (SKU-0001 ~ SKU-0100, short_description 포함)
@@ -26,15 +27,13 @@
 --   3. product_category - DISPLAY 매핑 (GROUP 기준, is_main = false)
 --   4. product_spec     - UNIT 상품 전부 (product_spec 은 UNIT 에만 매핑)
 --   5. product_inventory - UNIT 상품 전부 (재고도 UNIT 단위로만 관리). 이 파일이
---      만든 SKU-0* UNIT 만 대상으로 한다 — seed_product_service.sql 이 이미
---      넣은 SKU-K* UNIT 재고와 중복 INSERT 되지 않도록 sku_code 로 범위를
---      한정했다(product_inventory.product_id 는 UNIQUE 라 겹치면 실패한다).
+--      만든 SKU-0* UNIT 만 대상으로 한다 — V5 마이그레이션이 이미 넣은 SKU-K*
+--      UNIT 재고와 중복 INSERT 되지 않도록 sku_code 로 범위를 한정했다
+--      (product_inventory.product_id 는 UNIQUE 라 겹치면 실패한다).
 --
--- 실행 방법 (Flyway 등 마이그레이션 도구로 자동 실행되지 않음, 수동 실행 전용,
--- seed_product_service.sql 다음에 실행할 것):
+-- 실행 방법 (Flyway 등 마이그레이션 도구로 자동 실행되지 않음, 수동 실행 전용.
+-- 대상 DB에 V5__seed_demo_products.sql 이 이미 적용돼 있어야 함):
 --   - psql:
---       docker exec -i kurly-postgres-product psql -U postgres -d product \
---         < src/main/resources/db/seed/seed_product_service.sql
 --       docker exec -i kurly-postgres-product psql -U postgres -d product \
 --         < src/main/resources/db/seed/seed_product_service_sample_products.sql
 --   - DBeaver:
