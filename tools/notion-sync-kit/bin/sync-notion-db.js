@@ -113,7 +113,9 @@ function extractEndpoints(doc) {
 
       const parameters = op.parameters || [];
       const security = op.security ?? doc.security ?? [];
-      const bearer = Array.isArray(security) && security.length > 0;
+      // 공개 API(@useAuth(NoAuth))는 `security: [ {} ]`로 나온다. 빈 요구사항 객체는 "인증 불필요"라서
+      // 길이만 보면 Bearer 로 오판한다 — 실제 스킴이 들어 있는 요구사항이 있을 때만 Bearer 로 본다.
+      const bearer = Array.isArray(security) && security.some((req) => req && Object.keys(req).length > 0);
 
       const requestBodySchema = op.requestBody?.content?.['application/json']?.schema ?? null;
 
