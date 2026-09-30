@@ -32,6 +32,9 @@ public class Product {
     @Column(name = "parent_id")
     private Long parentId;
 
+    @Column(name = "ai_product_id")
+    private Long aiProductId;
+
     @Column(name = "name", length = 225, nullable = false)
     private String name;
 
