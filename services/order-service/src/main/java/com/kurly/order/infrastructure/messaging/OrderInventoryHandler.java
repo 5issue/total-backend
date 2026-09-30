@@ -11,7 +11,7 @@ import org.springframework.stereotype.Component;
 @Slf4j
 @Component
 @RequiredArgsConstructor
-public class OrderInventoryRestoredHandler {
+public class OrderInventoryHandler {
 
     private final OrderService orderService;
 
@@ -25,6 +25,19 @@ public class OrderInventoryRestoredHandler {
         } catch (IllegalStateException e) {
             throw new AmqpRejectAndDontRequeueException(
                     "재고 복구 이벤트 처리 실패: orderId=" + event.orderId(), e);
+        }
+    }
+
+    @RabbitListener(queues = OrderRabbitMqConfig.QUEUE_INVENTORY_CONFIRMED)
+    public void handle(ProductInventoryConfirmedEvent event) {
+        log.info("상품 재고 확정 결과 수신: orderId={}, eventId={}, status={}",
+                event.orderId(), event.eventId(), event.status());
+
+        try {
+            orderService.readyDelivery(event.orderId(), event.status().name(), event.failedItems());
+        } catch (IllegalStateException e) {
+            throw new AmqpRejectAndDontRequeueException(
+                    "재고 확정 이벤트 처리 실패: orderId=" + event.orderId(), e);
         }
     }
 }

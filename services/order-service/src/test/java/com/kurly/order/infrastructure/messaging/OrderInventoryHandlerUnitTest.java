@@ -14,14 +14,14 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
-class OrderInventoryRestoredHandlerUnitTest {
+class OrderInventoryHandlerUnitTest {
 
     @Mock
     OrderService orderService;
 
     @Test
     void 복구_성공일_때만_주문_취소를_완료한다() {
-        OrderInventoryRestoredHandler handler = new OrderInventoryRestoredHandler(orderService);
+        OrderInventoryHandler handler = new OrderInventoryHandler(orderService);
         handler.handle(event("RESTORED"));
         handler.handle(event("ALREADY_RESTORED"));
 
@@ -32,7 +32,7 @@ class OrderInventoryRestoredHandlerUnitTest {
 
     @Test
     void 처리할_수_없는_복구_이벤트는_재전달하지_않는다() {
-        OrderInventoryRestoredHandler handler = new OrderInventoryRestoredHandler(orderService);
+        OrderInventoryHandler handler = new OrderInventoryHandler(orderService);
         doThrow(new IllegalStateException("invalid status"))
                 .when(orderService).completeCancel(501L, "FAILED");
 

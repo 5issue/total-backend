@@ -155,4 +155,9 @@ public class Order extends BaseEntity {
     public List<OrderItem> getItems() {
         return Collections.unmodifiableList(this.items);
     }
+
+    public void markReadyDelivery() {
+        Assert.isTrue(this.status == OrderStatus.PAID, "PAID 상태에서만 배송 상태를 업데이트할 수 있습니다.");
+        this.deliveryStatus = DeliveryStatus.READY;
+    }
 }

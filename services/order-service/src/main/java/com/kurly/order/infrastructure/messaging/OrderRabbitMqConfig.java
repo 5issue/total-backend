@@ -18,12 +18,13 @@ public class OrderRabbitMqConfig {
     // ==========================================
     public static final String ROUTING_KEY_ORDER_PAYMENT_COMPLETED = "order.payment.completed";
     public static final String ROUTING_KEY_ORDER_RETURN_REQUESTED = "order.return-requested";
-    
+
     public static final String ROUTING_KEY_INVENTORY_RESTORE = "order.inventory.restore";
     public static final String ROUTING_KEY_INVENTORY_RELEASE = "order.inventory.release";
     public static final String ROUTING_KEY_INVENTORY_CONFIRM = "order.inventory.confirm";
 
     public static final String ROUTING_KEY_INVENTORY_RESTORED = "product.inventory.restored";
+    public static final String ROUTING_KEY_INVENTORY_CONFIRMED = "product.inventory.confirmed";
 
 
     // ==========================================
@@ -31,6 +32,9 @@ public class OrderRabbitMqConfig {
     // ==========================================
     public static final String QUEUE_INVENTORY_RESTORED = "order.inventory-restored.queue";
     public static final String DLQ_INVENTORY_RESTORED = "order.inventory-restored.dlq";
+
+    public static final String QUEUE_INVENTORY_CONFIRMED = "order.inventory-confirmed.queue";
+    public static final String DLQ_INVENTORY_CONFIRMED = "order.inventory-confirmed.dlq";
 
     // ==========================================
     // Exchange Beans
@@ -68,6 +72,34 @@ public class OrderRabbitMqConfig {
                 Binding.DestinationType.QUEUE,
                 EXCHANGE_PRODUCT,
                 ROUTING_KEY_INVENTORY_RESTORED,
+                null
+        );
+    }
+
+
+    // ==========================================
+    // Inventory Confirmed Flow
+    // ==========================================
+    @Bean
+    Queue inventoryConfirmedDlq() {
+        return QueueBuilder.durable(DLQ_INVENTORY_CONFIRMED).build();
+    }
+
+    @Bean
+    Queue inventoryConfirmedQueue() {
+        return QueueBuilder.durable(QUEUE_INVENTORY_CONFIRMED)
+                .deadLetterExchange("")
+                .deadLetterRoutingKey(DLQ_INVENTORY_CONFIRMED)
+                .build();
+    }
+
+    @Bean
+    Binding inventoryConfirmedBinding() {
+        return new Binding(
+                QUEUE_INVENTORY_CONFIRMED,
+                Binding.DestinationType.QUEUE,
+                EXCHANGE_PRODUCT,
+                ROUTING_KEY_INVENTORY_CONFIRMED,
                 null
         );
     }
