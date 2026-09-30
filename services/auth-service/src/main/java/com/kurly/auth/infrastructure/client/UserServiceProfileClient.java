@@ -8,8 +8,10 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
+import org.springframework.util.StringUtils;
 import org.springframework.web.client.RestClient;
 
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
@@ -31,13 +33,21 @@ public class UserServiceProfileClient implements UserProfileClient {
 
     @Override
     @SuppressWarnings("unchecked")
-    public SyncedProfile syncProfile(AuthProvider provider, String providerId) {
+    public SyncedProfile syncProfile(AuthProvider provider, String providerId, String name) {
+        // Map.of는 null 값을 허용하지 않는다. 이름은 없을 수 있으므로 있을 때만 싣는다.
+        Map<String, Object> request = new LinkedHashMap<>();
+        request.put("provider", provider.name());
+        request.put("providerId", providerId);
+        if (StringUtils.hasText(name)) {
+            request.put("name", name);
+        }
+
         Map<String, Object> body;
         try {
             body = restClient.post()
                     .uri(SYNC_PROFILE_PATH)
                     .contentType(MediaType.APPLICATION_JSON)
-                    .body(Map.of("provider", provider.name(), "providerId", providerId))
+                    .body(request)
                     .retrieve()
                     .body(new org.springframework.core.ParameterizedTypeReference<>() {
                     });

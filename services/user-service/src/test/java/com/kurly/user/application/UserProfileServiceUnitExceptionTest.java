@@ -55,7 +55,7 @@ class UserProfileServiceUnitExceptionTest {
                     .willReturn(Optional.empty());
             given(userRepository.save(any())).willThrow(cause);
 
-            assertThatThrownBy(() -> userProfileService.syncProfile(AuthProvider.NAVER, PROVIDER_ID))
+            assertThatThrownBy(() -> userProfileService.syncProfile(AuthProvider.NAVER, PROVIDER_ID, null))
                     .isSameAs(cause);
         }
     }

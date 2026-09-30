@@ -17,6 +17,7 @@ import com.kurly.common.exception.UnauthorizedException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
@@ -68,19 +69,23 @@ public class SocialAuthService {
         }
 
         String providerAccessToken = oAuthClient.exchangeCodeForAccessToken(provider, code, transaction);
-        String providerId = oAuthClient.fetchProviderId(provider, providerAccessToken);
+        OAuthClient.SocialUser socialUser = oAuthClient.fetchUser(provider, providerAccessToken);
+        String providerId = socialUser.providerId();
 
         AuthUser authUser = authUserRepository.findByProviderAndProviderId(provider, providerId).orElse(null);
 
         if (authUser == null) {
             // 회원 도메인이 id를 소유하므로 여기서 동기화하고 참조값을 받아온다. 멱등이라 재시도해도 안전하다.
-            UserProfileClient.SyncedProfile profile = userProfileClient.syncProfile(provider, providerId);
+            UserProfileClient.SyncedProfile profile =
+                    userProfileClient.syncProfile(provider, providerId, socialUser.name());
             authUser = authUserRepository.save(AuthUser.builder()
                     .provider(provider)
                     .providerId(providerId)
                     .userId(profile.userId())
                     .build());
             log.info("소셜 회원가입 완료: provider={}, userId={}", provider, profile.userId());
+        } else {
+            backfillName(provider, providerId, socialUser.name());
         }
 
         if (authUser.getStatus() != UserStatus.ACTIVE) {
@@ -90,6 +95,26 @@ public class SocialAuthService {
 
         return new SocialLoginResult(
                 authTokenService.issueUserTokens(authUser), authUser.getUserId());
+    }
+
+    /**
+     * 기존 회원의 비어 있는 이름을 채운다. <b>실패해도 로그인을 막지 않는다.</b>
+     *
+     * <p>신규 가입과 달리 여기서는 user-service 응답이 토큰 발급에 필요하지 않다. 보정에 실패했다고
+     * 로그인을 깨뜨리면, 이름 한 칸 때문에 user-service 장애가 로그인 장애로 번진다.
+     *
+     * <p>제공자가 이름을 주지 않았으면 호출조차 하지 않는다. 덮어쓸 값이 없는데 로그인마다
+     * 서비스 간 호출을 늘릴 이유가 없다.
+     */
+    private void backfillName(AuthProvider provider, String providerId, String name) {
+        if (!StringUtils.hasText(name)) {
+            return;
+        }
+        try {
+            userProfileClient.syncProfile(provider, providerId, name);
+        } catch (Exception e) {
+            log.warn("회원 이름 보정 실패. 로그인은 계속한다: provider={}", provider, e);
+        }
     }
 
     public record AuthorizationRequest(String loginUrl, OAuthTransaction transaction) {

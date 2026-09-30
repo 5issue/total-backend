@@ -47,7 +47,7 @@ class SocialAuthServiceUnitExceptionTest {
                 List.of(ALLOWED_REDIRECT),
                 Map.of(AuthProvider.KAKAO, new OAuthProviderProperties.Provider(
                         "client", "secret", "https://authorize", "https://token", "https://userinfo",
-                        null, "id", true, OAuthProviderProperties.TokenRequestMethod.POST)));
+                        null, "id", null, true, OAuthProviderProperties.TokenRequestMethod.POST)));
         socialAuthService = new SocialAuthService(
                 oAuthClient, properties, authUserRepository, userProfileClient, authTokenService);
     }
@@ -81,7 +81,7 @@ class SocialAuthServiceUnitExceptionTest {
 
             // state가 어긋나면 인가 코드를 교환하지 않는다.
             verify(oAuthClient, never()).exchangeCodeForAccessToken(any(), any(), any());
-            verify(userProfileClient, never()).syncProfile(any(), any());
+            verify(userProfileClient, never()).syncProfile(any(), any(), any());
         }
     }
 
@@ -96,7 +96,8 @@ class SocialAuthServiceUnitExceptionTest {
             ReflectionTestUtils.setField(withdrawn, "status", UserStatus.WITHDRAWN);
             OAuthTransaction stored = new OAuthTransaction("s", "v", ALLOWED_REDIRECT);
             given(oAuthClient.exchangeCodeForAccessToken(any(), any(), any())).willReturn("t");
-            given(oAuthClient.fetchProviderId(any(), any())).willReturn("pid");
+            given(oAuthClient.fetchUser(any(), any()))
+                    .willReturn(new OAuthClient.SocialUser("pid", null));
             given(authUserRepository.findByProviderAndProviderId(any(), any()))
                     .willReturn(Optional.of(withdrawn));
 

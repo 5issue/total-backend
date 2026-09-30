@@ -33,7 +33,7 @@ class UserServiceProfileClientUnitTest {
                     {"status":"SUCCESS","data":{"userId":10023,"isNewUser":true},"error":null}""");
             UserServiceProfileClient client = new UserServiceProfileClient(stub.url(""));
 
-            UserProfileClient.SyncedProfile profile = client.syncProfile(AuthProvider.KAKAO, "pid-1");
+            UserProfileClient.SyncedProfile profile = client.syncProfile(AuthProvider.KAKAO, "pid-1", null);
 
             assertThat(profile.userId()).isEqualTo(10023L);
             assertThat(profile.newUser()).isTrue();
@@ -45,7 +45,7 @@ class UserServiceProfileClientUnitTest {
                     {"status":"SUCCESS","data":{"userId":7,"isNewUser":false}}""");
             UserServiceProfileClient client = new UserServiceProfileClient(stub.url(""));
 
-            assertThat(client.syncProfile(AuthProvider.NAVER, "pid-2").newUser()).isFalse();
+            assertThat(client.syncProfile(AuthProvider.NAVER, "pid-2", null).newUser()).isFalse();
         }
 
         @Test
@@ -54,7 +54,7 @@ class UserServiceProfileClientUnitTest {
                     {"data":{"userId":1,"isNewUser":false}}""");
             UserServiceProfileClient client = new UserServiceProfileClient(stub.url(""));
 
-            client.syncProfile(AuthProvider.KAKAO, "pid-3");
+            client.syncProfile(AuthProvider.KAKAO, "pid-3", null);
 
             assertThat(stub.lastReceived().body()).contains("\"provider\":\"KAKAO\"").contains("pid-3");
         }
@@ -69,7 +69,7 @@ class UserServiceProfileClientUnitTest {
             stub = new StubHttpServer().stub("/internal/v1/users/sync-profile", 503, "{}");
             UserServiceProfileClient client = new UserServiceProfileClient(stub.url(""));
 
-            assertThatThrownBy(() -> client.syncProfile(AuthProvider.KAKAO, "pid"))
+            assertThatThrownBy(() -> client.syncProfile(AuthProvider.KAKAO, "pid", null))
                     .isInstanceOf(BusinessException.class)
                     .hasMessageContaining("회원 정보 처리 중 오류");
         }
@@ -80,7 +80,7 @@ class UserServiceProfileClientUnitTest {
                     {"status":"SUCCESS","data":{}}""");
             UserServiceProfileClient client = new UserServiceProfileClient(stub.url(""));
 
-            assertThatThrownBy(() -> client.syncProfile(AuthProvider.KAKAO, "pid"))
+            assertThatThrownBy(() -> client.syncProfile(AuthProvider.KAKAO, "pid", null))
                     .isInstanceOf(BusinessException.class);
         }
     }
