@@ -298,7 +298,7 @@ public class OrderService {
     }
 
     public InternalOrderResponseDto getForPayment(AuthenticatedPrincipal me, Long orderId) {
-        Order order = getOwnedOrderForUpdate(me, orderId);
+        Order order = getOwnedOrder(me, orderId);
         long remainingSeconds = order.getInventoryReservedUntil() == null ? 0
                 : Math.max(0, Duration.between(LocalDateTime.now(), order.getInventoryReservedUntil()).toSeconds());
         return InternalOrderResponseDto.from(order, remainingSeconds);
