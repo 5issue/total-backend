@@ -129,8 +129,14 @@ public class OAuthClient {
                 });
     }
 
-    /** 제공자 access token으로 사용자 고유 식별자를 조회한다. 개인정보는 가져오지 않는다. */
-    public String fetchProviderId(AuthProvider provider, String providerAccessToken) {
+    /**
+     * 제공자 access token으로 사용자 식별자와 이름을 조회한다.
+     *
+     * <p>식별자 외에 가져오는 개인정보는 <b>이름뿐이다.</b> 회원 도메인이 주문자명으로 쓰므로
+     * 수집하지 않으면 프로필 조회가 {@code name: null}을 돌려준다. 이름은 auth-service에
+     * 저장하지 않고 user-service로 넘기기만 한다(설계서 — 개인정보는 회원 도메인 소유).
+     */
+    public SocialUser fetchUser(AuthProvider provider, String providerAccessToken) {
         OAuthProviderProperties.Provider config = properties.require(provider);
 
         Map<String, Object> response;
@@ -151,7 +157,34 @@ public class OAuthClient {
             log.warn("소셜 사용자 정보에서 식별자를 찾지 못함: provider={}, path={}", provider, config.userIdPath());
             throw new BusinessException(AuthErrorCode.INVALID_AUTH_CODE, AuthErrorCode.INVALID_AUTH_CODE.getMessage());
         }
+        return new SocialUser(value.toString(), extractName(response, config, provider));
+    }
+
+    /**
+     * 이름을 꺼낸다. <b>없어도 로그인을 막지 않는다.</b> 제공자 콘솔의 동의 항목이 꺼져 있거나
+     * 사용자가 선택 동의를 거부하면 값이 오지 않는데, 그것 때문에 로그인이 실패해서는 안 된다.
+     */
+    private String extractName(Map<String, Object> response, OAuthProviderProperties.Provider config,
+                               AuthProvider provider) {
+        if (!StringUtils.hasText(config.userNamePath())) {
+            return null;
+        }
+        Object value = extract(response, config.userNamePath());
+        if (value == null || !StringUtils.hasText(value.toString())) {
+            // 동의 항목 미설정·선택 동의 거부에서 흔하다. 경고로 올리면 로그가 의미 없이 쌓인다.
+            log.info("소셜 사용자 정보에 이름이 없다. 이름 없이 진행한다: provider={}, path={}",
+                    provider, config.userNamePath());
+            return null;
+        }
         return value.toString();
+    }
+
+    /**
+     * 소셜 제공자가 알려준 사용자.
+     *
+     * @param name 제공자가 주지 않았으면 {@code null}이다. 호출부는 이를 정상으로 다뤄야 한다.
+     */
+    public record SocialUser(String providerId, String name) {
     }
 
     /** 점으로 구분된 경로로 중첩 응답에서 값을 꺼낸다. 카카오는 {@code id}, 네이버는 {@code response.id}. */

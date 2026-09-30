@@ -41,7 +41,7 @@ class OAuthClientUnitTest {
                                                       OAuthProviderProperties.TokenRequestMethod method) {
         return new OAuthProviderProperties.Provider(
                 "client-id", "client-secret", "https://provider.example/authorize",
-                tokenUri, userInfoUri, scope, "id", pkce, method);
+                tokenUri, userInfoUri, scope, "id", null, pkce, method);
     }
 
     private static Map<String, String> queryOf(String url) {
@@ -186,7 +186,7 @@ class OAuthClientUnitTest {
                     "https://t", stub.url("/userinfo"), null, true,
                     OAuthProviderProperties.TokenRequestMethod.POST)));
 
-            String providerId = client.fetchProviderId(AuthProvider.KAKAO, "provider-token");
+            String providerId = client.fetchUser(AuthProvider.KAKAO, "provider-token").providerId();
 
             assertThat(providerId).isEqualTo("123456789");
             assertThat(stub.lastReceived().authorization()).isEqualTo("Bearer provider-token");
@@ -198,12 +198,62 @@ class OAuthClientUnitTest {
                     "{\"resultcode\":\"00\",\"response\":{\"id\":\"naver-user-id\"}}");
             OAuthProviderProperties.Provider naver = new OAuthProviderProperties.Provider(
                     "client-id", "secret", "https://a", "https://t", stub.url("/userinfo"),
-                    "openid", "response.id", true, OAuthProviderProperties.TokenRequestMethod.POST);
+                    "openid", "response.id", null, true, OAuthProviderProperties.TokenRequestMethod.POST);
             OAuthClient client = new OAuthClient(
                     new OAuthProviderProperties(List.of(REDIRECT_URI), Map.of(AuthProvider.NAVER, naver)));
 
-            assertThat(client.fetchProviderId(AuthProvider.NAVER, "provider-token"))
+            assertThat(client.fetchUser(AuthProvider.NAVER, "provider-token").providerId())
                     .isEqualTo("naver-user-id");
+        }
+
+        @Test
+        void 중첩_경로에서_이름을_함께_꺼낸다() {
+            stub = new StubHttpServer().stub("/userinfo", 200,
+                    "{\"id\":123,\"kakao_account\":{\"profile\":{\"nickname\":\"김컬리\"}}}");
+            OAuthClient client = new OAuthClient(properties(namedProvider(
+                    stub.url("/userinfo"), "kakao_account.profile.nickname")));
+
+            assertThat(client.fetchUser(AuthProvider.KAKAO, "provider-token").name())
+                    .isEqualTo("김컬리");
+        }
+
+        @Test
+        void 동의_항목이_꺼져_이름이_없으면_이름만_비우고_성공한다() {
+            // 카카오는 동의하지 않은 항목을 응답에서 아예 생략한다. 로그인을 막아서는 안 된다.
+            stub = new StubHttpServer().stub("/userinfo", 200, "{\"id\":123,\"kakao_account\":{}}");
+            OAuthClient client = new OAuthClient(properties(namedProvider(
+                    stub.url("/userinfo"), "kakao_account.profile.nickname")));
+
+            OAuthClient.SocialUser user = client.fetchUser(AuthProvider.KAKAO, "provider-token");
+
+            assertThat(user.providerId()).isEqualTo("123");
+            assertThat(user.name()).isNull();
+        }
+
+        @Test
+        void 이름_경로가_설정되지_않으면_이름을_수집하지_않는다() {
+            stub = new StubHttpServer().stub("/userinfo", 200,
+                    "{\"id\":123,\"kakao_account\":{\"profile\":{\"nickname\":\"김컬리\"}}}");
+            OAuthClient client = new OAuthClient(properties(namedProvider(stub.url("/userinfo"), null)));
+
+            assertThat(client.fetchUser(AuthProvider.KAKAO, "provider-token").name()).isNull();
+        }
+
+        @Test
+        void 빈_문자열_이름은_없는_것으로_본다() {
+            stub = new StubHttpServer().stub("/userinfo", 200,
+                    "{\"id\":123,\"kakao_account\":{\"profile\":{\"nickname\":\"  \"}}}");
+            OAuthClient client = new OAuthClient(properties(namedProvider(
+                    stub.url("/userinfo"), "kakao_account.profile.nickname")));
+
+            assertThat(client.fetchUser(AuthProvider.KAKAO, "provider-token").name()).isNull();
+        }
+
+        private OAuthProviderProperties.Provider namedProvider(String userInfoUri, String userNamePath) {
+            return new OAuthProviderProperties.Provider(
+                    "client-id", "client-secret", "https://provider.example/authorize",
+                    "https://t", userInfoUri, null, "id", userNamePath, true,
+                    OAuthProviderProperties.TokenRequestMethod.POST);
         }
     }
 }

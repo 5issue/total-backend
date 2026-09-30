@@ -49,7 +49,7 @@ class SocialAuthServiceUnitTest {
         OAuthProviderProperties properties = new OAuthProviderProperties(
                 List.of(REDIRECT),
                 Map.of(AuthProvider.KAKAO, new OAuthProviderProperties.Provider(
-                        "cid", "secret", "https://a", "https://t", "https://u", null, "id",
+                        "cid", "secret", "https://a", "https://t", "https://u", null, "id", null,
                         true, OAuthProviderProperties.TokenRequestMethod.POST)));
         socialAuthService = new SocialAuthService(
                 oAuthClient, properties, authUserRepository, userProfileClient, authTokenService);
@@ -102,7 +102,8 @@ class SocialAuthServiceUnitTest {
             AuthUser existing = AuthUser.builder()
                     .provider(AuthProvider.KAKAO).providerId("pid").userId(50001L).build();
             given(oAuthClient.exchangeCodeForAccessToken(any(), any(), any())).willReturn("provider-token");
-            given(oAuthClient.fetchProviderId(AuthProvider.KAKAO, "provider-token")).willReturn("pid");
+            given(oAuthClient.fetchUser(AuthProvider.KAKAO, "provider-token"))
+                    .willReturn(new OAuthClient.SocialUser("pid", null));
             given(authUserRepository.findByProviderAndProviderId(AuthProvider.KAKAO, "pid"))
                     .willReturn(Optional.of(existing));
             given(authTokenService.issueUserTokens(existing)).willReturn(tokenPair());
@@ -111,17 +112,18 @@ class SocialAuthServiceUnitTest {
                     AuthProvider.KAKAO, "code", "state-v", TRANSACTION);
 
             assertThat(result.userId()).isEqualTo(50001L);
-            // 로그인 경로는 user-service에 의존하지 않아야 한다.
-            verify(userProfileClient, never()).syncProfile(any(), any());
+            // 제공자가 이름을 주지 않았으면 보정할 값이 없으므로 호출하지 않는다.
+            verify(userProfileClient, never()).syncProfile(any(), any(), any());
         }
 
         @Test
         void 신규_회원은_회원도메인과_동기화한_뒤_저장된다() {
             given(oAuthClient.exchangeCodeForAccessToken(any(), any(), any())).willReturn("provider-token");
-            given(oAuthClient.fetchProviderId(AuthProvider.KAKAO, "provider-token")).willReturn("new-pid");
+            given(oAuthClient.fetchUser(AuthProvider.KAKAO, "provider-token"))
+                    .willReturn(new OAuthClient.SocialUser("new-pid", null));
             given(authUserRepository.findByProviderAndProviderId(AuthProvider.KAKAO, "new-pid"))
                     .willReturn(Optional.empty());
-            given(userProfileClient.syncProfile(AuthProvider.KAKAO, "new-pid"))
+            given(userProfileClient.syncProfile(AuthProvider.KAKAO, "new-pid", null))
                     .willReturn(new UserProfileClient.SyncedProfile(70001L, true));
             given(authUserRepository.save(any())).willAnswer(inv -> inv.getArgument(0));
             given(authTokenService.issueUserTokens(any())).willReturn(tokenPair());
@@ -130,7 +132,60 @@ class SocialAuthServiceUnitTest {
                     AuthProvider.KAKAO, "code", "state-v", TRANSACTION);
 
             assertThat(result.userId()).isEqualTo(70001L);
-            verify(userProfileClient).syncProfile(AuthProvider.KAKAO, "new-pid");
+            verify(userProfileClient).syncProfile(AuthProvider.KAKAO, "new-pid", null);
+        }
+
+        @Test
+        void 신규_회원은_제공자가_준_이름을_회원도메인에_넘긴다() {
+            given(oAuthClient.exchangeCodeForAccessToken(any(), any(), any())).willReturn("provider-token");
+            given(oAuthClient.fetchUser(AuthProvider.KAKAO, "provider-token"))
+                    .willReturn(new OAuthClient.SocialUser("new-pid", "김컬리"));
+            given(authUserRepository.findByProviderAndProviderId(AuthProvider.KAKAO, "new-pid"))
+                    .willReturn(Optional.empty());
+            given(userProfileClient.syncProfile(AuthProvider.KAKAO, "new-pid", "김컬리"))
+                    .willReturn(new UserProfileClient.SyncedProfile(70002L, true));
+            given(authUserRepository.save(any())).willAnswer(inv -> inv.getArgument(0));
+            given(authTokenService.issueUserTokens(any())).willReturn(tokenPair());
+
+            socialAuthService.handleCallback(AuthProvider.KAKAO, "code", "state-v", TRANSACTION);
+
+            verify(userProfileClient).syncProfile(AuthProvider.KAKAO, "new-pid", "김컬리");
+        }
+
+        @Test
+        void 기존_회원도_제공자가_이름을_주면_보정을_요청한다() {
+            AuthUser existing = AuthUser.builder()
+                    .provider(AuthProvider.KAKAO).providerId("pid").userId(50001L).build();
+            given(oAuthClient.exchangeCodeForAccessToken(any(), any(), any())).willReturn("provider-token");
+            given(oAuthClient.fetchUser(AuthProvider.KAKAO, "provider-token"))
+                    .willReturn(new OAuthClient.SocialUser("pid", "김컬리"));
+            given(authUserRepository.findByProviderAndProviderId(AuthProvider.KAKAO, "pid"))
+                    .willReturn(Optional.of(existing));
+            given(authTokenService.issueUserTokens(existing)).willReturn(tokenPair());
+
+            socialAuthService.handleCallback(AuthProvider.KAKAO, "code", "state-v", TRANSACTION);
+
+            verify(userProfileClient).syncProfile(AuthProvider.KAKAO, "pid", "김컬리");
+        }
+
+        @Test
+        void 이름_보정이_실패해도_로그인은_성공한다() {
+            AuthUser existing = AuthUser.builder()
+                    .provider(AuthProvider.KAKAO).providerId("pid").userId(50001L).build();
+            given(oAuthClient.exchangeCodeForAccessToken(any(), any(), any())).willReturn("provider-token");
+            given(oAuthClient.fetchUser(AuthProvider.KAKAO, "provider-token"))
+                    .willReturn(new OAuthClient.SocialUser("pid", "김컬리"));
+            given(authUserRepository.findByProviderAndProviderId(AuthProvider.KAKAO, "pid"))
+                    .willReturn(Optional.of(existing));
+            given(userProfileClient.syncProfile(AuthProvider.KAKAO, "pid", "김컬리"))
+                    .willThrow(new RuntimeException("user-service 장애"));
+            given(authTokenService.issueUserTokens(existing)).willReturn(tokenPair());
+
+            SocialLoginResult result = socialAuthService.handleCallback(
+                    AuthProvider.KAKAO, "code", "state-v", TRANSACTION);
+
+            // 이름 한 칸 때문에 user-service 장애가 로그인 장애로 번지면 안 된다.
+            assertThat(result.userId()).isEqualTo(50001L);
         }
     }
 }

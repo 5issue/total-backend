@@ -31,7 +31,7 @@ class OAuthClientUnitExceptionTest {
 
     private OAuthClient client(String tokenUri, String userInfoUri, String userIdPath) {
         OAuthProviderProperties.Provider provider = new OAuthProviderProperties.Provider(
-                "client-id", "secret", "https://a", tokenUri, userInfoUri, null, userIdPath,
+                "client-id", "secret", "https://a", tokenUri, userInfoUri, null, userIdPath, null,
                 true, OAuthProviderProperties.TokenRequestMethod.POST);
         return new OAuthClient(new OAuthProviderProperties(List.of(), Map.of(AuthProvider.KAKAO, provider)));
     }
@@ -86,7 +86,7 @@ class OAuthClientUnitExceptionTest {
             stub = new StubHttpServer().stub("/userinfo", 401, "{\"msg\":\"unauthorized\"}");
             OAuthClient client = client("https://t", stub.url("/userinfo"), "id");
 
-            assertThatThrownBy(() -> client.fetchProviderId(AuthProvider.KAKAO, "bad-token"))
+            assertThatThrownBy(() -> client.fetchUser(AuthProvider.KAKAO, "bad-token"))
                     .isInstanceOf(BusinessException.class);
         }
 
@@ -95,7 +95,7 @@ class OAuthClientUnitExceptionTest {
             stub = new StubHttpServer().stub("/userinfo", 200, "{\"nickname\":\"tester\"}");
             OAuthClient client = client("https://t", stub.url("/userinfo"), "id");
 
-            assertThatThrownBy(() -> client.fetchProviderId(AuthProvider.KAKAO, "token"))
+            assertThatThrownBy(() -> client.fetchUser(AuthProvider.KAKAO, "token"))
                     .isInstanceOf(BusinessException.class);
         }
 
@@ -104,7 +104,7 @@ class OAuthClientUnitExceptionTest {
             stub = new StubHttpServer().stub("/userinfo", 200, "{\"response\":\"플랫한 값\"}");
             OAuthClient client = client("https://t", stub.url("/userinfo"), "response.id");
 
-            assertThatThrownBy(() -> client.fetchProviderId(AuthProvider.KAKAO, "token"))
+            assertThatThrownBy(() -> client.fetchUser(AuthProvider.KAKAO, "token"))
                     .isInstanceOf(BusinessException.class);
         }
     }

@@ -34,6 +34,9 @@ public record OAuthProviderProperties(
     /**
      * @param userIdPath         사용자 정보 응답에서 식별자를 꺼낼 경로. 점으로 중첩을 표현한다.
      *                           카카오는 {@code id}, 네이버는 {@code response.id}.
+     * @param userNamePath        사용자 정보 응답에서 이름을 꺼낼 경로. <b>비워두면 이름을 수집하지 않는다.</b>
+     *                           제공자 콘솔의 동의 항목이 꺼져 있으면 경로가 맞아도 값이 없으므로,
+     *                           값을 못 찾는 것은 오류가 아니다(이름은 필수가 아니다).
      * @param pkceEnabled        PKCE 파라미터 전송 여부. 제공자가 지원하지 않으면 꺼야 한다.
      *                           지원하지 않는데 보내면 대개 무시되지만, 보호 효과는 없다.
      * @param tokenRequestMethod 토큰 요청 방식. 카카오는 POST 폼, 네이버 문서는 GET 쿼리스트링이다.
@@ -46,6 +49,7 @@ public record OAuthProviderProperties(
             String userInfoUri,
             String scope,
             String userIdPath,
+            String userNamePath,
             Boolean pkceEnabled,
             TokenRequestMethod tokenRequestMethod
     ) {
