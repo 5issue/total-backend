@@ -4,11 +4,13 @@ import com.kurly.common.exception.BusinessException;
 import com.kurly.common.exception.ErrorCode;
 import com.kurly.common.exception.GlobalErrorCode;
 import com.kurly.common.response.ApiResponse;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolationException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.OptimisticLockingFailureException;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -28,10 +30,27 @@ import java.util.stream.Collectors;
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
+    /**
+     * <b>요청 메서드와 경로를 함께 남긴다.</b> 없으면 어느 엔드포인트가 실패했는지 알 수 없다.
+     * 특히 401은 어느 경로에서 났는지가 원인 판별의 전부다 — 클라이언트가 토큰을 안 보낸 것인지,
+     * 서비스 간 호출이 헤더를 전파하지 못한 것인지가 경로로 갈린다.
+     *
+     * <p>쿼리스트링은 남기지 않는다. 토큰·개인정보가 실려 올 수 있어 로그에 남기면 안 된다
+     * (시큐어코딩가이드 BE-17).
+     */
     @ExceptionHandler(BusinessException.class)
-    public ResponseEntity<ApiResponse<Void>> handleBusinessException(BusinessException e) {
+    public ResponseEntity<ApiResponse<Void>> handleBusinessException(
+            BusinessException e, HttpServletRequest request) {
         ErrorCode errorCode = e.getErrorCode();
-        log.warn("BusinessException: code={}, message={}", errorCode.getCode(), e.getMessage(), e);
+        // 401만 User-Agent를 덧붙인다. "자격증명 없이 온 게 누구인지"가 원인 판별의 핵심인데,
+        // 브라우저 호출과 서버 사이드 렌더링(Next 등)의 호출이 이 값으로 갈린다.
+        // access token은 메모리 보관이라(설계서 1.4) 서버 렌더 경로에는 애초에 토큰이 없다.
+        String caller = errorCode.getStatus() == HttpStatus.UNAUTHORIZED
+                ? " ua=" + request.getHeader(HttpHeaders.USER_AGENT)
+                : "";
+        log.warn("BusinessException: code={}, message={}, {} {}{}",
+                errorCode.getCode(), e.getMessage(),
+                request.getMethod(), request.getRequestURI(), caller, e);
         return ResponseEntity.status(errorCode.getStatus())
                 .body(ApiResponse.error(errorCode, e.getMessage()));
     }

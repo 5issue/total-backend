@@ -100,7 +100,12 @@ public class AuthTokenService {
             throw invalidRefreshToken();
         }
 
-        return issueUserTokens(user);
+        TokenPair reissued = issueUserTokens(user);
+        // 성공도 남긴다. 재발급은 refresh token을 회전시켜 구 토큰을 폐기하는 상태 변화이므로
+        // 감사 흔적이 필요하고, 실패만 기록하면 "재발급이 오긴 했는지"조차 알 수 없어
+        // 장애 분석이 막힌다. 토큰 값은 남기지 않는다.
+        log.info("access token 재발급: authUserId={}, userId={}", user.getId(), user.getUserId());
+        return reissued;
     }
 
     /**
@@ -149,7 +154,9 @@ public class AuthTokenService {
             throw invalidRefreshToken();
         }
 
-        return issueAdminTokens(admin);
+        TokenPair reissued = issueAdminTokens(admin);
+        log.info("access token 재발급: authAdminId={}, adminId={}", admin.getId(), admin.getAdminId());
+        return reissued;
     }
 
     /**
