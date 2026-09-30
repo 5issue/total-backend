@@ -99,6 +99,22 @@ public class OrderClaim extends BaseEntity {
                 .build();
     }
 
+    public static OrderClaim createSystemClaim(Order order, String reasonCode, String reasonDetail, Long expectedRefundAmount) {
+        Assert.notNull(order, "연관 주문은 필수입니다.");
+        Assert.hasText(reasonCode, "사유 코드는 필수입니다.");
+
+        return OrderClaim.builder()
+                .order(order)
+                .claimType(ClaimType.CANCEL)
+                .requesterType(RequesterType.SYSTEM)
+                .reasonCode(reasonCode)
+                .reasonDetail(reasonDetail)
+                .expectedRefundAmount(expectedRefundAmount)
+                .requestedAt(LocalDateTime.now())
+                .build();
+    }
+
+
     public void addAttachment(RefundAttachment attachment) {
         this.attachments.add(attachment);
         attachment.assignOrderClaim(this);

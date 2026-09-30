@@ -5,7 +5,6 @@ import com.kurly.common.exception.GlobalErrorCode;
 import com.kurly.common.security.AuthenticatedPrincipal;
 import com.kurly.order.domain.cart.Cart;
 import com.kurly.order.domain.cart.CartItem;
-import com.kurly.order.domain.cart.CartItemRepository;
 import com.kurly.order.domain.cart.CartRepository;
 import com.kurly.order.domain.claim.*;
 import com.kurly.order.domain.common.OrderErrorCode;
@@ -14,7 +13,6 @@ import com.kurly.order.domain.order.*;
 import com.kurly.order.infrastructure.dto.AddressResponse;
 import com.kurly.order.infrastructure.dto.CancelEligibilityResponse;
 import com.kurly.order.infrastructure.dto.CartProductInfo;
-import com.kurly.order.infrastructure.dto.CheckoutInventoryResponseDto;
 import com.kurly.order.infrastructure.messaging.*;
 import com.kurly.order.presentation.dto.*;
 import lombok.RequiredArgsConstructor;
@@ -48,7 +46,6 @@ public class OrderService {
 
     private final OrderRepository orderRepository;
     private final CartRepository cartRepository;
-    private final CartItemRepository cartItemRepository;
     private final OrderClaimRepository orderClaimRepository;
     private final OrderDeliveryInfoRepository orderDeliveryInfoRepository;
     private final ApplicationEventPublisher eventPublisher;
@@ -456,6 +453,31 @@ public class OrderService {
         order.completeCancel();
     }
 
+    // TODO: OmsOrder 쪽에도 Cliam 정보를 알려야 한다.
+    @Transactional
+    public void readyDelivery(Long orderId, String confirmStatus, List<ProductInventoryConfirmedEvent.FailedItemInfo> failedItems) {
+        Order order = getOrder(orderId);
+
+        if (confirmStatus.equals("CONFIRMED")) {
+            order.markReadyDelivery();
+        } else {
+            String insufficientIds = failedItems.stream()
+                    .map(item -> String.valueOf(item.productId()))
+                    .collect(Collectors.joining(", "));
+            log.info("다음 상품의 재고가 부족합니다={}", insufficientIds);
+
+            order.requestCancel();
+            orderClaimRepository.save(OrderClaim.createSystemClaim(
+                    order,
+                    "CLN98",
+                    insufficientIds,
+                    order.getPaymentAmount()
+            ));
+
+            externalService.cancelPayment(order.getPaymentId(), "order-infficitent-cancel-" + orderId, "재고 부족");
+        }
+    }
+
     private Order getOrder(Long orderId) {
         return orderRepository.findById(orderId)
                 .orElseThrow(() -> new BusinessException(OrderErrorCode.ORD_NOT_FOUND_ORDER));
@@ -498,17 +520,6 @@ public class OrderService {
                 .anyMatch(item -> item.getStorageType() == StorageType.REFRIGERATED || item.getStorageType() == StorageType.FROZEN);
     }
 
-    private boolean inventoryItemsMatch(List<CartItem> requested,
-                                        List<CheckoutInventoryResponseDto.Item> received) {
-        Map<InventoryItemKey, Long> requestedItems = requested.stream()
-                .map(item -> new InventoryItemKey(item.getProductId(), item.getQuantity()))
-                .collect(Collectors.groupingBy(Function.identity(), Collectors.counting()));
-        Map<InventoryItemKey, Long> receivedItems = received.stream()
-                .map(item -> new InventoryItemKey(item.productId(), item.quantity()))
-                .collect(Collectors.groupingBy(Function.identity(), Collectors.counting()));
-        return requestedItems.equals(receivedItems);
-    }
-
     private ClaimType parseClaimType(String value) {
         if (value == null || value.isBlank()) {
             return null;
@@ -531,6 +542,4 @@ public class OrderService {
         }
     }
 
-    private record InventoryItemKey(Long productId, Integer quantity) {
-    }
 }
