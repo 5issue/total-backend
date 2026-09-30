@@ -297,21 +297,16 @@ public class OrderService {
         return PlaceOrderResponseDto.from(order);
     }
 
-    public InternalOrderResponseDto getForPayment(Long orderId) {
-        Order order = getOrder(orderId);
+    public InternalOrderResponseDto getForPayment(AuthenticatedPrincipal me, Long orderId) {
+        Order order = getOwnedOrder(me, orderId);
         long remainingSeconds = order.getInventoryReservedUntil() == null ? 0
                 : Math.max(0, Duration.between(LocalDateTime.now(), order.getInventoryReservedUntil()).toSeconds());
         return InternalOrderResponseDto.from(order, remainingSeconds);
     }
 
-    public InternalOrderItemsResponseDto getItems(Long orderId) {
-        return InternalOrderItemsResponseDto.from(getOrder(orderId));
-    }
-
     @Transactional
-    public CompletePayResponseDto completePay(Long orderId, CompletePayRequestDto request) {
-        Order order = orderRepository.findByIdForUpdate(orderId)
-                .orElseThrow(() -> new BusinessException(OrderErrorCode.ORD_NOT_FOUND_ORDER));
+    public CompletePayResponseDto completePay(AuthenticatedPrincipal me, Long orderId, CompletePayRequestDto request) {
+        Order order = getOwnedOrderForUpdate(me, orderId);
 
         if (order.getStatus() != OrderStatus.PENDING_PAYMENT) {
             throw new BusinessException(OrderErrorCode.ORD_CONFLICT_ALREADY_PROCESSED, order.getStatus().name());

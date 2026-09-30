@@ -12,7 +12,6 @@ services:
       MYSQL_USER: ${DB_USERNAME:-order}
       MYSQL_PASSWORD: ${DB_PASSWORD:-order}
       MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-root}
-      TZ: Asia/Seoul
     volumes:
       - order_mysql_local_data:/var/lib/mysql
     healthcheck:

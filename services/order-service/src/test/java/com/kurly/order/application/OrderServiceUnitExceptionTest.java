@@ -5,7 +5,10 @@ import com.kurly.common.security.AuthenticatedPrincipal;
 import com.kurly.common.security.Role;
 import com.kurly.order.domain.claim.OrderClaimRepository;
 import com.kurly.order.domain.common.OrderErrorCode;
+import com.kurly.order.domain.order.Order;
+import com.kurly.order.domain.order.OrderItem;
 import com.kurly.order.domain.order.OrderRepository;
+import com.kurly.order.presentation.dto.CompletePayRequestDto;
 import com.kurly.order.presentation.dto.ReturnRequestDto;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -16,11 +19,16 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.test.util.ReflectionTestUtils;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 
@@ -29,12 +37,16 @@ class OrderServiceUnitExceptionTest {
 
     @Mock
     OrderRepository orderRepository;
+
     @Mock
     OrderClaimRepository orderClaimRepository;
+
     @Mock
     ApplicationEventPublisher eventPublisher;
+
     @Mock
     OrderExternalService externalService;
+
     @InjectMocks
     OrderService orderService;
 
@@ -51,9 +63,7 @@ class OrderServiceUnitExceptionTest {
 
         @Test
         void 존재하지_않는_주문은_도메인_에러를_반환한다() {
-            when(orderRepository.findById(404L)).thenReturn(Optional.empty());
-
-            assertThatThrownBy(() -> orderService.getForPayment(404L))
+            assertThatThrownBy(() -> orderService.getForPayment(me, 404L))
                     .isInstanceOf(BusinessException.class)
                     .extracting("errorCode")
                     .isEqualTo(OrderErrorCode.ORD_NOT_FOUND_ORDER);
@@ -73,6 +83,32 @@ class OrderServiceUnitExceptionTest {
                     .isInstanceOf(BusinessException.class)
                     .extracting("errorCode")
                     .isEqualTo(OrderErrorCode.ORD_MISSING_RETURN_EVIDENCE);
+        }
+    }
+
+    @Nested
+    @DisplayName("결제 완료 예외 테스트")
+    class CompletePayTest {
+
+        @Test
+        void 결제시각이_주문만료시간보다_이후면_예외를_반환한() {
+            LocalDateTime now = LocalDateTime.now();
+            OrderItem orderItemMock = mock(OrderItem.class);
+            when(orderItemMock.getLineAmount()).thenReturn(2000L);
+            Order order = Order.createCheckout("testNo", me.userId(), UUID.randomUUID(), now, null, List.of(orderItemMock));
+            when(orderRepository.findByIdForUpdate(anyLong())).thenReturn(Optional.of(order));
+
+            ReflectionTestUtils.setField(order, "id", 1L);
+
+            order.markPaymentPending(now);
+
+            assertThatThrownBy(() -> orderService.completePay(
+                    me,
+                    order.getId(),
+                    new CompletePayRequestDto(2L, 2000L, now.plusSeconds(1))))
+                    .isInstanceOf(BusinessException.class)
+                    .extracting("errorCode")
+                    .isEqualTo(OrderErrorCode.ORD_EXPIRED_PAYMENT_TIMEOUT);
         }
     }
 }
