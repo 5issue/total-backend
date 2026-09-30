@@ -49,7 +49,7 @@ public class UserInternalController {
             @Valid @RequestBody SyncProfileRequest request) {
 
         UserProfileService.SyncResult result =
-                userProfileService.syncProfile(request.provider(), request.providerId());
+                userProfileService.syncProfile(request.provider(), request.providerId(), request.name());
 
         return ResponseEntity.status(result.newUser() ? HttpStatus.CREATED : HttpStatus.OK)
                 .body(ApiResponse.success("회원 프로필 동기화가 완료되었습니다.",

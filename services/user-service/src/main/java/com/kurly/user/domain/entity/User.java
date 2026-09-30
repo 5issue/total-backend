@@ -81,6 +81,22 @@ public class User {
     @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt;
 
+    /**
+     * 비어 있는 이름을 채운다. <b>이미 값이 있으면 덮어쓰지 않는다.</b>
+     *
+     * <p>회원이 직접 고친 이름을 소셜 제공자의 값으로 되돌려 놓으면 안 된다. 제공자 이름은
+     * 어디까지나 처음 채워 넣을 기본값이다.
+     *
+     * @return 실제로 채웠으면 {@code true}
+     */
+    public boolean fillNameIfBlank(String candidate) {
+        if (candidate == null || candidate.isBlank() || (name != null && !name.isBlank())) {
+            return false;
+        }
+        this.name = candidate.strip();
+        return true;
+    }
+
     @Builder
     private User(AuthProvider provider, String providerId, String email, String name) {
         this.provider = provider;

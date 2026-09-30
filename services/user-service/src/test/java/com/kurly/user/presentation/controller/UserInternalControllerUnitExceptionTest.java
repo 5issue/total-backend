@@ -85,7 +85,7 @@ class UserInternalControllerUnitExceptionTest {
         void 검증에_실패하면_동기화를_시도하지_않는다() throws Exception {
             expectBadRequest("{}");
 
-            verify(userProfileService, never()).syncProfile(any(), any());
+            verify(userProfileService, never()).syncProfile(any(), any(), any());
         }
     }
 

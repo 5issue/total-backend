@@ -56,17 +56,34 @@ public class UserProfileService {
      *
      * <p>여러 쓰기를 한 단위로 묶을 필요가 없어 트랜잭션 경계가 없어도 무방하다.
      */
-    public SyncResult syncProfile(AuthProvider provider, String providerId) {
+    public SyncResult syncProfile(AuthProvider provider, String providerId, String name) {
         return userRepository.findByProviderAndProviderId(provider, providerId)
-                .map(existing -> new SyncResult(existing, false))
-                .orElseGet(() -> create(provider, providerId));
+                .map(existing -> new SyncResult(fillNameIfBlank(existing, name), false))
+                .orElseGet(() -> create(provider, providerId, name));
     }
 
-    private SyncResult create(AuthProvider provider, String providerId) {
+    /**
+     * 기존 회원의 비어 있는 이름을 채운다.
+     *
+     * <p>이 클래스는 트랜잭션을 걸지 않으므로(위 주석 참고) 조회해 온 엔티티는 <b>준영속</b>이다.
+     * 더티 체킹으로는 반영되지 않으니 {@code save}로 명시적으로 병합해야 한다. 그 호출이
+     * 자신의 트랜잭션에서 UPDATE를 수행한다.
+     */
+    private User fillNameIfBlank(User existing, String name) {
+        if (!existing.fillNameIfBlank(name)) {
+            return existing;
+        }
+        User saved = userRepository.save(existing);
+        log.info("회원 이름 보정: userId={}", saved.getId());
+        return saved;
+    }
+
+    private SyncResult create(AuthProvider provider, String providerId, String name) {
         try {
             User created = userRepository.save(User.builder()
                     .provider(provider)
                     .providerId(providerId)
+                    .name(name)
                     .build());
             log.info("회원 프로필 생성: userId={}, provider={}", created.getId(), provider);
             return new SyncResult(created, true);
@@ -75,7 +92,7 @@ public class UserProfileService {
             log.info("동시 생성 감지, 기존 회원을 사용한다: provider={}", provider);
             User existing = userRepository.findByProviderAndProviderId(provider, providerId)
                     .orElseThrow(() -> e);
-            return new SyncResult(existing, false);
+            return new SyncResult(fillNameIfBlank(existing, name), false);
         }
     }
 

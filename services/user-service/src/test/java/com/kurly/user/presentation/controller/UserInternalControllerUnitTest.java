@@ -63,7 +63,7 @@ class UserInternalControllerUnitTest {
 
         @Test
         void 신규_회원이면_201이다() throws Exception {
-            given(userProfileService.syncProfile(AuthProvider.KAKAO, "1234567890"))
+            given(userProfileService.syncProfile(AuthProvider.KAKAO, "1234567890", null))
                     .willReturn(new UserProfileService.SyncResult(user(10023L), true));
 
             mockMvc.perform(post("/internal/v1/users/sync-profile")
@@ -76,7 +76,7 @@ class UserInternalControllerUnitTest {
 
         @Test
         void 기존_회원이면_200이다() throws Exception {
-            given(userProfileService.syncProfile(AuthProvider.KAKAO, "1234567890"))
+            given(userProfileService.syncProfile(AuthProvider.KAKAO, "1234567890", null))
                     .willReturn(new UserProfileService.SyncResult(user(10023L), false));
 
             mockMvc.perform(post("/internal/v1/users/sync-profile")
