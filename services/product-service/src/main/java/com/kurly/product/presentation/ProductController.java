@@ -13,6 +13,8 @@ import com.kurly.product.presentation.dto.ProductDetailResponse;
 import com.kurly.product.presentation.dto.ProductFilterResponse;
 import com.kurly.product.domain.enums.ProductSortType;
 import com.kurly.product.presentation.dto.ProductSummaryResponse;
+import com.kurly.product.presentation.dto.ProductsByAiResponse;
+import java.util.List;
 import org.springframework.data.domain.Slice;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -69,6 +71,13 @@ public class ProductController {
             @RequestParam(required = false) Long categoryId,
             @RequestParam(required = false) String keyword) {
         return ApiResponse.success(productQueryService.getFilters(categoryId, keyword));
+    }
+
+    @PublicApi
+    @GetMapping("/by-ai")
+    public ApiResponse<ProductsByAiResponse> getProductsByAiProductIds(
+            @RequestParam("ai_product_ids") List<Long> aiProductIds) {
+        return ApiResponse.success(productQueryService.getProductsByAiProductIds(aiProductIds));
     }
 
     @PublicApi

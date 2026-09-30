@@ -8,12 +8,14 @@ import com.kurly.product.domain.dto.ProductSearchCondition;
 import com.kurly.product.domain.enums.ProductSortType;
 import com.kurly.product.domain.repository.ProductRepository;
 import com.kurly.product.infrastructure.entity.Product;
+import com.kurly.product.infrastructure.entity.Product.ProductType;
 import com.kurly.product.infrastructure.entity.ProductMedia.MediaRole;
 import com.kurly.product.infrastructure.jpa.ProductMediaJpaRepository;
 import com.kurly.product.infrastructure.jpa.ProductSpecJpaRepository;
 import com.kurly.product.presentation.dto.HomeResponse;
 import com.kurly.product.presentation.dto.HomeResponse.HomeSection;
 import com.kurly.product.presentation.dto.HomeResponse.ProductSummaryDto;
+import com.kurly.product.presentation.dto.ProductByAiItem;
 import com.kurly.product.presentation.dto.ProductDetailResponse;
 import com.kurly.product.presentation.dto.ProductFilterResponse;
 import com.kurly.product.presentation.dto.ProductMediaResponse;
@@ -21,8 +23,12 @@ import com.kurly.product.presentation.support.MediaUrlEncoder;
 import com.kurly.product.presentation.dto.ProductSpecResponse;
 import com.kurly.product.presentation.dto.ProductSummaryResponse;
 import com.kurly.product.presentation.dto.ProductUnitResponse;
+import com.kurly.product.presentation.dto.ProductsByAiResponse;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.cache.annotation.Cacheable;
@@ -36,6 +42,9 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
 public class ProductQueryService {
+    /** AI product_id 조회 한 번에 받을 수 있는 최대 개수. */
+    static final int MAX_AI_PRODUCT_IDS = 100;
+
     private final ProductRepository productRepository;
     private final ProductMediaJpaRepository productMediaRepository;
     private final ProductSpecJpaRepository productSpecRepository;
@@ -145,5 +154,47 @@ public class ProductQueryService {
                         media -> media.getProduct().getId(),
                         media -> MediaUrlEncoder.encode(media.getMediaUrl()),
                         (first, second) -> first));
+    }
+
+    /**
+     * AI 서버 product_id 로 BE 상품(GROUP/UNIT)을 조회한다. 값 하나에 GROUP 과 UNIT 이 함께 매핑될 수
+     * 있어 둘 다 돌려주고, 일치하는 상품이 없거나 HIDDEN 뿐인 값은 오류 없이 notFoundAiProductIds 로
+     * 알려 준다(공개 API 라 숨김 상품은 노출하지 않는다).
+     * 이미지는 GROUP 에만 저장되므로 UNIT 의 썸네일은 부모 GROUP 의 THUMBNAIL 을 쓴다.
+     */
+    public ProductsByAiResponse getProductsByAiProductIds(List<Long> aiProductIds) {
+        if (aiProductIds == null || aiProductIds.isEmpty() || aiProductIds.stream().anyMatch(Objects::isNull)) {
+            throw new BusinessException(GlobalErrorCode.INVALID_INPUT_VALUE, "ai_product_ids 는 비어 있을 수 없습니다.");
+        }
+        List<Long> requestedIds = aiProductIds.stream().distinct().toList();
+        if (requestedIds.size() > MAX_AI_PRODUCT_IDS) {
+            throw new BusinessException(GlobalErrorCode.INVALID_INPUT_VALUE,
+                    "한 번에 조회할 수 있는 상품은 최대 %d개입니다.".formatted(MAX_AI_PRODUCT_IDS));
+        }
+
+        Map<Long, List<Product>> productsByAiId = productRepository.findByAiProductIds(requestedIds).stream()
+                .collect(Collectors.groupingBy(Product::getAiProductId));
+
+        List<Long> groupIds = productsByAiId.values().stream()
+                .flatMap(List::stream)
+                .map(product -> product.getType() == ProductType.GROUP ? product.getId() : product.getParentId())
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
+        Map<Long, String> thumbnailByGroupId = groupIds.isEmpty() ? Map.of()
+                : productMediaRepository.findByProductIdInAndMediaRole(groupIds, MediaRole.THUMBNAIL).stream()
+                        .collect(Collectors.toMap(
+                                media -> media.getProduct().getId(),
+                                media -> MediaUrlEncoder.encode(media.getMediaUrl()),
+                                (first, second) -> first));
+
+        List<ProductByAiItem> items = requestedIds.stream()
+                .flatMap(aiId -> productsByAiId.getOrDefault(aiId, List.of()).stream()
+                        .sorted(Comparator.comparing(Product::getType).thenComparing(Product::getId)))
+                .map(product -> ProductByAiItem.of(product, thumbnailByGroupId.get(
+                        product.getType() == ProductType.GROUP ? product.getId() : product.getParentId())))
+                .toList();
+        List<Long> notFound = requestedIds.stream().filter(id -> !productsByAiId.containsKey(id)).toList();
+        return new ProductsByAiResponse(items, notFound);
     }
 }
