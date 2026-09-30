@@ -65,17 +65,34 @@ public class UserProfileService {
     /**
      * 기존 회원의 비어 있는 이름을 채운다.
      *
-     * <p>이 클래스는 트랜잭션을 걸지 않으므로(위 주석 참고) 조회해 온 엔티티는 <b>준영속</b>이다.
-     * 더티 체킹으로는 반영되지 않으니 {@code save}로 명시적으로 병합해야 한다. 그 호출이
-     * 자신의 트랜잭션에서 UPDATE를 수행한다.
+     * <p><b>{@code save}로 하지 않는다.</b> 이 클래스는 트랜잭션을 걸지 않으므로(위 주석 참고)
+     * 조회해 온 엔티티는 준영속이고, 그 상태의 {@code save}는 merge라서 <b>전 컬럼을 UPDATE</b>한다.
+     * 그러면 두 가지가 깨진다.
+     * <ol>
+     *   <li>동시 요청이 모두 "이름이 비어 있음"을 본 뒤 각자 저장해 나중 것이 앞의 것을 덮어쓴다</li>
+     *   <li>읽어온 뒤 다른 트랜잭션이 바꾼 {@code status}·{@code email}까지 낡은 값으로 되돌린다</li>
+     * </ol>
+     * 그래서 판단과 갱신을 DB의 한 문장으로 묶고, {@code name} 컬럼만 건드린다.
+     *
+     * <p>반환하는 엔티티의 메모리 값도 맞춰 둔다. 응답에 이름이 실리지는 않지만, 갱신에 성공한
+     * 객체가 옛 값을 들고 있으면 호출부가 오해한다. 경합에서 졌으면(0행) 건드리지 않는다.
      */
     private User fillNameIfBlank(User existing, String name) {
-        if (!existing.fillNameIfBlank(name)) {
+        if (name == null || name.isBlank()) {
             return existing;
         }
-        User saved = userRepository.save(existing);
-        log.info("회원 이름 보정: userId={}", saved.getId());
-        return saved;
+        if (existing.getName() != null && !existing.getName().isBlank()) {
+            // 방금 읽은 값에 이름이 있으면 DB에도 있다. 매 로그인마다 0행 UPDATE를 날릴 이유가 없다.
+            // 어디까지나 비용 절약이고, 덮어쓰기를 막는 보증은 아래 조건부 UPDATE가 한다.
+            return existing;
+        }
+        if (userRepository.fillNameIfBlank(existing.getId(), name.strip()) == 0) {
+            // 이미 이름이 있거나 동시 요청이 먼저 채웠다. 둘 다 정상이다.
+            return existing;
+        }
+        existing.fillNameIfBlank(name);
+        log.info("회원 이름 보정: userId={}", existing.getId());
+        return existing;
     }
 
     private SyncResult create(AuthProvider provider, String providerId, String name) {

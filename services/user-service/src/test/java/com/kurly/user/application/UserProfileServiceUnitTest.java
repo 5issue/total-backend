@@ -128,14 +128,42 @@ class UserProfileServiceUnitTest {
             User existing = user(1L, null);
             given(userRepository.findByProviderAndProviderId(AuthProvider.KAKAO, PROVIDER_ID))
                     .willReturn(Optional.of(existing));
-            given(userRepository.save(any())).willAnswer(i -> i.getArgument(0));
+            given(userRepository.fillNameIfBlank(1L, "김컬리")).willReturn(1);
 
             UserProfileService.SyncResult result =
                     userProfileService.syncProfile(AuthProvider.KAKAO, PROVIDER_ID, "김컬리");
 
             assertThat(result.user().getName()).isEqualTo("김컬리");
-            // 준영속 엔티티라 더티 체킹으로는 반영되지 않는다. save가 반드시 불려야 한다.
-            verify(userRepository).save(existing);
+            // merge가 되는 save로는 다른 컬럼까지 되돌아간다. name만 건드리는 UPDATE여야 한다.
+            verify(userRepository).fillNameIfBlank(1L, "김컬리");
+            verify(userRepository, org.mockito.Mockito.never()).save(any());
+        }
+
+        @Test
+        void 동시_보정에서_졌으면_먼저_저장된_이름을_덮어쓰지_않는다() {
+            User existing = user(1L, null);
+            given(userRepository.findByProviderAndProviderId(AuthProvider.KAKAO, PROVIDER_ID))
+                    .willReturn(Optional.of(existing));
+            // 0행 = 조회 이후 다른 요청이 먼저 채웠다. DB가 승자를 정한다.
+            given(userRepository.fillNameIfBlank(1L, "늦게온이름")).willReturn(0);
+
+            UserProfileService.SyncResult result =
+                    userProfileService.syncProfile(AuthProvider.KAKAO, PROVIDER_ID, "늦게온이름");
+
+            assertThat(result.user().getName()).isNull();
+            verify(userRepository, org.mockito.Mockito.never()).save(any());
+        }
+
+        @Test
+        void 이름_앞뒤_공백은_제거해서_저장한다() {
+            User existing = user(1L, null);
+            given(userRepository.findByProviderAndProviderId(AuthProvider.KAKAO, PROVIDER_ID))
+                    .willReturn(Optional.of(existing));
+            given(userRepository.fillNameIfBlank(1L, "김컬리")).willReturn(1);
+
+            userProfileService.syncProfile(AuthProvider.KAKAO, PROVIDER_ID, "  김컬리  ");
+
+            verify(userRepository).fillNameIfBlank(1L, "김컬리");
         }
 
         @Test
@@ -149,6 +177,7 @@ class UserProfileServiceUnitTest {
 
             assertThat(result.user().getName()).isEqualTo("직접바꾼이름");
             verify(userRepository, org.mockito.Mockito.never()).save(any());
+            verify(userRepository, org.mockito.Mockito.never()).fillNameIfBlank(any(), any());
         }
 
         @Test
@@ -160,6 +189,7 @@ class UserProfileServiceUnitTest {
             userProfileService.syncProfile(AuthProvider.KAKAO, PROVIDER_ID, null);
 
             verify(userRepository, org.mockito.Mockito.never()).save(any());
+            verify(userRepository, org.mockito.Mockito.never()).fillNameIfBlank(any(), any());
         }
 
         @Test
@@ -172,6 +202,7 @@ class UserProfileServiceUnitTest {
 
             assertThat(existing.getName()).isNull();
             verify(userRepository, org.mockito.Mockito.never()).save(any());
+            verify(userRepository, org.mockito.Mockito.never()).fillNameIfBlank(any(), any());
         }
     }
 
