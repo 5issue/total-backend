@@ -58,6 +58,28 @@ interface ProductsClient {
   @route("/filters")
   getFilters(@query categoryId?: int64, @query keyword?: string): ProductService.Common.ApiResponse<ProductFilterResponse> | ProductService.Common.ErrorResponse;
 
+  @summary("AI 상품 ID로 상품 조회")
+  @doc("""
+    AI 서버의 `product_id`(BE `product.ai_product_id`)로 BE 상품을 조회한다. AI 추천/레시피
+    응답의 상품을 BE 상품으로 바꿀 때 쓴다. `ai_product_ids`는 쉼표로 구분한 값
+    (예: `?ai_product_ids=753,754`)이며 최대 100개, 중복은 한 번만 처리한다.
+
+    - `ai_product_id`는 GROUP과 UNIT이 같은 값을 공유할 수 있다(원본에 UNIT 행이 없어 BE가
+      합성한 UNIT은 부모 GROUP과 같은 값). 그래서 한 ai_product_id에 대해 GROUP·UNIT이 모두
+      응답에 나올 수 있고, 구분은 각 항목의 `type`으로 한다.
+    - 일치하는 상품이 없거나 HIDDEN 상품뿐인 ai_product_id는 오류가 아니라 결과에서 조용히 제외된다 —
+      응답 개수가 요청보다 적을 수 있다. 어떤 값이 빠졌는지는 `notFoundAiProductIds`로 알려 준다.
+    - `items`는 요청한 ai_product_ids 순서를 따르고, 같은 ai_product_id 안에서는 GROUP → UNIT
+      순이다.
+    - 공개 API다(인증 불필요). `HIDDEN` 상태 상품은 조회되지 않는다 — SALE/SOLDOUT만 나온다.
+    - 값이 비었거나 숫자가 아닌 항목이 있거나 100개를 넘으면 400 INVALID_INPUT_VALUE.
+    """)
+  @get
+  @route("/by-ai")
+  getByAiProductIds(
+    @query(#{ name: "ai_product_ids", explode: false }) aiProductIds: int64[]
+  ): ProductService.Common.ApiResponse<ProductsByAiResponse> | ProductService.Common.ErrorResponse;
+
   @summary("상품 상세 조회")
   @doc("단일 상품(UNIT)의 상세 정보를 조회한다.")
   @get

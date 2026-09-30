@@ -17,6 +17,8 @@ public interface ProductJpaRepository extends JpaRepository<Product, Long> {
 
     Optional<Product> findByParentId(Long parentId);
 
+    List<Product> findByAiProductIdInAndStatusNot(List<Long> aiProductIds, ProductStatus excludedStatus);
+
     @Query(value = """
             select distinct p from Product p
             join ProductCategory pc on pc.product = p

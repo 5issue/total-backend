@@ -147,6 +147,41 @@ model FilterItemDto {
   count: int64;
 }
 
+// ── AI 상품 ID 조회 ─────────────────────────────────────────────────────
+
+@doc("`GET /api/v1/products/by-ai`의 항목 하나. GROUP/UNIT 모두 같은 형태다.")
+model ProductByAiItem {
+  @doc("요청에 쓴 AI 서버 product_id. 같은 값이 GROUP과 UNIT 항목에 함께 나올 수 있다.")
+  aiProductId: int64;
+
+  @doc("BE 상품 id(`product.id`).")
+  id: int64;
+
+  skuCode: string;
+  type: ProductType;
+
+  @doc("UNIT이면 부모 GROUP의 id, GROUP이면 null.")
+  parentId: int64 | null;
+
+  name: string;
+  brand: string | null;
+  price: int64;
+  salePrice: int64;
+  discountRate: int32;
+  @doc("SALE 또는 SOLDOUT. HIDDEN 상품은 이 API에서 조회되지 않는다.")
+  status: ProductStatus;
+
+  @doc("대표 이미지. 이미지는 GROUP에만 저장되므로 UNIT은 부모 GROUP의 THUMBNAIL을 쓴다. 없으면 null.")
+  thumbnailUrl: string | null;
+}
+
+model ProductsByAiResponse {
+  items: ProductByAiItem[];
+
+  @doc("일치하는 BE 상품이 없거나 HIDDEN 상품뿐이던 ai_product_id(요청 순서, 중복 제거).")
+  notFoundAiProductIds: int64[];
+}
+
 // ── 상세 ───────────────────────────────────────────────────────────────
 
 model ProductSpecResponse {

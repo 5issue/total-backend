@@ -40,6 +40,11 @@ public class ProductRepositoryImpl implements ProductRepository {
     }
 
     @Override
+    public List<Product> findByAiProductIds(List<Long> aiProductIds) {
+        return productJpaRepository.findByAiProductIdInAndStatusNot(aiProductIds, ProductStatus.HIDDEN);
+    }
+
+    @Override
     public List<Product> findTopLikedProducts(int limit) {
         return productJpaRepository.findByStatusAndTypeOrderByLikeCountDesc(ProductStatus.SALE, ProductType.GROUP, PageRequest.of(0, limit));
     }
