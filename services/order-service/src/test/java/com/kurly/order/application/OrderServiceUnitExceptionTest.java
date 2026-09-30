@@ -63,8 +63,6 @@ class OrderServiceUnitExceptionTest {
 
         @Test
         void 존재하지_않는_주문은_도메인_에러를_반환한다() {
-            when(orderRepository.findById(404L)).thenReturn(Optional.empty());
-
             assertThatThrownBy(() -> orderService.getForPayment(me, 404L))
                     .isInstanceOf(BusinessException.class)
                     .extracting("errorCode")
