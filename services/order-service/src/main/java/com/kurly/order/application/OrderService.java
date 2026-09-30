@@ -459,23 +459,35 @@ public class OrderService {
         Order order = getOrder(orderId);
 
         if (confirmStatus.equals("CONFIRMED")) {
+            if (order.getDeliveryStatus() != null) {
+                log.info("이미 처리된 주문입니다. orderId={}, status={}", orderId, order.getDeliveryStatus());
+                return;
+            }
             order.markReadyDelivery();
-        } else {
-            String insufficientIds = failedItems.stream()
-                    .map(item -> String.valueOf(item.productId()))
-                    .collect(Collectors.joining(", "));
-            log.info("다음 상품의 재고가 부족합니다={}", insufficientIds);
-
-            order.requestCancel();
-            orderClaimRepository.save(OrderClaim.createSystemClaim(
-                    order,
-                    "CLN98",
-                    insufficientIds,
-                    order.getPaymentAmount()
-            ));
-
-            externalService.cancelPayment(order.getPaymentId(), "order-infficitent-cancel-" + orderId, "재고 부족");
+            return;
         }
+
+        if (order.getStatus() == OrderStatus.CANCEL_PROCESSING || order.getStatus() == OrderStatus.CANCELLED) {
+            log.info("이미 취소 처리 중이거나 완료된 주문입니다. orderId={}, status={}", orderId, order.getStatus());
+            return;
+        }
+
+        String insufficientIds = failedItems.stream()
+                .map(item -> String.valueOf(item.productId()))
+                .collect(Collectors.joining(", "));
+        log.info("다음 상품의 재고가 부족합니다. orderId={}, productIds={}", orderId, insufficientIds);
+
+        orderClaimRepository.save(OrderClaim.createSystemClaim(
+                order,
+                "CLN98",
+                insufficientIds,
+                order.getPaymentAmount()
+        ));
+
+        externalService.cancelPayment(order.getPaymentId(), "order-infficitent-cancel-" + orderId, "재고 부족");
+
+        order.completeCancel();
+
     }
 
     private Order getOrder(Long orderId) {
