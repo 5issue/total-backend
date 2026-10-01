@@ -7,7 +7,6 @@ import com.kurly.product.domain.enums.ConsumedEventType;
 import com.kurly.product.domain.exception.ProductErrorCode;
 import com.kurly.product.domain.exception.ProductException;
 import com.kurly.product.domain.repository.ProductInventoryRepository;
-import com.kurly.product.infrastructure.entity.ProductConsumedEvent;
 import com.kurly.product.infrastructure.entity.ProductInventory;
 import com.kurly.product.infrastructure.jpa.ProductConsumedEventJpaRepository;
 import com.kurly.product.infrastructure.messaging.dto.ProductInventoryConfirmedEvent;
@@ -128,19 +127,12 @@ public class ProductInventoryService {
     }
 
     /**
-     * 요청 키를 인박스에 적재해 처음 보는 요청인지 확인한다. 이미 처리한 요청이면 false.
-     * 업무 변경과 같은 트랜잭션이라 요청이 실패해 롤백되면 마커도 함께 사라져 재시도할 수 있다. 같은 요청이 동시에
-     * 들어와도 event_id UNIQUE 제약이 두 번째를 막는다(재고 행을 건드리기 전에 위반이 나므로 안전하다).
+     * 요청 키를 인박스에 원자적으로 적재해 처음 보는 요청인지 확인한다. 이미 처리한 요청이면 false.
+     * 업무 변경과 같은 트랜잭션이라 요청이 실패해 롤백되면 마커도 함께 사라져 재시도할 수 있다. 같은 요청이
+     * 동시에 들어와도 두 번째는 첫 번째 트랜잭션이 끝나기를 기다린 뒤 예외 없이 false 를 받는다(재고 행을 건드리기 전).
      */
     private boolean markFirstRequest(ConsumedEventType type, String requestKey) {
         String eventId = UUID.nameUUIDFromBytes((type + ":" + requestKey).getBytes(StandardCharsets.UTF_8)).toString();
-        if (productConsumedEventJpaRepository.existsByEventId(eventId)) {
-            return false;
-        }
-        productConsumedEventJpaRepository.save(ProductConsumedEvent.builder()
-                .eventId(eventId)
-                .eventType(type)
-                .build());
-        return true;
+        return productConsumedEventJpaRepository.insertIfAbsent(eventId, type.name()) == 1;
     }
 }
