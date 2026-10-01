@@ -12,6 +12,7 @@ import com.kurly.product.infrastructure.entity.Product;
 import com.kurly.product.infrastructure.entity.Product.ProductStatus;
 import com.kurly.product.infrastructure.entity.Product.ProductType;
 import com.kurly.product.infrastructure.entity.ProductInventory;
+import com.kurly.product.infrastructure.jpa.ProductConsumedEventJpaRepository;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
@@ -28,12 +29,15 @@ class ProductInventoryServiceTest {
     private ProductInventoryRepository productInventoryRepository;
     @Mock
     private OutboxService outboxService;
+    @Mock
+    private ProductConsumedEventJpaRepository productConsumedEventJpaRepository;
 
     private ProductInventoryService productInventoryService;
 
     @BeforeEach
     void setUp() {
-        productInventoryService = new ProductInventoryService(productInventoryRepository, outboxService);
+        productInventoryService = new ProductInventoryService(productInventoryRepository, outboxService,
+                productConsumedEventJpaRepository);
     }
 
     @Test
