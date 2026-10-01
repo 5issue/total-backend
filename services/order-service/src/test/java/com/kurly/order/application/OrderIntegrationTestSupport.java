@@ -17,8 +17,6 @@ import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.transaction.annotation.Transactional;
 import org.testcontainers.containers.MySQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.util.List;
 
@@ -33,17 +31,19 @@ import static org.mockito.Mockito.when;
         "spring.rabbitmq.listener.simple.auto-startup=false",
         "spring.rabbitmq.listener.direct.auto-startup=false"
 })
-@Testcontainers
 @Transactional
 abstract class OrderIntegrationTestSupport {
 
     static final long MEMBER_ID = 1L;
 
-    @Container
     static final MySQLContainer<?> MYSQL = new MySQLContainer<>("mysql:8.4")
             .withDatabaseName("order_db")
             .withUsername("order")
             .withPassword("order");
+
+    static {
+        MYSQL.start();
+    }
 
     @DynamicPropertySource
     static void databaseProperties(DynamicPropertyRegistry registry) {
