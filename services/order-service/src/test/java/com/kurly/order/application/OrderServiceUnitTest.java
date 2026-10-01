@@ -25,6 +25,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
@@ -147,8 +148,8 @@ class OrderServiceUnitTest {
             var response = orderService.placeOrder(me, 1L);
 
             assertThat(response.status()).isEqualTo(OrderStatus.PENDING_PAYMENT);
-            assertThat(response.expiresAt()).isAfter(LocalDateTime.now().plusMinutes(4));
-            assertThat(response.expiresAt()).isBefore(LocalDateTime.now().plusMinutes(6));
+            assertThat(response.expiresAt()).isAfter(Instant.now().plusSeconds(4 * 60));
+            assertThat(response.expiresAt()).isBefore(Instant.now().plusSeconds(6 * 60));
             assertThat(cart.getItems()).isEmpty();
         }
     }
