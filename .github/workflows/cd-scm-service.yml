@@ -47,3 +47,28 @@ jobs:
           tags: |
             ${{ steps.ecr-login.outputs.registry }}/kurly-scm:${{ github.sha }}
             ${{ steps.ecr-login.outputs.registry }}/kurly-scm:latest
+
+      # ── 자동 배포: total-k8s 의 이미지 태그를 이번 커밋 번호로 바꿔 커밋 ──
+      # → ArgoCD가 변경을 감지해 새 이미지로 자동 배포 (재시작 불필요)
+      - name: total-k8s 이미지 태그 갱신
+        env:
+          GH_TOKEN: ${{ secrets.K8S_REPO_TOKEN }}                 # total-k8s 쓰기용 토큰
+          VALUES_FILE: charts/backend-service/values/scm.yaml     # 이 서비스의 배포 설정 파일
+          TAG: ${{ github.sha }}                                  # 방금 push한 이미지의 커밋 번호
+        run: |
+          git clone --depth 1 "https://x-access-token:${GH_TOKEN}@github.com/5issue/total-k8s.git" k8s
+          cd k8s
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          # 다른 서비스 CD가 동시에 push하면 충돌하므로 최대 5번 다시 시도
+          for i in 1 2 3 4 5; do
+            yq -i '.image.tag = strenv(TAG)' "$VALUES_FILE"       # image.tag 값을 커밋 번호로 변경
+            git add "$VALUES_FILE"
+            if git diff --cached --quiet; then echo "변경 없음"; exit 0; fi
+            git commit -m "chore(scm): 이미지 태그 ${TAG:0:7} 로 갱신"
+            if git push origin main; then echo "갱신 완료"; exit 0; fi
+            echo "push 충돌 → 최신 main 받아서 재시도 ($i)"
+            git fetch origin main && git reset --hard origin/main
+            sleep $((i * 3))
+          done
+          echo "5번 모두 실패"; exit 1
