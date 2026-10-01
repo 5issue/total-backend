@@ -47,3 +47,38 @@ jobs:
           tags: |
             ${{ steps.ecr-login.outputs.registry }}/kurly-user:${{ github.sha }}
             ${{ steps.ecr-login.outputs.registry }}/kurly-user:latest
+
+      # ── 자동 배포: total-k8s 의 이미지 태그를 이번 커밋 번호로 바꿔 커밋 ──
+      # → ArgoCD가 변경을 감지해 새 이미지로 자동 배포 (재시작 불필요)
+      - name: total-k8s 이미지 태그 갱신
+        env:
+          GH_TOKEN: ${{ secrets.K8S_REPO_TOKEN }}                     # total-k8s 쓰기용 토큰
+          VALUES_FILE: charts/backend-service/values/user.yaml         # 이 서비스의 배포 설정 파일
+          TAG: ${{ github.sha }}                                      # 방금 push한 이미지의 커밋 번호
+        run: |
+          git clone --depth 1 "https://x-access-token:${GH_TOKEN}@github.com/5issue/total-k8s.git" k8s
+          cd k8s
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          # 태그 줄만 정확히 고침 (다른 줄·주석은 그대로)
+          set_tag() {
+            if grep -qE '^  tag:' "$VALUES_FILE"; then
+              sed -i -E "s|^  tag:.*|  tag: \"${TAG}\"|" "$VALUES_FILE"         # tag 줄이 있으면 값만 교체
+            else
+              sed -i -E "/^  repository:/a\  tag: \"${TAG}\"" "$VALUES_FILE"   # 없으면 repository 아래에 추가
+            fi
+          }
+          # 다른 서비스와 동시에 push해 "충돌"할 때만 재시도 (권한 오류는 바로 실패)
+          for i in 1 2 3 4 5; do
+            set_tag
+            git add "$VALUES_FILE"
+            if git diff --cached --quiet; then echo "변경 없음"; exit 0; fi
+            git commit -q -m "chore(user): 이미지 태그 ${TAG:0:7} 로 갱신"
+            if out=$(git push origin main 2>&1); then echo "갱신 완료"; exit 0; fi
+            echo "$out"
+            if echo "$out" | grep -qE "403|denied|Authentication"; then echo "권한 오류 → 토큰 확인"; exit 1; fi
+            echo "push 충돌 → 최신 main 받아서 재시도 ($i)"
+            git fetch -q origin main && git reset -q --hard origin/main
+            sleep $((i * 3))
+          done
+          echo "5번 모두 실패"; exit 1
