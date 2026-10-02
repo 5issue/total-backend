@@ -5,6 +5,7 @@ import com.kurly.common.response.ApiResponse;
 import com.kurly.common.security.AuthenticatedPrincipal;
 import com.kurly.common.swagger.ApiErrorCodeExample;
 import com.kurly.order.domain.common.OrderErrorCode;
+import com.kurly.order.presentation.dto.DeliveryCompleteResponseDto;
 import com.kurly.order.presentation.dto.*;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -106,5 +107,16 @@ public interface OrderApi {
             @Parameter(hidden = true) AuthenticatedPrincipal me,
             @Parameter(description = "주문 ID") @Positive Long orderId,
             @Valid ReturnRequestDto request
+    );
+
+    @Operation(summary = "[관리자] 배송 완료 처리",
+            description = "주문을 배송 완료로 전이시키고 품목을 사용자의 냉장고(AI)에 적재합니다. "
+                    + "관리자 토큰이 필요합니다. 냉장고 적재가 실패해도 배송 완료는 확정되며, "
+                    + "그 결과는 fridgeSynced로 알려줍니다.")
+    @ApiErrorCodeExample(status = OrderErrorCode.class, code = "ORD_NOT_FOUND_ORDER")
+    @ApiErrorCodeExample(status = OrderErrorCode.class, code = "ORD_INVALID_STATUS", message = "결제 완료 주문만 배송 완료 처리할 수 있습니다.")
+    @ApiErrorCodeExample(status = OrderErrorCode.class, code = "ORD_CONFLICT_ALREADY_PROCESSED", message = "이미 배송 완료된 주문입니다.")
+    ApiResponse<DeliveryCompleteResponseDto> completeDelivery(
+            @Parameter(description = "주문 ID") Long orderId
     );
 }
