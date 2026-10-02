@@ -5,6 +5,7 @@
 | 인증/인가 | POST   | O      | /api/v1/auth/logout                    | 로그아웃 처리          | User, Admin | 불필요   |
 | 인증/인가 | POST   | X      | /api/v1/auth/oauth/{provider}          | 소셜 로그인 및 회원가입    | Public      | 불필요   |
 | 인증/인가 | GET    | X      | /api/v1/auth/oauth/{provider}/callback | 소셜 로그인 콜백처리      | Public      | 불필요   |
+| 인증/인가 | GET    | X      | /.well-known/jwks.json                 | 토큰 검증용 공개키 배포     | Public      | 불필요   |
 
 ## access token 재발급
 ## 🔹 Response
@@ -25,8 +26,9 @@ Secure; SameSite=Strict; Max-Age=1209600
   "status": "SUCCESS",
   "message": "토큰이 성공적으로 재발급되었습니다.",
   "data": {
-	  "accessToken": "eyJhbGciOiJIUzI1NiIsInR...",
-    "expiresIn": 1800
+	  "accessToken": "eyJhbGciOiJFUzI1NiIsInR...",
+    "expiresIn": 1800,
+    "userId": 1001
   },
   "error": null,
   "timestamp": "2026-08-23T10:00:00Z"
@@ -182,9 +184,21 @@ SameSite=Strict; Max-Age=0
 
 ```json
 {
- "redirectUri": "https..."
+ "redirectUri": "https://cloudyim.store/oauth/callback",
+ "returnTo": "/checkout"
 }
 ```
+
+|필드|필수|타입|설명|
+|---|---|---|---|
+|redirectUri|O|String|콜백을 받을 주소. **허용 목록에 있는 값만 받는다.** 임의 값을 허용하면 공격자가 인가 코드를 자기 서버로 받아갈 수 있다|
+|returnTo|X|String|로그인 후 되돌아갈 **내부 경로**. 생략하면 기본 경로로 보낸다|
+
+`returnTo`는 검증에 실패하면 **값을 버리고 기본 경로로 보낸다**(요청 자체는 실패하지 않는다).
+
+- `/`로 시작하는 절대 경로만 허용한다
+- 퍼센트 디코딩 후 512자를 넘지 않아야 한다
+- 외부로 나가는 형태(`//host`, 스킴 포함)는 거부한다 — 열린 리다이렉트 차단
 
 ---
 
@@ -307,3 +321,69 @@ Path=/api/v1/auth/refresh; HttpOnly; Secure; SameSite=Strict; Max-Age=1209600
 |400|`BAD_REQUEST`|필수 파라미터 누락 또는 잘못된 제공자 입력|“잘못된 요청입니다.”|
 |401|`UNAUTHORIZED`|인가 코드 위변조 또는 만료|“유효하지 않은 인가코드입니다.”|
 |422|`UNPROCESSABLE_ENTITY`|카카오/네이버 필수 동의 항목 누락|“필수 정보 제공에 동의해야 합니다.”|
+
+---
+
+## 토큰 검증용 공개키 배포
+## 🔹 Request
+
+**Headers**
+
+|이름|필수|설명|
+|---|---|---|
+|—|—|인증이 필요 없다. 공개키는 비밀이 아니다|
+
+---
+
+## 🔹 Response
+
+**Headers**
+
+```json
+Cache-Control: max-age=300, public
+```
+
+**성공 (200 OK)**
+
+---
+
+```json
+{
+  "keys": [
+    {
+      "kty": "EC",
+      "crv": "P-256",
+      "kid": "3b3f3cc7-d171-477c-ae91-f31983f009f6",
+      "x": "RMtP5NUS1MoVA4Gku6uW8ibmVHmBIOrGOD8iK4o4Q6c",
+      "y": "nvlRO9FIMvjMb7a1PNQ3PpNGT5cn3hsmLiHIPwv7Dtc",
+      "alg": "ES256"
+    }
+  ]
+}
+```
+
+|필드|타입|설명|
+|---|---|---|
+|kty|String|키 종류. `EC` 고정|
+|crv|String|곡선. `P-256` 고정|
+|kid|String|키 식별자. JWT 헤더의 `kid`와 대조해 검증 키를 고른다|
+|x, y|String|공개키 좌표(Base64url)|
+|alg|String|서명 알고리즘. `ES256` 고정|
+
+**이 응답만 `ApiResponse`로 감싸지 않는다.** JWKS는 RFC 7517이 정한 표준 형식이라
+표준 라이브러리(Nimbus 등)가 그대로 파싱한다. 감싸면 해석하지 못한다.
+
+**개인키는 포함되지 않는다.** 공개 파라미터만 직렬화하며, 운영에서는 개인키가 KMS 안에
+있어 프로세스가 들고 있지도 않다(인증인가_설계서 1.3.2).
+
+**검증하는 쪽이 지켜야 할 것**
+
+- 캐시는 5분이다. 키 회전(6개월)에 비해 짧게 잡아 회전이 빠르게 전파되도록 했다
+- 회전 중에는 구 키가 함께 실린다. `kid`로 골라야 하며, 키가 하나라고 가정하면 안 된다
+- 클러스터 안에서는 인그레스를 거치지 않고 내부 주소로 조회하는 것을 권한다
+
+**실패**
+
+___
+
+조회 자체는 실패하지 않는다. 서비스가 떠 있으면 항상 200이다.

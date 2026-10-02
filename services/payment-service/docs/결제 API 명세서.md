@@ -67,6 +67,7 @@
   "status": "SUCCESS",
   "message": "결제가 성공적으로 승인 및 완료되었습니다.",
   "data": {
+	  "paymentId" : 31,
 	  "paymentCompletedAt" : "2026-08-23T10:00:00Z",
 	  "receiptUrl" : "<https://toss.im/receipt/url-dummy>",
 	  "paymentStatus": "SUCCESS"
