@@ -30,6 +30,12 @@ import java.util.List;
 @Component
 public class AiFridgeClient implements FridgeClient {
 
+    /**
+     * AI 측 필수 필드인데 주문·상품 도메인에 단위 개념이 없다. 지어낼 수 없으므로 고정값을 보낸다
+     * (2026-10-02 AI팀 합의). 도메인에 단위가 생기면 그 값을 쓴다.
+     */
+    private static final String DEFAULT_UNIT = "개";
+
     private final RestClient restClient;
     private final String itemsPath;
     /** 주소가 주입되지 않은 상태. 호출하면 실패시키되 기동은 막지 않는다. */
@@ -108,21 +114,23 @@ public class AiFridgeClient implements FridgeClient {
      * AI 명세의 요청 형식. <b>필드 이름이 snake_case다.</b> 이 서비스의 기본은 camelCase라
      * 명시적으로 지정한다.
      *
-     * <p>{@code unit}과 {@code expires_at}은 보내지 않는다. 주문·상품 도메인에 없는 값이라
-     * 지어낼 수 없고, AI 쪽이 각각 기본값 "개"와 null로 처리하기로 했다.
+     * <p>{@code unit}은 AI 측 필수 필드라 고정값 "개"를 보낸다({@link #DEFAULT_UNIT}).
+     * {@code expires_at}은 선택값이라 보내지 않는다 — 주문 도메인에 유통기한이 없다.
      */
     private record FridgeItemsRequest(
             @JsonProperty("user_id") Long userId,
             @JsonProperty("items") List<Item> items) {
 
         static FridgeItemsRequest of(Long userId, List<FridgeItem> items) {
-            return new FridgeItemsRequest(userId,
-                    items.stream().map(i -> new Item(i.productId(), i.quantity())).toList());
+            return new FridgeItemsRequest(userId, items.stream()
+                    .map(i -> new Item(i.productId(), i.quantity(), DEFAULT_UNIT))
+                    .toList());
         }
 
         private record Item(
                 @JsonProperty("product_id") Long productId,
-                @JsonProperty("quantity") int quantity) {
+                @JsonProperty("quantity") int quantity,
+                @JsonProperty("unit") String unit) {
         }
     }
 }
