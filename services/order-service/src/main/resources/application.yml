@@ -19,6 +19,15 @@ services:
     base-url: ${PRODUCT_SERVICE_BASE_URL:http://localhost:8084}
   member:
     base-url: ${MEMBER_SERVICE_BASE_URL:http://localhost:8088}
+  ai:
+    # AI 파드도 같은 클러스터에 있으므로 운영은 클러스터 내부 주소를 주입한다.
+    base-url: ${AI_BASE_URL:http://localhost:8000}
+    # AI팀이 머지한 현재 경로. 인그레스의 /internal/** 차단에 걸리지 않는 형태라
+    # /internal/v1/fridge/items 로 바꾸기로 협의 중이다. 그때 환경변수만 바꾸면 되도록 빼 둔다.
+    fridge-items-path: ${AI_FRIDGE_ITEMS_PATH:/api/v1/internal/fridge/items}
+    # 추론이 끼면 느릴 수 있어 공통 5초보다 길게 둔다. 실패해도 배송 완료는 유지되므로
+    # 오래 기다리기보다 끊고 로그를 남기는 쪽이 낫다.
+    read-timeout: ${AI_READ_TIMEOUT:10s}
   http:
     connect-timeout: ${SERVICE_CONNECT_TIMEOUT:2s}
     read-timeout: ${SERVICE_READ_TIMEOUT:5s}

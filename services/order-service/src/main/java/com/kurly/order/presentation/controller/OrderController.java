@@ -4,6 +4,9 @@ import com.kurly.common.response.ApiResponse;
 import com.kurly.common.security.AuthPrincipal;
 import com.kurly.common.security.Authenticated;
 import com.kurly.common.security.AuthenticatedPrincipal;
+import com.kurly.common.security.RequireRole;
+import com.kurly.common.security.Role;
+import com.kurly.order.application.OrderDeliveryService;
 import com.kurly.order.application.OrderService;
 import com.kurly.order.presentation.api.OrderApi;
 import com.kurly.order.presentation.dto.*;
@@ -20,6 +23,7 @@ import org.springframework.web.bind.annotation.*;
 public class OrderController implements OrderApi {
 
     private final OrderService orderService;
+    private final OrderDeliveryService orderDeliveryService;
 
     @Override
     @PostMapping("/checkout")
@@ -105,5 +109,25 @@ public class OrderController implements OrderApi {
     ) {
         return ApiResponse.success("전체 주문 반품이 접수되었습니다.",
                 orderService.requestReturn(me, orderId, request));
+    }
+    /**
+     * 배송 완료 처리. <b>관리자 전용이다.</b>
+     *
+     * <p>클래스에 걸린 {@code @Authenticated}를 메서드의 {@code @RequireRole}이 덮는다
+     * (메서드 표기가 클래스 표기보다 우선한다). 일반 사용자 토큰으로는 403이다.
+     *
+     * <p><b>왜 관리자 API인데 이 경로에 있나</b> — ALB에 {@code /api/v1/admin/**} 라우팅
+     * 규칙이 없어 그 대역이 외부에서 404다. 규칙이 추가되면
+     * {@code OrderAdminController}로 되돌린다.
+     *
+     * <p><b>파라미터에 제약 애노테이션을 달지 않는다.</b> 인터페이스가 선언하지 않은 제약을
+     * 구현에서 추가하면 Bean Validation이 HV000151로 막는다. 없는 주문은 404로 걸러진다.
+     */
+    @Override
+    @RequireRole(Role.ADMIN)
+    @PostMapping("/{orderId}/complete-delivery")
+    public ApiResponse<DeliveryCompleteResponseDto> completeDelivery(@PathVariable Long orderId) {
+        return ApiResponse.success("배송 완료 처리되었습니다.",
+                orderDeliveryService.completeDelivery(orderId));
     }
 }

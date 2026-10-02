@@ -160,4 +160,17 @@ public class Order extends BaseEntity {
         Assert.isTrue(this.status == OrderStatus.PAID, "PAID 상태에서만 배송 상태를 업데이트할 수 있습니다.");
         this.deliveryStatus = DeliveryStatus.READY;
     }
+
+    /**
+     * 배송 완료 처리. 반품 자격({@link #requestReturn()})이 이 값에 걸려 있다.
+     *
+     * <p><b>이미 DELIVERED면 거절한다.</b> 관리자가 두 번 눌렀을 때 뒤따르는 외부 연동이 두 번
+     * 일어나지 않게 막는 지점이 여기다. 상태 전이를 한 번만 허용하는 것이 가장 바깥 방어선이다.
+     */
+    public void markDelivered(LocalDateTime deliveredAt) {
+        Assert.isTrue(this.status == OrderStatus.PAID, "PAID 상태에서만 배송 완료 처리가 가능합니다.");
+        Assert.isTrue(this.deliveryStatus != DeliveryStatus.DELIVERED, "이미 배송 완료된 주문입니다.");
+        this.deliveryStatus = DeliveryStatus.DELIVERED;
+        this.deliveredAt = deliveredAt;
+    }
 }
